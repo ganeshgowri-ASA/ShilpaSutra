@@ -13,7 +13,7 @@ const parts = [
 export default function LibraryPage() {
   const [search, setSearch] = useState("");
   const [cat, setCat] = useState("All");
-  const cats = ["All",...new Set(parts.map(p=>p.category))];
+    const cats = ["All",...Array.from(new Set(parts.map(p=>p.category)))];
   const filtered = parts.filter(p=>(cat==="All"||p.category===cat)&&p.name.toLowerCase().includes(search.toLowerCase()));
 
   return (
