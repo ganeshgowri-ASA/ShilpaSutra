@@ -1,96 +1,127 @@
-export default function Dashboard() {
-  const stats = [
-    { label: "CAD Models", value: "12", icon: "cube", color: "bg-blue-500" },
-    { label: "CFD Simulations", value: "5", icon: "chart", color: "bg-green-500" },
-    { label: "Parts Library", value: "248", icon: "archive", color: "bg-purple-500" },
-    { label: "AI Generations", value: "37", icon: "sparkles", color: "bg-amber-500" },
-  ];
+import Link from "next/link";
 
+const stats = [
+  { label: "CAD Models", value: "12", icon: "\u25A1", color: "from-blue-600 to-blue-800" },
+  { label: "Simulations", value: "5", icon: "\u2699", color: "from-green-600 to-green-800" },
+  { label: "Parts Library", value: "248", icon: "\u25A6", color: "from-purple-600 to-purple-800" },
+  { label: "AI Generations", value: "37", icon: "\u2606", color: "from-amber-600 to-amber-800" },
+];
+
+const features = [
+  { title: "CAD Designer", desc: "Create 3D models with AI text-to-CAD, KCL code editor, sketch tools, and parametric modeling. Zoo-inspired interface.", href: "/designer", icon: "\u270E", tag: "3 modes: Click + Code + AI" },
+  { title: "FEA/CFD Simulator", desc: "Full simulation workflow: Geometry > Mesh > Physics > Materials > Solver > Results. FEM stress analysis & CFD flow.", href: "/simulator", icon: "\u2699", tag: "6-step guided workflow" },
+  { title: "Parts Library", desc: "Browse 248+ parametric components with search, filters, ratings, and one-click import to designer or simulator.", href: "/library", icon: "\u25A6", tag: "Grid + List views" },
+];
+
+const recentProjects = [
+  { name: "Bracket Assembly v2", type: "CAD", updated: "2 hours ago", status: "Active" },
+  { name: "Pipe Flow CFD", type: "CFD", updated: "5 hours ago", status: "Completed" },
+  { name: "Gear Train 20T-40T", type: "CAD", updated: "1 day ago", status: "Active" },
+  { name: "Heat Sink Thermal", type: "FEA", updated: "2 days ago", status: "Completed" },
+  { name: "Enclosure Modal", type: "FEA", updated: "3 days ago", status: "Draft" },
+];
+
+const quickStart = [
+  { label: "Text to CAD", desc: "Describe a part in plain English", icon: "\uD83D\uDCAC" },
+  { label: "Import STEP", desc: "Upload existing CAD file", icon: "\uD83D\uDCC2" },
+  { label: "From Template", desc: "Start from a sample project", icon: "\uD83D\uDCC4" },
+  { label: "AI Assistant", desc: "Ask ShilpaSutra AI anything", icon: "\uD83E\uDD16" },
+];
+
+export default function Dashboard() {
   return (
-    <div className="h-full overflow-y-auto">
-      {/* Header */}
-      <header className="border-b border-gray-700 px-6 py-4">
+    <div className="min-h-screen bg-[#1a1a2e] text-white">
+      {/* Hero Header */}
+      <div className="bg-gradient-to-r from-[#16213e] to-[#0f3460] border-b border-[#0f3460] px-6 py-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">
-              शिल्पसूत्र <span className="text-brand-500">ShilpaSutra</span>
-            </h1>
-            <p className="text-gray-400 text-sm mt-1">AI-Powered CAD & CFD Design Platform</p>
+            <h1 className="text-2xl font-bold">\u0936\u093F\u0932\u094D\u092A\u0938\u0942\u0924\u094D\u0930 <span className="text-[#e94560]">ShilpaSutra</span></h1>
+            <p className="text-slate-400 text-sm mt-1">AI-Powered CAD & CFD Design Platform | Text/Multimodal to CAD</p>
           </div>
-          <div className="flex items-center gap-3">
-            <button className="px-4 py-2 bg-brand-600 hover:bg-brand-700 rounded-lg text-sm font-medium transition">
-              + New Design
-            </button>
-            <button className="px-4 py-2 bg-surface-lighter hover:bg-gray-600 rounded-lg text-sm transition">
-              Import File
-            </button>
+          <div className="flex gap-2">
+            <Link href="/designer" className="bg-[#e94560] hover:bg-[#d63750] px-4 py-2 rounded-lg text-sm font-bold">+ New Design</Link>
+            <button className="bg-[#0f3460] hover:bg-[#1a4a80] px-4 py-2 rounded-lg text-sm border border-[#0f3460]">Import File</button>
           </div>
         </div>
-      </header>
 
-      <div className="p-6 space-y-6">
-        {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {stats.map((stat) => (
-            <div key={stat.label} className="bg-surface-light rounded-xl p-5 border border-gray-700 hover:border-brand-500 transition">
+        {/* Stats */}
+        <div className="grid grid-cols-4 gap-4 mt-6">
+          {stats.map(s => (
+            <div key={s.label} className={`bg-gradient-to-br ${s.color} rounded-xl p-4`}>
               <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-gray-400 text-sm">{stat.label}</p>
-                  <p className="text-3xl font-bold mt-1">{stat.value}</p>
-                </div>
-                <div className={`w-12 h-12 ${stat.color} rounded-lg flex items-center justify-center opacity-80`}>
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-                  </svg>
-                </div>
+                <div><div className="text-xs text-white/70">{s.label}</div><div className="text-2xl font-bold mt-1">{s.value}</div></div>
+                <div className="text-3xl opacity-50">{s.icon}</div>
               </div>
             </div>
           ))}
         </div>
+      </div>
 
-        {/* Quick Actions */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <a href="/designer" className="bg-surface-light rounded-xl p-6 border border-gray-700 hover:border-blue-500 transition group">
-            <h3 className="text-lg font-semibold group-hover:text-blue-400 transition">CAD Designer</h3>
-            <p className="text-gray-400 text-sm mt-2">Create 3D models with AI-powered text-to-CAD, sketch tools, and parametric modeling</p>
-            <div className="mt-4 text-blue-400 text-sm font-medium">Open Designer &rarr;</div>
-          </a>
-          <a href="/simulator" className="bg-surface-light rounded-xl p-6 border border-gray-700 hover:border-green-500 transition group">
-            <h3 className="text-lg font-semibold group-hover:text-green-400 transition">CFD Simulator</h3>
-            <p className="text-gray-400 text-sm mt-2">Run fluid dynamics simulations with automated meshing, boundary conditions, and visualization</p>
-            <div className="mt-4 text-green-400 text-sm font-medium">Open Simulator &rarr;</div>
-          </a>
-          <a href="/library" className="bg-surface-light rounded-xl p-6 border border-gray-700 hover:border-purple-500 transition group">
-            <h3 className="text-lg font-semibold group-hover:text-purple-400 transition">Parts Library</h3>
-            <p className="text-gray-400 text-sm mt-2">Browse parametric components, templates, and community-shared designs</p>
-            <div className="mt-4 text-purple-400 text-sm font-medium">Browse Library &rarr;</div>
-          </a>
+      <div className="px-6 py-6 space-y-6">
+        {/* Quick Start for Beginners */}
+        <div>
+          <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider mb-3">\uD83D\uDE80 Quick Start - Choose how to begin</h2>
+          <div className="grid grid-cols-4 gap-3">
+            {quickStart.map(q => (
+              <Link key={q.label} href="/designer" className="bg-[#16213e] border border-[#0f3460] hover:border-[#e94560] rounded-xl p-4 transition-all hover:scale-[1.02] group">
+                <div className="text-2xl mb-2">{q.icon}</div>
+                <div className="text-sm font-medium group-hover:text-[#e94560]">{q.label}</div>
+                <div className="text-xs text-slate-500 mt-1">{q.desc}</div>
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        {/* Feature Cards */}
+        <div>
+          <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider mb-3">\u2699 Workspaces</h2>
+          <div className="grid grid-cols-3 gap-4">
+            {features.map(f => (
+              <Link key={f.title} href={f.href} className="bg-[#16213e] border border-[#0f3460] hover:border-[#e94560] rounded-xl p-5 transition-all hover:scale-[1.01] group">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xl">{f.icon}</span>
+                  <h3 className="font-bold group-hover:text-[#e94560]">{f.title}</h3>
+                </div>
+                <p className="text-xs text-slate-400 leading-relaxed">{f.desc}</p>
+                <div className="mt-3 text-[10px] bg-[#0f3460] inline-block px-2 py-1 rounded text-slate-300">{f.tag}</div>
+                <div className="mt-2 text-xs text-[#e94560] group-hover:underline">Open {f.title} \u2192</div>
+              </Link>
+            ))}
+          </div>
         </div>
 
         {/* Recent Projects */}
-        <div className="bg-surface-light rounded-xl border border-gray-700">
-          <div className="px-6 py-4 border-b border-gray-700">
-            <h2 className="text-lg font-semibold">Recent Projects</h2>
-          </div>
-          <div className="divide-y divide-gray-700">
-            {["Bracket Assembly v2", "Turbine Blade CFD", "Gear Housing", "Heat Sink Design"].map((name, i) => (
-              <div key={i} className="px-6 py-4 flex items-center justify-between hover:bg-surface-lighter transition cursor-pointer">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-surface-lighter rounded-lg flex items-center justify-center">
-                    <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-                    </svg>
-                  </div>
-                  <div>
-                    <p className="font-medium">{name}</p>
-                    <p className="text-gray-400 text-xs">Modified {i + 1}h ago</p>
-                  </div>
+        <div>
+          <h2 className="text-sm font-bold text-slate-300 uppercase tracking-wider mb-3">\uD83D\uDCC1 Recent Projects</h2>
+          <div className="bg-[#16213e] border border-[#0f3460] rounded-xl overflow-hidden">
+            <div className="grid grid-cols-5 gap-4 px-4 py-2 text-[10px] text-slate-500 uppercase tracking-wider border-b border-[#0f3460]">
+              <span>Name</span><span>Type</span><span>Updated</span><span>Status</span><span>Actions</span>
+            </div>
+            {recentProjects.map(p => (
+              <div key={p.name} className="grid grid-cols-5 gap-4 px-4 py-3 text-xs hover:bg-[#0f3460]/30 border-b border-[#0f3460]/50">
+                <span className="font-medium">{p.name}</span>
+                <span className={`${p.type==="CAD" ? "text-blue-400" : p.type==="CFD" ? "text-green-400" : "text-purple-400"}`}>{p.type}</span>
+                <span className="text-slate-500">{p.updated}</span>
+                <span className={`${p.status==="Active" ? "text-green-400" : p.status==="Completed" ? "text-blue-400" : "text-slate-500"}`}>{p.status}</span>
+                <div className="flex gap-2">
+                  <button className="text-[#e94560] hover:underline">Open</button>
+                  <button className="text-slate-500 hover:text-white">Clone</button>
                 </div>
-                <span className="text-xs px-2 py-1 rounded bg-surface-lighter text-gray-300">
-                  {i < 2 ? "CAD" : "CFD"}
-                </span>
               </div>
             ))}
+          </div>
+        </div>
+
+        {/* Platform Info */}
+        <div className="bg-[#0d1117] border border-[#0f3460] rounded-xl p-4 text-xs text-slate-500">
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-white font-bold">ShilpaSutra v1.0</span> | Zoo-inspired AI-native CAD | Text-to-CAD + KCL Code + Point & Click
+            </div>
+            <div className="flex gap-4">
+              <span>Engine: B-rep + OpenFOAM + CalculiX</span>
+              <span>Stack: Next.js + Three.js + R3F</span>
+            </div>
           </div>
         </div>
       </div>
