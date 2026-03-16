@@ -14,6 +14,7 @@ const navItems = [
   { href: "/assembly", label: "Assembly", icon: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" },
   { href: "/drawings", label: "2D Drawings", icon: "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" },
   { href: "/text-to-cad", label: "Text to CAD", icon: "M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" },
+  { href: "/settings", label: "Settings", icon: "M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" },
 ];
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -22,7 +23,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-screen bg-[#0d1117] text-white antialiased">
         <div className="flex h-screen">
           <aside className="w-16 bg-[#16213e] border-r border-[#0f3460] flex flex-col items-center py-4 gap-2 flex-shrink-0">
-            <div className="w-10 h-10 bg-[#e94560] rounded-lg flex items-center justify-center font-bold text-lg">SS</div>
+            <a href="/" className="w-10 h-10 bg-[#e94560] rounded-lg flex items-center justify-center font-bold text-lg">SS</a>
             <nav className="flex flex-col gap-2 mt-4">
               {navItems.map(item => (
                 <a key={item.href} href={item.href} className="p-2 rounded-lg hover:bg-[#0f3460] transition" title={item.label}>
@@ -32,8 +33,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 </a>
               ))}
             </nav>
+            <div className="mt-auto mb-2">
+              <a href="/settings" className="p-2 rounded-lg hover:bg-[#0f3460] transition block" title="Settings">
+                <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                </svg>
+              </a>
+            </div>
           </aside>
-          <main className="flex-1 overflow-hidden">{children}</main>
+          <main className="flex-1 overflow-auto">{children}</main>
         </div>
       </body>
     </html>
