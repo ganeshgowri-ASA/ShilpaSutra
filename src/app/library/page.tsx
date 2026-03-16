@@ -5,7 +5,7 @@ const parts = [
   { name: "Hex Bolt M8", category: "Fasteners", format: "STEP", author: "ISO", downloads: 1240, rating: 4.8, params: "M8x30, Grade 8.8" },
   { name: "Hex Nut M8", category: "Fasteners", format: "STEP", author: "ISO", downloads: 980, rating: 4.7, params: "M8, Grade 8" },
   { name: "Spur Gear 20T", category: "Gears", format: "STEP", author: "Community", downloads: 856, rating: 4.9, params: "Module 2, 20 teeth" },
-  { name: "Helical Gear 30T", category: "Gears", format: "STEP", author: "Community", downloads: 432, rating: 4.6, params: "Module 1.5, Helix 15\u00B0" },
+  { name: "Helical Gear 30T", category: "Gears", format: "STEP", author: "Community", downloads: 432, rating: 4.6, params: "Module 1.5, Helix 15°" },
   { name: "L-Bracket 50mm", category: "Brackets", format: "STL", author: "ShilpaSutra", downloads: 2100, rating: 4.5, params: "50x50x5mm, Steel" },
   { name: "U-Channel 100mm", category: "Brackets", format: "STEP", author: "Community", downloads: 345, rating: 4.3, params: "100x50x40mm" },
   { name: "Bearing 6205", category: "Bearings", format: "STEP", author: "SKF", downloads: 1890, rating: 4.9, params: "25x52x15mm, Deep groove" },
@@ -46,7 +46,6 @@ export default function LibraryPage() {
           <button className="bg-[#0f3460] hover:bg-[#1a4a80] px-3 py-1 rounded text-xs">AI Generate Part</button>
         </div>
       </div>
-
       {/* Filters */}
       <div className="flex items-center gap-3 px-4 py-2 bg-[#0d1117] border-b border-[#0f3460] flex-shrink-0">
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search parts..."
@@ -63,11 +62,10 @@ export default function LibraryPage() {
             <option value="rating">Highest Rated</option>
             <option value="name">Alphabetical</option>
           </select>
-          <button onClick={() => setView("grid")} className={`px-2 py-1 rounded text-xs ${view==="grid" ? "bg-[#e94560]" : "bg-[#0f3460]"}`}>\u25A6</button>
-          <button onClick={() => setView("list")} className={`px-2 py-1 rounded text-xs ${view==="list" ? "bg-[#e94560]" : "bg-[#0f3460]"}`}>\u2630</button>
+          <button onClick={() => setView("grid")} className={`px-2 py-1 rounded text-xs ${view==="grid" ? "bg-[#e94560]" : "bg-[#0f3460]"}`}>▦</button>
+          <button onClick={() => setView("list")} className={`px-2 py-1 rounded text-xs ${view==="list" ? "bg-[#e94560]" : "bg-[#0f3460]"}`}>☰</button>
         </div>
       </div>
-
       {/* Content */}
       <div className="flex flex-1 overflow-hidden">
         <div className="flex-1 overflow-y-auto p-4">
@@ -79,7 +77,7 @@ export default function LibraryPage() {
                     selected===i ? "ring-2 ring-[#e94560]" : "border border-[#0f3460]"
                   }`}>
                   <div className="h-24 bg-[#0d1117] rounded flex items-center justify-center mb-2">
-                    <div className="text-3xl text-slate-600">\u25A1</div>
+                    <div className="text-3xl text-slate-600">📦</div>
                   </div>
                   <div className="text-xs font-medium truncate">{p.name}</div>
                   <div className="flex items-center justify-between mt-1">
@@ -87,8 +85,8 @@ export default function LibraryPage() {
                     <span className="text-[10px] bg-[#0f3460] px-1.5 py-0.5 rounded">{p.format}</span>
                   </div>
                   <div className="flex items-center justify-between mt-1 text-[10px] text-slate-500">
-                    <span>\u2605 {p.rating}</span>
-                    <span>\u2B07 {p.downloads}</span>
+                    <span>⭐ {p.rating}</span>
+                    <span>⬇️ {p.downloads}</span>
                   </div>
                 </div>
               ))}
@@ -100,27 +98,26 @@ export default function LibraryPage() {
                   className={`flex items-center gap-3 p-2 rounded cursor-pointer hover:bg-[#0f3460] text-xs ${
                     selected===i ? "bg-[#0f3460] border border-[#e94560]" : ""
                   }`}>
-                  <div className="w-10 h-10 bg-[#0d1117] rounded flex items-center justify-center text-slate-600">\u25A1</div>
+                  <div className="w-10 h-10 bg-[#0d1117] rounded flex items-center justify-center text-slate-600">📦</div>
                   <div className="flex-1"><div className="font-medium">{p.name}</div><div className="text-[10px] text-slate-500">{p.params}</div></div>
                   <span className="text-slate-500">{p.category}</span>
                   <span className="bg-[#0f3460] px-1.5 py-0.5 rounded text-[10px]">{p.format}</span>
-                  <span className="text-[10px]">\u2605 {p.rating}</span>
-                  <span className="text-[10px] text-slate-500">\u2B07 {p.downloads}</span>
+                  <span className="text-[10px]">⭐ {p.rating}</span>
+                  <span className="text-[10px] text-slate-500">⬇️ {p.downloads}</span>
                 </div>
               ))}
             </div>
           )}
         </div>
-
         {/* Detail Panel */}
         {selected!==null && (
           <div className="w-64 bg-[#16213e] border-l border-[#0f3460] p-3 flex-shrink-0 overflow-y-auto">
             <div className="flex justify-between items-center mb-3">
               <h3 className="text-xs font-bold">Part Details</h3>
-              <button onClick={() => setSelected(null)} className="text-slate-500 hover:text-white text-xs">\u2715</button>
+              <button onClick={() => setSelected(null)} className="text-slate-500 hover:text-white text-xs">✕</button>
             </div>
             <div className="h-32 bg-[#0d1117] rounded flex items-center justify-center mb-3">
-              <div className="text-4xl text-slate-600">\u25A1</div>
+              <div className="text-4xl text-slate-600">📦</div>
             </div>
             <div className="space-y-2 text-xs">
               <div className="font-medium text-sm">{filtered[selected]?.name}</div>
@@ -128,11 +125,11 @@ export default function LibraryPage() {
               <div className="grid grid-cols-2 gap-2 text-[10px]">
                 <div className="bg-[#0d1117] p-2 rounded"><div className="text-slate-500">Category</div><div>{filtered[selected]?.category}</div></div>
                 <div className="bg-[#0d1117] p-2 rounded"><div className="text-slate-500">Format</div><div>{filtered[selected]?.format}</div></div>
-                <div className="bg-[#0d1117] p-2 rounded"><div className="text-slate-500">Rating</div><div>\u2605 {filtered[selected]?.rating}</div></div>
+                <div className="bg-[#0d1117] p-2 rounded"><div className="text-slate-500">Rating</div><div>⭐ {filtered[selected]?.rating}</div></div>
                 <div className="bg-[#0d1117] p-2 rounded"><div className="text-slate-500">Downloads</div><div>{filtered[selected]?.downloads}</div></div>
               </div>
               <div className="text-[10px] text-slate-500">Author: {filtered[selected]?.author}</div>
-              <button className="w-full bg-[#e94560] hover:bg-[#d63750] py-2 rounded font-bold">\u2B07 Download {filtered[selected]?.format}</button>
+              <button className="w-full bg-[#e94560] hover:bg-[#d63750] py-2 rounded font-bold">⬇️ Download {filtered[selected]?.format}</button>
               <button className="w-full bg-[#0f3460] hover:bg-[#1a4a80] py-2 rounded">Open in Designer</button>
               <button className="w-full bg-[#0f3460] hover:bg-[#1a4a80] py-2 rounded">Send to Simulator</button>
             </div>
