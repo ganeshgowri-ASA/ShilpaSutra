@@ -1,48 +1,161 @@
+"use client";
 import type { Metadata } from "next";
 import "./globals.css";
 import ClientProviders from "@/components/ClientProviders";
 
 export const metadata: Metadata = {
   title: "ShilpaSutra - AI CAD & CFD Platform",
-  description: "AI-powered Text/Multimodal to CAD & CFD platform with conversational design agent, parametric modeling, FEM & simulation.",
+  description: "AI-powered Text/Multimodal to CAD & CFD platform with conversational design agent, parametric modeling, and simulation.",
 };
 
 const navItems = [
-  { href: "/", label: "Dashboard", icon: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" },
-  { href: "/designer", label: "CAD Designer", icon: "M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7l-2 1m2-1l-2-1m2 1v2.5M14 4l-2-1-2 1M4 7l2-1M4 7l2 1M4 7v2.5M12 21l-2-1m2 1l2-1m-2 1v-2.5M6 18l-2-1v-2.5M18 18l2-1v-2.5" },
-  { href: "/simulator", label: "FEA/CFD Simulator", icon: "M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" },
-  { href: "/library", label: "Parts Library", icon: "M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" },
-  { href: "/assembly", label: "Assembly", icon: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" },
-  { href: "/drawings", label: "2D Drawings", icon: "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" },
-  { href: "/text-to-cad", label: "Text to CAD", icon: "M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" },
-  { href: "/settings", label: "Settings", icon: "M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" },
+  {
+    href: "/",
+    label: "Dashboard",
+    emoji: "🏠",
+    tooltip: "Dashboard - Home",
+    section: "main",
+  },
+  {
+    href: "/designer",
+    label: "CAD Designer",
+    emoji: "✏️",
+    tooltip: "3D CAD Designer",
+    section: "main",
+  },
+  {
+    href: "/simulator",
+    label: "FEA/CFD",
+    emoji: "⚗️",
+    tooltip: "FEA / CFD Simulator",
+    section: "main",
+  },
+  {
+    href: "/library",
+    label: "Parts Library",
+    emoji: "📦",
+    tooltip: "Parts & Components Library",
+    section: "main",
+  },
+  {
+    href: "/assembly",
+    label: "Assembly",
+    emoji: "🔧",
+    tooltip: "Assembly Workspace",
+    section: "main",
+  },
+  {
+    href: "/drawings",
+    label: "Drawings",
+    emoji: "📐",
+    tooltip: "2D Drawings & GD&T",
+    section: "main",
+  },
+  {
+    href: "/text-to-cad",
+    label: "Text to CAD",
+    emoji: "🤖",
+    tooltip: "AI Text / Multimodal to CAD",
+    section: "ai",
+  },
+  {
+    href: "/settings",
+    label: "Settings",
+    emoji: "⚙️",
+    tooltip: "Settings & Preferences",
+    section: "bottom",
+  },
 ];
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
-    <html lang="en" className="dark">
-      <body className="min-h-screen bg-[#0d1117] text-white antialiased">
+    <html lang="en">
+      <body className="bg-[#0d1117] text-white flex h-screen overflow-hidden">
         <ClientProviders>
-          <div className="flex h-screen">
-            <aside className="w-16 bg-[#16213e] border-r border-[#0f3460] flex flex-col items-center py-4 gap-2 flex-shrink-0">
-              <a href="/" className="w-10 h-10 bg-[#e94560] rounded-lg flex items-center justify-center font-bold text-lg">SS</a>
-              <nav className="flex flex-col gap-2 mt-4">
-                {navItems.map(item => (
-                  <a key={item.href} href={item.href} className="p-2 rounded-lg hover:bg-[#0f3460] transition" title={item.label}>
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={item.icon} />
-                    </svg>
-                  </a>
-                ))}
-              </nav>
-              <div className="mt-auto flex flex-col gap-2 mb-2">
-                <div className="p-2 rounded-lg text-center" title="Press Ctrl+K">
-                  <span className="text-[10px] text-gray-500 block">Ctrl+K</span>
-                </div>
-              </div>
-            </aside>
-            <main className="flex-1 overflow-auto">{children}</main>
-          </div>
+          {/* SketchUp/AutoCAD-style Left Sidebar */}
+          <aside className="w-[64px] bg-[#161b22] border-r border-[#21262d] flex flex-col items-center py-3 gap-1 z-50 shrink-0">
+            {/* Logo */}
+            <a href="/" className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#e94560] to-[#c73652] flex items-center justify-center text-white font-black text-sm mb-3 shadow-lg hover:scale-105 transition-transform" title="ShilpaSutra">
+              SS
+            </a>
+
+            {/* Divider */}
+            <div className="w-8 h-px bg-[#21262d] mb-1" />
+
+            {/* Main nav */}
+            {navItems.filter(i => i.section === "main").map((item) => (
+              <a
+                key={item.href}
+                href={item.href}
+                title={item.tooltip}
+                className="group relative w-11 h-11 rounded-lg flex flex-col items-center justify-center gap-0.5 text-slate-400 hover:text-white hover:bg-[#21262d] transition-all duration-150"
+              >
+                <span className="text-xl leading-none">{item.emoji}</span>
+                <span className="text-[8px] font-medium text-center leading-none opacity-70 group-hover:opacity-100 max-w-[52px] truncate px-0.5">{item.label.split(" ")[0]}</span>
+                {/* Tooltip */}
+                <span className="absolute left-[calc(100%+8px)] top-1/2 -translate-y-1/2 bg-[#1f2937] text-white text-xs rounded px-2 py-1 whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity shadow-lg border border-[#374151] z-50">
+                  {item.tooltip}
+                </span>
+              </a>
+            ))}
+
+            {/* AI Section Divider */}
+            <div className="w-8 h-px bg-[#21262d] my-1" />
+            <span className="text-[7px] text-slate-600 font-bold tracking-widest uppercase">AI</span>
+
+            {navItems.filter(i => i.section === "ai").map((item) => (
+              <a
+                key={item.href}
+                href={item.href}
+                title={item.tooltip}
+                className="group relative w-11 h-11 rounded-lg flex flex-col items-center justify-center gap-0.5 text-[#e94560] hover:text-white hover:bg-[#e94560]/20 transition-all duration-150"
+              >
+                <span className="text-xl leading-none">{item.emoji}</span>
+                <span className="text-[8px] font-medium text-center leading-none opacity-70 group-hover:opacity-100 max-w-[52px] truncate px-0.5">{item.label.split(" ")[0]}</span>
+                <span className="absolute left-[calc(100%+8px)] top-1/2 -translate-y-1/2 bg-[#1f2937] text-white text-xs rounded px-2 py-1 whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity shadow-lg border border-[#374151] z-50">
+                  {item.tooltip}
+                </span>
+              </a>
+            ))}
+
+            {/* Spacer */}
+            <div className="flex-1" />
+
+            {/* Keyboard shortcut hint */}
+            <div className="w-10 h-8 rounded flex items-center justify-center" title="Press Ctrl+K for command bar">
+              <span className="text-[8px] text-slate-600 font-mono leading-tight text-center">⌘K</span>
+            </div>
+
+            {/* Bottom items */}
+            {navItems.filter(i => i.section === "bottom").map((item) => (
+              <a
+                key={item.href}
+                href={item.href}
+                title={item.tooltip}
+                className="group relative w-11 h-11 rounded-lg flex flex-col items-center justify-center gap-0.5 text-slate-400 hover:text-white hover:bg-[#21262d] transition-all duration-150"
+              >
+                <span className="text-xl leading-none">{item.emoji}</span>
+                <span className="text-[8px] font-medium text-center leading-none opacity-70 group-hover:opacity-100">{item.label}</span>
+                <span className="absolute left-[calc(100%+8px)] top-1/2 -translate-y-1/2 bg-[#1f2937] text-white text-xs rounded px-2 py-1 whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity shadow-lg border border-[#374151] z-50">
+                  {item.tooltip}
+                </span>
+              </a>
+            ))}
+
+            {/* User avatar */}
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-xs font-bold mt-1 cursor-pointer hover:scale-105 transition-transform" title="User Profile">
+              A
+            </div>
+          </aside>
+
+          {/* Main content area */}
+          <main className="flex-1 overflow-hidden flex flex-col min-w-0">
+            {children}
+          </main>
         </ClientProviders>
       </body>
     </html>
