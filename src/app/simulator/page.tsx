@@ -669,6 +669,12 @@ export default function SimulatorPage() {
                 </label>
               </div>
 
+              <a
+                href="/reports"
+                className="block w-full text-center bg-[#e94560] hover:bg-[#d63750] text-xs py-2 rounded text-white font-semibold transition-colors"
+              >
+                View Full Structural Report
+              </a>
               <button
                 onClick={() => {
                   setResults(null);

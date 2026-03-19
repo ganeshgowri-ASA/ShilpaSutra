@@ -11,6 +11,18 @@ const CFDViewport = dynamic(() => import("@/components/CFDViewport"), {
   ),
 });
 
+const ThermalBlockDiagram = dynamic(
+  () => import("@/components/ThermalBlockDiagram"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex-1 flex items-center justify-center bg-[#0a0e17] text-slate-500">
+        Loading block diagram...
+      </div>
+    ),
+  }
+);
+
 type BoundaryType = "temperature" | "heatFlux" | "convection" | "insulated";
 type FlowModel = "laminar" | "k-epsilon" | "k-omega-sst";
 
@@ -199,6 +211,7 @@ function computeThermalCFD(
 }
 
 export default function CFDPage() {
+  const [viewMode, setViewMode] = useState<"cfd" | "block-diagram">("cfd");
   const [step, setStep] = useState("geometry");
   const [geometry, setGeometry] = useState<"box" | "cylinder" | "sphere">("box");
   const [geoDims, setGeoDims] = useState({ width: 2, height: 1, depth: 2 });
@@ -275,6 +288,24 @@ export default function CFDPage() {
       {/* Header */}
       <div className="bg-[#161b22] border-b border-[#21262d] px-4 py-2 flex items-center gap-3 shrink-0">
         <span className="text-xs font-bold text-[#e94560]">CFD Thermal Analysis</span>
+        <div className="flex items-center gap-1 ml-3">
+          <button
+            onClick={() => setViewMode("cfd")}
+            className={`text-[10px] px-2.5 py-1 rounded transition-colors ${
+              viewMode === "cfd" ? "bg-[#e94560] text-white" : "bg-[#21262d] text-slate-400 hover:text-white"
+            }`}
+          >
+            CFD Solver
+          </button>
+          <button
+            onClick={() => setViewMode("block-diagram")}
+            className={`text-[10px] px-2.5 py-1 rounded transition-colors ${
+              viewMode === "block-diagram" ? "bg-[#e94560] text-white" : "bg-[#21262d] text-slate-400 hover:text-white"
+            }`}
+          >
+            Block Diagram
+          </button>
+        </div>
         <div className="flex-1" />
         {results && (
           <div className="flex items-center gap-1">
@@ -302,6 +333,10 @@ export default function CFDPage() {
         </button>
       </div>
 
+      {viewMode === "block-diagram" ? (
+        <ThermalBlockDiagram />
+      ) : (
+      <>
       {/* Workflow Steps */}
       <div className="bg-[#161b22] border-b border-[#21262d] flex items-center shrink-0">
         {steps.map((s, i) => (
@@ -665,6 +700,8 @@ export default function CFDPage() {
           </div>
         </div>
       </div>
+      </>
+      )}
     </div>
   );
 }

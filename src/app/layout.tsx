@@ -16,6 +16,7 @@ const navItems = [
   { href: "/assembly", label: "Assembly", emoji: "🔧", tooltip: "Assembly Workspace", section: "main" },
   { href: "/renderer", label: "Renderer", emoji: "📷", tooltip: "Photo Rendering (PBR)", section: "main" },
   { href: "/drawings", label: "Drawings", emoji: "📐", tooltip: "2D Drawings & GD&T", section: "main" },
+  { href: "/reports", label: "Reports", emoji: "📊", tooltip: "Structural Reports (STAAD)", section: "main" },
   { href: "/text-to-cad", label: "Text to CAD", emoji: "🤖", tooltip: "AI Text / Multimodal to CAD", section: "ai" },
   { href: "/settings", label: "Settings", emoji: "⚙️", tooltip: "Settings & Preferences", section: "bottom" },
 ];
