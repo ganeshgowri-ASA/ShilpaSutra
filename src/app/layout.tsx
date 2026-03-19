@@ -10,9 +10,11 @@ export const metadata: Metadata = {
 const navItems = [
   { href: "/", label: "Dashboard", emoji: "🏠", tooltip: "Dashboard - Home", section: "main" },
   { href: "/designer", label: "CAD Designer", emoji: "✏️", tooltip: "3D CAD Designer", section: "main" },
-  { href: "/simulator", label: "FEA/CFD", emoji: "⚗️", tooltip: "FEA / CFD Simulator", section: "main" },
+  { href: "/simulator", label: "FEA Sim", emoji: "⚗️", tooltip: "FEA Stress Simulator", section: "main" },
+  { href: "/cfd", label: "CFD Thermal", emoji: "🌡️", tooltip: "CFD Thermal Analysis", section: "main" },
   { href: "/library", label: "Parts Library", emoji: "📦", tooltip: "Parts & Components Library", section: "main" },
   { href: "/assembly", label: "Assembly", emoji: "🔧", tooltip: "Assembly Workspace", section: "main" },
+  { href: "/renderer", label: "Renderer", emoji: "📷", tooltip: "Photo Rendering (PBR)", section: "main" },
   { href: "/drawings", label: "Drawings", emoji: "📐", tooltip: "2D Drawings & GD&T", section: "main" },
   { href: "/text-to-cad", label: "Text to CAD", emoji: "🤖", tooltip: "AI Text / Multimodal to CAD", section: "ai" },
   { href: "/settings", label: "Settings", emoji: "⚙️", tooltip: "Settings & Preferences", section: "bottom" },

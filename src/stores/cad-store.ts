@@ -11,7 +11,8 @@ export type ToolId =
   | "arc"
   | "circle"
   | "rectangle"
-  | "delete";
+  | "delete"
+  | "measure";
 
 export type TransformMode = "translate" | "rotate" | "scale";
 
@@ -58,6 +59,13 @@ export const materialList = Object.keys(materialColors);
 
 let idCounter = 0;
 
+const MAX_HISTORY = 50;
+
+interface HistoryEntry {
+  objects: CadObject[];
+  selectedId: string | null;
+}
+
 interface CadState {
   objects: CadObject[];
   selectedId: string | null;
@@ -66,6 +74,14 @@ interface CadState {
   snapGrid: boolean;
   unit: string;
   gridSize: number;
+
+  // Undo/redo
+  undoStack: HistoryEntry[];
+  redoStack: HistoryEntry[];
+
+  // Measurement
+  measurePoints: [number, number, number][];
+  measureResult: { distance: number; dx: number; dy: number; dz: number } | null;
 
   setActiveTool: (tool: ToolId) => void;
   setTransformMode: (mode: TransformMode) => void;
@@ -83,6 +99,17 @@ interface CadState {
   deleteObject: (id: string) => void;
   getSelected: () => CadObject | undefined;
   snapToGrid: (value: number) => number;
+
+  // Undo/redo
+  undo: () => void;
+  redo: () => void;
+  pushHistory: () => void;
+  canUndo: () => boolean;
+  canRedo: () => boolean;
+
+  // Measurement
+  addMeasurePoint: (point: [number, number, number]) => void;
+  clearMeasure: () => void;
 }
 
 export const useCadStore = create<CadState>((set, get) => ({
@@ -93,8 +120,12 @@ export const useCadStore = create<CadState>((set, get) => ({
   snapGrid: true,
   unit: "mm",
   gridSize: 0.5,
+  undoStack: [],
+  redoStack: [],
+  measurePoints: [],
+  measureResult: null,
 
-  setActiveTool: (tool) => set({ activeTool: tool }),
+  setActiveTool: (tool) => set({ activeTool: tool, measurePoints: [], measureResult: null }),
   setTransformMode: (mode) => set({ transformMode: mode }),
   setSnapGrid: (v) => set({ snapGrid: v }),
   setUnit: (u) => set({ unit: u }),
@@ -105,7 +136,78 @@ export const useCadStore = create<CadState>((set, get) => ({
     return Math.round(value / gridSize) * gridSize;
   },
 
+  pushHistory: () => {
+    const { objects, selectedId, undoStack } = get();
+    const entry: HistoryEntry = {
+      objects: JSON.parse(JSON.stringify(objects)),
+      selectedId,
+    };
+    const newStack = [...undoStack, entry];
+    if (newStack.length > MAX_HISTORY) newStack.shift();
+    set({ undoStack: newStack, redoStack: [] });
+  },
+
+  undo: () => {
+    const { undoStack, objects, selectedId } = get();
+    if (undoStack.length === 0) return;
+    const prev = undoStack[undoStack.length - 1];
+    const currentEntry: HistoryEntry = {
+      objects: JSON.parse(JSON.stringify(objects)),
+      selectedId,
+    };
+    set({
+      objects: prev.objects,
+      selectedId: prev.selectedId,
+      undoStack: undoStack.slice(0, -1),
+      redoStack: [...get().redoStack, currentEntry],
+    });
+  },
+
+  redo: () => {
+    const { redoStack, objects, selectedId } = get();
+    if (redoStack.length === 0) return;
+    const next = redoStack[redoStack.length - 1];
+    const currentEntry: HistoryEntry = {
+      objects: JSON.parse(JSON.stringify(objects)),
+      selectedId,
+    };
+    set({
+      objects: next.objects,
+      selectedId: next.selectedId,
+      redoStack: redoStack.slice(0, -1),
+      undoStack: [...get().undoStack, currentEntry],
+    });
+  },
+
+  canUndo: () => get().undoStack.length > 0,
+  canRedo: () => get().redoStack.length > 0,
+
+  addMeasurePoint: (point) => {
+    const { measurePoints } = get();
+    if (measurePoints.length === 0) {
+      set({ measurePoints: [point], measureResult: null });
+    } else {
+      const p1 = measurePoints[0];
+      const dx = point[0] - p1[0];
+      const dy = point[1] - p1[1];
+      const dz = point[2] - p1[2];
+      const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      set({
+        measurePoints: [measurePoints[0], point],
+        measureResult: {
+          distance: Math.round(distance * 1000) / 1000,
+          dx: Math.round(Math.abs(dx) * 1000) / 1000,
+          dy: Math.round(Math.abs(dy) * 1000) / 1000,
+          dz: Math.round(Math.abs(dz) * 1000) / 1000,
+        },
+      });
+    }
+  },
+
+  clearMeasure: () => set({ measurePoints: [], measureResult: null }),
+
   addObject: (type) => {
+    get().pushHistory();
     const id = `obj_${++idCounter}_${Date.now()}`;
     const defaults: Record<
       string,
@@ -134,6 +236,7 @@ export const useCadStore = create<CadState>((set, get) => ({
   },
 
   addLine: (points) => {
+    get().pushHistory();
     const id = `obj_${++idCounter}_${Date.now()}`;
     const count = get().objects.filter((o) => o.type === "line").length;
     const obj: CadObject = {
@@ -153,6 +256,7 @@ export const useCadStore = create<CadState>((set, get) => ({
   },
 
   addArc: (points, radius) => {
+    get().pushHistory();
     const id = `obj_${++idCounter}_${Date.now()}`;
     const count = get().objects.filter((o) => o.type === "arc").length;
     const obj: CadObject = {
@@ -173,6 +277,7 @@ export const useCadStore = create<CadState>((set, get) => ({
   },
 
   addCircle: (center, radius) => {
+    get().pushHistory();
     const id = `obj_${++idCounter}_${Date.now()}`;
     const count = get().objects.filter((o) => o.type === "circle").length;
     const obj: CadObject = {
@@ -193,6 +298,7 @@ export const useCadStore = create<CadState>((set, get) => ({
   },
 
   addRectangle: (corner1, corner2) => {
+    get().pushHistory();
     const id = `obj_${++idCounter}_${Date.now()}`;
     const count = get().objects.filter((o) => o.type === "rectangle").length;
     const obj: CadObject = {
@@ -216,6 +322,7 @@ export const useCadStore = create<CadState>((set, get) => ({
   },
 
   addGeneratedObject: (partial) => {
+    get().pushHistory();
     const id = `obj_${++idCounter}_${Date.now()}`;
     const obj: CadObject = {
       id,
@@ -248,17 +355,20 @@ export const useCadStore = create<CadState>((set, get) => ({
   deleteSelected: () => {
     const { selectedId } = get();
     if (!selectedId) return;
+    get().pushHistory();
     set((s) => ({
       objects: s.objects.filter((o) => o.id !== selectedId),
       selectedId: null,
     }));
   },
 
-  deleteObject: (id) =>
+  deleteObject: (id) => {
+    get().pushHistory();
     set((s) => ({
       objects: s.objects.filter((o) => o.id !== id),
       selectedId: s.selectedId === id ? null : s.selectedId,
-    })),
+    }));
+  },
 
   getSelected: () => {
     const { objects, selectedId } = get();
