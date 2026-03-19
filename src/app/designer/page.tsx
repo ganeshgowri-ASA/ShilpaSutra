@@ -1,5 +1,5 @@
 "use client";
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import dynamic from "next/dynamic";
 import * as THREE from "three";
 import {
@@ -10,7 +10,6 @@ import {
   getMaterialColor,
 } from "@/stores/cad-store";
 
-// Dynamic import to avoid SSR issues with Three.js
 const Viewport3D = dynamic(() => import("@/components/Viewport3D"), {
   ssr: false,
   loading: () => (
@@ -20,15 +19,22 @@ const Viewport3D = dynamic(() => import("@/components/Viewport3D"), {
   ),
 });
 
+const AIChatSidebar = dynamic(() => import("@/components/AIChatSidebar"), {
+  ssr: false,
+});
+
 /* ── Toolbar config ── */
-const tools: { id: ToolId; icon: string; label: string; tip: string }[] = [
-  { id: "select", icon: "🔲", label: "Select", tip: "Select & transform (W/R/S)" },
-  { id: "box", icon: "📦", label: "Box", tip: "Place a box" },
-  { id: "cylinder", icon: "⭕", label: "Cylinder", tip: "Place a cylinder" },
-  { id: "sphere", icon: "🔵", label: "Sphere", tip: "Place a sphere" },
-  { id: "cone", icon: "🔺", label: "Cone", tip: "Place a cone" },
-  { id: "line", icon: "📏", label: "Line", tip: "Draw a line (click two points)" },
-  { id: "delete", icon: "🗑️", label: "Delete", tip: "Delete selected object" },
+const tools: { id: ToolId; icon: string; label: string; tip: string; group: string }[] = [
+  { id: "select", icon: "🔲", label: "Select", tip: "Select & transform (W/R/S)", group: "general" },
+  { id: "box", icon: "📦", label: "Box", tip: "Place a box", group: "3d" },
+  { id: "cylinder", icon: "⭕", label: "Cylinder", tip: "Place a cylinder", group: "3d" },
+  { id: "sphere", icon: "🔵", label: "Sphere", tip: "Place a sphere", group: "3d" },
+  { id: "cone", icon: "🔺", label: "Cone", tip: "Place a cone", group: "3d" },
+  { id: "line", icon: "📏", label: "Line", tip: "Draw a line - click start, click end (L)", group: "sketch" },
+  { id: "arc", icon: "⌒", label: "Arc", tip: "Draw arc - click 3 points (A)", group: "sketch" },
+  { id: "circle", icon: "◯", label: "Circle", tip: "Draw circle - click center, drag radius (C)", group: "sketch" },
+  { id: "rectangle", icon: "▭", label: "Rect", tip: "Draw rectangle - click corner, drag to opposite", group: "sketch" },
+  { id: "delete", icon: "🗑️", label: "Delete", tip: "Delete selected object", group: "general" },
 ];
 
 const transformModes: { mode: TransformMode; label: string; key: string }[] = [
@@ -40,13 +46,12 @@ const transformModes: { mode: TransformMode; label: string; key: string }[] = [
 /* ── STL Export ── */
 function exportSceneSTL() {
   const { objects } = useCadStore.getState();
-  const meshObjects = objects.filter((o) => o.type !== "line");
+  const meshObjects = objects.filter((o) => !["line", "arc", "circle", "rectangle"].includes(o.type));
   if (meshObjects.length === 0) {
-    alert("No objects to export");
+    alert("No 3D objects to export");
     return;
   }
 
-  // Build binary STL
   const geometries: { geo: THREE.BufferGeometry; matrix: THREE.Matrix4 }[] = [];
 
   for (const obj of meshObjects) {
@@ -76,20 +81,17 @@ function exportSceneSTL() {
     geometries.push({ geo, matrix: mat });
   }
 
-  // Count triangles
   let totalTriangles = 0;
   for (const { geo } of geometries) {
     const idx = geo.index;
     totalTriangles += idx ? idx.count / 3 : (geo.attributes.position.count / 3);
   }
 
-  // Write binary STL
   const headerBytes = 80;
   const bufferLength = headerBytes + 4 + totalTriangles * 50;
   const buffer = new ArrayBuffer(bufferLength);
   const dv = new DataView(buffer);
 
-  // Header (80 bytes)
   const header = "ShilpaSutra STL Export";
   for (let i = 0; i < 80; i++) {
     dv.setUint8(i, i < header.length ? header.charCodeAt(i) : 0);
@@ -121,11 +123,9 @@ function exportSceneSTL() {
         vC.clone().sub(vA)
       ).normalize();
 
-      // Normal
       dv.setFloat32(offset, normal.x, true); offset += 4;
       dv.setFloat32(offset, normal.y, true); offset += 4;
       dv.setFloat32(offset, normal.z, true); offset += 4;
-      // Vertices
       dv.setFloat32(offset, vA.x, true); offset += 4;
       dv.setFloat32(offset, vA.y, true); offset += 4;
       dv.setFloat32(offset, vA.z, true); offset += 4;
@@ -135,7 +135,6 @@ function exportSceneSTL() {
       dv.setFloat32(offset, vC.x, true); offset += 4;
       dv.setFloat32(offset, vC.y, true); offset += 4;
       dv.setFloat32(offset, vC.z, true); offset += 4;
-      // Attribute byte count
       dv.setUint16(offset, 0, true); offset += 2;
     }
     geo.dispose();
@@ -150,16 +149,15 @@ function exportSceneSTL() {
   URL.revokeObjectURL(url);
 }
 
-/* ── OBJ Export (as simplified STEP alternative) ── */
 function exportSceneOBJ() {
   const { objects } = useCadStore.getState();
-  const meshObjects = objects.filter((o) => o.type !== "line");
+  const meshObjects = objects.filter((o) => !["line", "arc", "circle", "rectangle"].includes(o.type));
   if (meshObjects.length === 0) {
-    alert("No objects to export");
+    alert("No 3D objects to export");
     return;
   }
 
-  let objStr = "# ShilpaSutra OBJ Export\n# Generated by ShilpaSutra CAD Designer\n\n";
+  let objStr = "# ShilpaSutra OBJ Export\n\n";
   let vertexOffset = 0;
 
   for (const obj of meshObjects) {
@@ -222,9 +220,9 @@ function PropertiesPanel() {
   const objects = useCadStore((s) => s.objects);
   const updateObject = useCadStore((s) => s.updateObject);
   const deleteObject = useCadStore((s) => s.deleteObject);
-  const activeTool = useCadStore((s) => s.activeTool);
 
   const selected = objects.find((o) => o.id === selectedId);
+  const sketchTypes = ["line", "arc", "circle", "rectangle"];
 
   return (
     <div className="w-64 bg-[#161b22] border-l border-[#21262d] p-3 overflow-y-auto shrink-0">
@@ -237,10 +235,10 @@ function PropertiesPanel() {
           <div className="text-xs text-slate-400 mb-2">Scene Objects ({objects.length})</div>
           {objects.length === 0 ? (
             <div className="text-[10px] text-slate-600">
-              Use toolbar to add objects
+              Use toolbar to add objects or sketch entities
             </div>
           ) : (
-            <div className="space-y-1 max-h-32 overflow-y-auto">
+            <div className="space-y-1 max-h-40 overflow-y-auto">
               {objects.map((obj) => (
                 <button
                   key={obj.id}
@@ -251,7 +249,12 @@ function PropertiesPanel() {
                       : "text-slate-400 hover:bg-[#21262d]"
                   }`}
                 >
-                  <span>{obj.name}</span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="text-[9px]">
+                      {sketchTypes.includes(obj.type) ? "✏️" : "🧊"}
+                    </span>
+                    {obj.name}
+                  </span>
                   <span className="text-[9px] text-slate-600">{obj.type}</span>
                 </button>
               ))}
@@ -261,7 +264,6 @@ function PropertiesPanel() {
 
         {selected ? (
           <>
-            {/* Name */}
             <div className="bg-[#0d1117] rounded-lg p-3 border border-[#21262d]">
               <div className="text-xs text-slate-400 mb-1">Selected</div>
               <input
@@ -274,55 +276,34 @@ function PropertiesPanel() {
               />
             </div>
 
-            {/* Position */}
-            {selected.type !== "line" && (
-              <div className="bg-[#0d1117] rounded-lg p-3 border border-[#21262d]">
-                <div className="text-xs text-slate-400 mb-2">Position</div>
-                <div className="grid grid-cols-3 gap-2">
-                  {(["X", "Y", "Z"] as const).map((axis, i) => (
-                    <div key={axis}>
-                      <label className="text-[10px] text-slate-500">{axis}</label>
-                      <input
-                        type="number"
-                        step="0.1"
-                        value={Number(selected.position[i].toFixed(2))}
-                        onChange={(e) => {
-                          const pos = [...selected.position] as [number, number, number];
-                          pos[i] = parseFloat(e.target.value) || 0;
-                          updateObject(selected.id, { position: pos });
-                        }}
-                        className="w-full bg-[#161b22] text-xs text-white rounded px-2 py-1 border border-[#21262d]"
-                      />
-                    </div>
-                  ))}
+            {!sketchTypes.includes(selected.type) && (
+              <>
+                <div className="bg-[#0d1117] rounded-lg p-3 border border-[#21262d]">
+                  <div className="text-xs text-slate-400 mb-2">Position</div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(["X", "Y", "Z"] as const).map((axis, i) => (
+                      <div key={axis}>
+                        <label className="text-[10px] text-slate-500">{axis}</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          value={Number(selected.position[i].toFixed(2))}
+                          onChange={(e) => {
+                            const pos = [...selected.position] as [number, number, number];
+                            pos[i] = parseFloat(e.target.value) || 0;
+                            updateObject(selected.id, { position: pos });
+                          }}
+                          className="w-full bg-[#161b22] text-xs text-white rounded px-2 py-1 border border-[#21262d]"
+                        />
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
 
-            {/* Dimensions */}
-            {selected.type !== "line" && (
-              <div className="bg-[#0d1117] rounded-lg p-3 border border-[#21262d]">
-                <div className="text-xs text-slate-400 mb-2">Dimensions</div>
-                <div className="space-y-2">
-                  {selected.type === "sphere" ? (
-                    <div className="flex items-center justify-between">
-                      <label className="text-[10px] text-slate-500">Radius</label>
-                      <input
-                        type="number"
-                        step="0.1"
-                        min="0.1"
-                        value={selected.dimensions.width}
-                        onChange={(e) => {
-                          const v = parseFloat(e.target.value) || 0.1;
-                          updateObject(selected.id, {
-                            dimensions: { width: v, height: v, depth: v },
-                          });
-                        }}
-                        className="w-20 bg-[#161b22] text-xs text-white rounded px-2 py-1 border border-[#21262d] text-right"
-                      />
-                    </div>
-                  ) : selected.type === "cylinder" || selected.type === "cone" ? (
-                    <>
+                <div className="bg-[#0d1117] rounded-lg p-3 border border-[#21262d]">
+                  <div className="text-xs text-slate-400 mb-2">Dimensions</div>
+                  <div className="space-y-2">
+                    {selected.type === "sphere" ? (
                       <div className="flex items-center justify-between">
                         <label className="text-[10px] text-slate-500">Radius</label>
                         <input
@@ -333,92 +314,135 @@ function PropertiesPanel() {
                           onChange={(e) => {
                             const v = parseFloat(e.target.value) || 0.1;
                             updateObject(selected.id, {
-                              dimensions: { ...selected.dimensions, width: v, depth: v },
+                              dimensions: { width: v, height: v, depth: v },
                             });
                           }}
                           className="w-20 bg-[#161b22] text-xs text-white rounded px-2 py-1 border border-[#21262d] text-right"
                         />
                       </div>
-                      <div className="flex items-center justify-between">
-                        <label className="text-[10px] text-slate-500">Height</label>
-                        <input
-                          type="number"
-                          step="0.1"
-                          min="0.1"
-                          value={selected.dimensions.height}
-                          onChange={(e) => {
-                            const v = parseFloat(e.target.value) || 0.1;
-                            updateObject(selected.id, {
-                              dimensions: { ...selected.dimensions, height: v },
-                            });
-                          }}
-                          className="w-20 bg-[#161b22] text-xs text-white rounded px-2 py-1 border border-[#21262d] text-right"
-                        />
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      {(
-                        [
-                          ["Width", "width"],
-                          ["Height", "height"],
-                          ["Depth", "depth"],
-                        ] as const
-                      ).map(([label, key]) => (
-                        <div key={key} className="flex items-center justify-between">
-                          <label className="text-[10px] text-slate-500">{label}</label>
+                    ) : selected.type === "cylinder" || selected.type === "cone" ? (
+                      <>
+                        <div className="flex items-center justify-between">
+                          <label className="text-[10px] text-slate-500">Radius</label>
                           <input
                             type="number"
                             step="0.1"
                             min="0.1"
-                            value={selected.dimensions[key]}
+                            value={selected.dimensions.width}
                             onChange={(e) => {
                               const v = parseFloat(e.target.value) || 0.1;
                               updateObject(selected.id, {
-                                dimensions: { ...selected.dimensions, [key]: v },
+                                dimensions: { ...selected.dimensions, width: v, depth: v },
                               });
                             }}
                             className="w-20 bg-[#161b22] text-xs text-white rounded px-2 py-1 border border-[#21262d] text-right"
                           />
                         </div>
-                      ))}
+                        <div className="flex items-center justify-between">
+                          <label className="text-[10px] text-slate-500">Height</label>
+                          <input
+                            type="number"
+                            step="0.1"
+                            min="0.1"
+                            value={selected.dimensions.height}
+                            onChange={(e) => {
+                              const v = parseFloat(e.target.value) || 0.1;
+                              updateObject(selected.id, {
+                                dimensions: { ...selected.dimensions, height: v },
+                              });
+                            }}
+                            className="w-20 bg-[#161b22] text-xs text-white rounded px-2 py-1 border border-[#21262d] text-right"
+                          />
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        {(
+                          [
+                            ["Width", "width"],
+                            ["Height", "height"],
+                            ["Depth", "depth"],
+                          ] as const
+                        ).map(([label, key]) => (
+                          <div key={key} className="flex items-center justify-between">
+                            <label className="text-[10px] text-slate-500">{label}</label>
+                            <input
+                              type="number"
+                              step="0.1"
+                              min="0.1"
+                              value={selected.dimensions[key]}
+                              onChange={(e) => {
+                                const v = parseFloat(e.target.value) || 0.1;
+                                updateObject(selected.id, {
+                                  dimensions: { ...selected.dimensions, [key]: v },
+                                });
+                              }}
+                              className="w-20 bg-[#161b22] text-xs text-white rounded px-2 py-1 border border-[#21262d] text-right"
+                            />
+                          </div>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <div className="bg-[#0d1117] rounded-lg p-3 border border-[#21262d]">
+                  <div className="text-xs text-slate-400 mb-2">Material</div>
+                  <select
+                    value={selected.material}
+                    onChange={(e) => {
+                      updateObject(selected.id, {
+                        material: e.target.value,
+                        color: getMaterialColor(e.target.value),
+                      });
+                    }}
+                    className="w-full bg-[#161b22] text-xs text-white rounded px-2 py-1 border border-[#21262d]"
+                  >
+                    {materialList.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="flex items-center gap-2 mt-2">
+                    <div
+                      className="w-4 h-4 rounded border border-[#21262d]"
+                      style={{ backgroundColor: selected.color }}
+                    />
+                    <span className="text-[10px] text-slate-500">{selected.color}</span>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Sketch entity info */}
+            {sketchTypes.includes(selected.type) && (
+              <div className="bg-[#0d1117] rounded-lg p-3 border border-[#21262d]">
+                <div className="text-xs text-slate-400 mb-2">Sketch Entity</div>
+                <div className="text-[10px] text-slate-500 space-y-1">
+                  <div>Type: <span className="text-white">{selected.type}</span></div>
+                  {selected.type === "circle" && selected.circleRadius && (
+                    <div>Radius: <span className="text-white">{selected.circleRadius.toFixed(2)}</span></div>
+                  )}
+                  {selected.type === "line" && selected.linePoints && selected.linePoints.length === 2 && (
+                    <div>Length: <span className="text-white">
+                      {Math.sqrt(
+                        Math.pow(selected.linePoints[1][0] - selected.linePoints[0][0], 2) +
+                        Math.pow(selected.linePoints[1][2] - selected.linePoints[0][2], 2)
+                      ).toFixed(2)}
+                    </span></div>
+                  )}
+                  {selected.type === "rectangle" && selected.rectCorners && (
+                    <>
+                      <div>Width: <span className="text-white">{Math.abs(selected.rectCorners[1][0] - selected.rectCorners[0][0]).toFixed(2)}</span></div>
+                      <div>Height: <span className="text-white">{Math.abs(selected.rectCorners[1][2] - selected.rectCorners[0][2]).toFixed(2)}</span></div>
                     </>
                   )}
+                  <div className="text-slate-600 mt-1">Plane: XZ (Y=0)</div>
                 </div>
               </div>
             )}
 
-            {/* Material */}
-            {selected.type !== "line" && (
-              <div className="bg-[#0d1117] rounded-lg p-3 border border-[#21262d]">
-                <div className="text-xs text-slate-400 mb-2">Material</div>
-                <select
-                  value={selected.material}
-                  onChange={(e) => {
-                    updateObject(selected.id, {
-                      material: e.target.value,
-                      color: getMaterialColor(e.target.value),
-                    });
-                  }}
-                  className="w-full bg-[#161b22] text-xs text-white rounded px-2 py-1 border border-[#21262d]"
-                >
-                  {materialList.map((m) => (
-                    <option key={m} value={m}>
-                      {m}
-                    </option>
-                  ))}
-                </select>
-                <div className="flex items-center gap-2 mt-2">
-                  <div
-                    className="w-4 h-4 rounded border border-[#21262d]"
-                    style={{ backgroundColor: selected.color }}
-                  />
-                  <span className="text-[10px] text-slate-500">{selected.color}</span>
-                </div>
-              </div>
-            )}
-
-            {/* Delete */}
             <button
               onClick={() => deleteObject(selected.id)}
               className="w-full text-xs py-2 rounded bg-red-900/30 text-red-400 hover:bg-red-900/50 border border-red-900/40 transition-colors"
@@ -435,7 +459,6 @@ function PropertiesPanel() {
           </div>
         )}
 
-        {/* Quick Actions */}
         <div className="bg-[#0d1117] rounded-lg p-3 border border-[#21262d]">
           <div className="text-xs text-slate-400 mb-2">Export</div>
           <div className="grid grid-cols-2 gap-1">
@@ -454,13 +477,12 @@ function PropertiesPanel() {
           </div>
         </div>
 
-        {/* Keyboard shortcuts */}
         <div className="bg-[#0d1117] rounded-lg p-3 border border-[#21262d]">
           <div className="text-xs text-slate-400 mb-2">Shortcuts</div>
           <div className="space-y-1 text-[10px] text-slate-500">
             <div>W - Move | R - Rotate | S - Scale</div>
-            <div>Delete - Remove object</div>
-            <div>Esc - Select tool</div>
+            <div>L - Line | A - Arc | C - Circle</div>
+            <div>Delete - Remove | Esc - Select tool</div>
           </div>
         </div>
       </div>
@@ -480,6 +502,11 @@ export default function DesignerPage() {
   const setUnit = useCadStore((s) => s.setUnit);
   const deleteSelected = useCadStore((s) => s.deleteSelected);
   const selectedId = useCadStore((s) => s.selectedId);
+
+  const [aiOpen, setAiOpen] = useState(false);
+
+  const sketchTools = ["line", "arc", "circle", "rectangle"];
+  const isSketchMode = sketchTools.includes(activeTool);
 
   const handleToolClick = useCallback(
     (id: ToolId) => {
@@ -501,8 +528,8 @@ export default function DesignerPage() {
         </span>
         <div className="h-5 w-px bg-[#21262d] mx-1" />
 
-        {/* Shape tools */}
-        {tools.map((tool) => (
+        {/* 3D Shape tools */}
+        {tools.filter(t => t.group !== "sketch").map((tool) => (
           <button
             key={tool.id}
             onClick={() => handleToolClick(tool.id)}
@@ -514,6 +541,26 @@ export default function DesignerPage() {
             }`}
           >
             {tool.icon}
+          </button>
+        ))}
+
+        <div className="h-5 w-px bg-[#21262d] mx-1" />
+
+        {/* Sketch tools with label */}
+        <span className="text-[9px] text-slate-500 uppercase tracking-wider mr-1">Sketch</span>
+        {tools.filter(t => t.group === "sketch").map((tool) => (
+          <button
+            key={tool.id}
+            onClick={() => handleToolClick(tool.id)}
+            title={tool.tip}
+            className={`px-2 h-8 rounded flex items-center justify-center gap-1 text-xs transition-all ${
+              activeTool === tool.id
+                ? "bg-blue-600 text-white shadow"
+                : "text-slate-400 hover:text-white hover:bg-[#21262d]"
+            }`}
+          >
+            <span className="text-sm">{tool.icon}</span>
+            <span className="text-[10px]">{tool.label}</span>
           </button>
         ))}
 
@@ -542,6 +589,13 @@ export default function DesignerPage() {
 
         <div className="flex-1" />
 
+        {/* Sketch mode indicator */}
+        {isSketchMode && (
+          <span className="text-[10px] bg-blue-600/20 border border-blue-500/40 text-blue-400 rounded px-2 py-0.5 mr-2">
+            Sketch Mode - Drawing on XZ plane
+          </span>
+        )}
+
         <select
           value={unit}
           onChange={(e) => setUnit(e.target.value)}
@@ -560,7 +614,21 @@ export default function DesignerPage() {
               : "border-[#21262d] text-slate-500"
           }`}
         >
-          {snapGrid ? "Grid: ON" : "Grid: OFF"}
+          {snapGrid ? "Snap: ON" : "Snap: OFF"}
+        </button>
+
+        <div className="h-5 w-px bg-[#21262d] mx-1" />
+
+        {/* AI Chat toggle */}
+        <button
+          onClick={() => setAiOpen(!aiOpen)}
+          className={`px-3 py-1 rounded text-xs font-medium transition-all flex items-center gap-1 ${
+            aiOpen
+              ? "bg-purple-600 text-white"
+              : "text-slate-400 hover:text-white hover:bg-[#21262d] border border-[#21262d]"
+          }`}
+        >
+          <span>AI</span>
         </button>
       </div>
 
@@ -571,7 +639,11 @@ export default function DesignerPage() {
           <Viewport3D showGrid={snapGrid} />
           {/* Status bar overlay */}
           <div className="absolute top-2 left-2 flex items-center gap-2 pointer-events-none">
-            <span className="text-[10px] bg-[#161b22]/80 border border-[#21262d] rounded px-2 py-0.5 text-slate-400">
+            <span className={`text-[10px] bg-[#161b22]/80 border rounded px-2 py-0.5 ${
+              isSketchMode
+                ? "border-blue-500/40 text-blue-400"
+                : "border-[#21262d] text-slate-400"
+            }`}>
               Tool: {tools.find((t) => t.id === activeTool)?.label}
             </span>
             {activeTool === "select" && (
@@ -582,6 +654,11 @@ export default function DesignerPage() {
             {selectedId && (
               <span className="text-[10px] bg-[#161b22]/80 border border-[#21262d] rounded px-2 py-0.5 text-[#e94560]">
                 Selected
+              </span>
+            )}
+            {isSketchMode && (
+              <span className="text-[10px] bg-[#161b22]/80 border border-blue-500/40 rounded px-2 py-0.5 text-blue-300">
+                Click in viewport to draw
               </span>
             )}
           </div>
@@ -596,6 +673,9 @@ export default function DesignerPage() {
 
         {/* Properties Panel */}
         <PropertiesPanel />
+
+        {/* AI Chat Sidebar */}
+        {aiOpen && <AIChatSidebar onClose={() => setAiOpen(false)} />}
       </div>
     </div>
   );

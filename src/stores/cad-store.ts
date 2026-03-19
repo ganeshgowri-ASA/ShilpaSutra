@@ -8,13 +8,16 @@ export type ToolId =
   | "sphere"
   | "cone"
   | "line"
+  | "arc"
+  | "circle"
+  | "rectangle"
   | "delete";
 
 export type TransformMode = "translate" | "rotate" | "scale";
 
 export interface CadObject {
   id: string;
-  type: "box" | "cylinder" | "sphere" | "cone" | "line";
+  type: "box" | "cylinder" | "sphere" | "cone" | "line" | "arc" | "circle" | "rectangle" | "mesh";
   name: string;
   position: [number, number, number];
   rotation: [number, number, number];
@@ -24,6 +27,17 @@ export interface CadObject {
   color: string;
   // Line-specific
   linePoints?: [number, number, number][];
+  // Arc-specific: [center, start, end]
+  arcPoints?: [number, number, number][];
+  arcRadius?: number;
+  // Circle-specific
+  circleCenter?: [number, number, number];
+  circleRadius?: number;
+  // Rectangle-specific: [corner1, corner2]
+  rectCorners?: [[number, number, number], [number, number, number]];
+  // Mesh-specific (AI-generated)
+  meshVertices?: number[];
+  meshIndices?: number[];
 }
 
 const materialColors: Record<string, string> = {
@@ -51,6 +65,7 @@ interface CadState {
   transformMode: TransformMode;
   snapGrid: boolean;
   unit: string;
+  gridSize: number;
 
   setActiveTool: (tool: ToolId) => void;
   setTransformMode: (mode: TransformMode) => void;
@@ -58,11 +73,16 @@ interface CadState {
   setUnit: (u: string) => void;
   addObject: (type: CadObject["type"]) => string;
   addLine: (points: [number, number, number][]) => string;
+  addArc: (points: [number, number, number][], radius: number) => string;
+  addCircle: (center: [number, number, number], radius: number) => string;
+  addRectangle: (corner1: [number, number, number], corner2: [number, number, number]) => string;
+  addGeneratedObject: (obj: Partial<CadObject> & { type: CadObject["type"]; name: string }) => string;
   selectObject: (id: string | null) => void;
   updateObject: (id: string, updates: Partial<CadObject>) => void;
   deleteSelected: () => void;
   deleteObject: (id: string) => void;
   getSelected: () => CadObject | undefined;
+  snapToGrid: (value: number) => number;
 }
 
 export const useCadStore = create<CadState>((set, get) => ({
@@ -72,11 +92,18 @@ export const useCadStore = create<CadState>((set, get) => ({
   transformMode: "translate",
   snapGrid: true,
   unit: "mm",
+  gridSize: 0.5,
 
   setActiveTool: (tool) => set({ activeTool: tool }),
   setTransformMode: (mode) => set({ transformMode: mode }),
   setSnapGrid: (v) => set({ snapGrid: v }),
   setUnit: (u) => set({ unit: u }),
+
+  snapToGrid: (value: number) => {
+    const { snapGrid, gridSize } = get();
+    if (!snapGrid) return value;
+    return Math.round(value / gridSize) * gridSize;
+  },
 
   addObject: (type) => {
     const id = `obj_${++idCounter}_${Date.now()}`;
@@ -118,8 +145,87 @@ export const useCadStore = create<CadState>((set, get) => ({
       scale: [1, 1, 1],
       dimensions: { width: 0, height: 0, depth: 0 },
       material: "Steel (AISI 1045)",
-      color: "#ffff00",
+      color: "#00ffff",
       linePoints: points,
+    };
+    set((s) => ({ objects: [...s.objects, obj], selectedId: id }));
+    return id;
+  },
+
+  addArc: (points, radius) => {
+    const id = `obj_${++idCounter}_${Date.now()}`;
+    const count = get().objects.filter((o) => o.type === "arc").length;
+    const obj: CadObject = {
+      id,
+      type: "arc",
+      name: `Arc ${count + 1}`,
+      position: [0, 0, 0],
+      rotation: [0, 0, 0],
+      scale: [1, 1, 1],
+      dimensions: { width: 0, height: 0, depth: 0 },
+      material: "Steel (AISI 1045)",
+      color: "#ff00ff",
+      arcPoints: points,
+      arcRadius: radius,
+    };
+    set((s) => ({ objects: [...s.objects, obj], selectedId: id }));
+    return id;
+  },
+
+  addCircle: (center, radius) => {
+    const id = `obj_${++idCounter}_${Date.now()}`;
+    const count = get().objects.filter((o) => o.type === "circle").length;
+    const obj: CadObject = {
+      id,
+      type: "circle",
+      name: `Circle ${count + 1}`,
+      position: [0, 0, 0],
+      rotation: [0, 0, 0],
+      scale: [1, 1, 1],
+      dimensions: { width: radius * 2, height: 0, depth: radius * 2 },
+      material: "Steel (AISI 1045)",
+      color: "#00ff00",
+      circleCenter: center,
+      circleRadius: radius,
+    };
+    set((s) => ({ objects: [...s.objects, obj], selectedId: id }));
+    return id;
+  },
+
+  addRectangle: (corner1, corner2) => {
+    const id = `obj_${++idCounter}_${Date.now()}`;
+    const count = get().objects.filter((o) => o.type === "rectangle").length;
+    const obj: CadObject = {
+      id,
+      type: "rectangle",
+      name: `Rectangle ${count + 1}`,
+      position: [0, 0, 0],
+      rotation: [0, 0, 0],
+      scale: [1, 1, 1],
+      dimensions: {
+        width: Math.abs(corner2[0] - corner1[0]),
+        height: 0,
+        depth: Math.abs(corner2[2] - corner1[2]),
+      },
+      material: "Steel (AISI 1045)",
+      color: "#ffaa00",
+      rectCorners: [corner1, corner2],
+    };
+    set((s) => ({ objects: [...s.objects, obj], selectedId: id }));
+    return id;
+  },
+
+  addGeneratedObject: (partial) => {
+    const id = `obj_${++idCounter}_${Date.now()}`;
+    const obj: CadObject = {
+      id,
+      position: [0, 1, 0],
+      rotation: [0, 0, 0],
+      scale: [1, 1, 1],
+      dimensions: { width: 2, height: 2, depth: 2 },
+      material: "Steel (AISI 1045)",
+      color: getMaterialColor("Steel (AISI 1045)"),
+      ...partial,
     };
     set((s) => ({ objects: [...s.objects, obj], selectedId: id }));
     return id;
