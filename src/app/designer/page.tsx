@@ -23,6 +23,11 @@ const AIChatSidebar = dynamic(() => import("@/components/AIChatSidebar"), {
   ssr: false,
 });
 
+const AIChatAssistantEnhanced = dynamic(
+  () => import("@/components/AIChatAssistantEnhanced"),
+  { ssr: false }
+);
+
 /* ── Toolbar config ── */
 const tools: { id: ToolId; icon: string; label: string; tip: string; group: string }[] = [
   { id: "select", icon: "🔲", label: "Select", tip: "Select & transform (W/R/S)", group: "general" },
@@ -513,6 +518,7 @@ export default function DesignerPage() {
   const clearMeasure = useCadStore((s) => s.clearMeasure);
 
   const [aiOpen, setAiOpen] = useState(false);
+  const [aiMode, setAiMode] = useState<"basic" | "zookeeper">("zookeeper");
 
   const sketchTools = ["line", "arc", "circle", "rectangle"];
   const isSketchMode = sketchTools.includes(activeTool);
@@ -648,6 +654,20 @@ export default function DesignerPage() {
 
         <div className="h-5 w-px bg-[#21262d] mx-1" />
 
+        {/* AI Mode toggle */}
+        {aiOpen && (
+          <button
+            onClick={() => setAiMode(aiMode === "basic" ? "zookeeper" : "basic")}
+            className={`text-[10px] px-2 py-1 rounded border transition-colors ${
+              aiMode === "zookeeper"
+                ? "border-purple-500/40 text-purple-400 bg-purple-500/10"
+                : "border-[#21262d] text-slate-500"
+            }`}
+            title="Toggle AI mode"
+          >
+            {aiMode === "zookeeper" ? "Zookeeper" : "Basic"}
+          </button>
+        )}
         {/* AI Chat toggle */}
         <button
           onClick={() => setAiOpen(!aiOpen)}
@@ -729,7 +749,8 @@ export default function DesignerPage() {
         <PropertiesPanel />
 
         {/* AI Chat Sidebar */}
-        {aiOpen && <AIChatSidebar onClose={() => setAiOpen(false)} />}
+        {aiOpen && aiMode === "basic" && <AIChatSidebar onClose={() => setAiOpen(false)} />}
+        {aiOpen && aiMode === "zookeeper" && <AIChatAssistantEnhanced onClose={() => setAiOpen(false)} />}
       </div>
     </div>
   );
