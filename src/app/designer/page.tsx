@@ -34,6 +34,7 @@ const tools: { id: ToolId; icon: string; label: string; tip: string; group: stri
   { id: "arc", icon: "⌒", label: "Arc", tip: "Draw arc - click 3 points (A)", group: "sketch" },
   { id: "circle", icon: "◯", label: "Circle", tip: "Draw circle - click center, drag radius (C)", group: "sketch" },
   { id: "rectangle", icon: "▭", label: "Rect", tip: "Draw rectangle - click corner, drag to opposite", group: "sketch" },
+  { id: "measure", icon: "📐", label: "Measure", tip: "Measure distance between two points (M)", group: "general" },
   { id: "delete", icon: "🗑️", label: "Delete", tip: "Delete selected object", group: "general" },
 ];
 
@@ -503,6 +504,14 @@ export default function DesignerPage() {
   const deleteSelected = useCadStore((s) => s.deleteSelected);
   const selectedId = useCadStore((s) => s.selectedId);
 
+  const undo = useCadStore((s) => s.undo);
+  const redo = useCadStore((s) => s.redo);
+  const undoStack = useCadStore((s) => s.undoStack);
+  const redoStack = useCadStore((s) => s.redoStack);
+  const measureResult = useCadStore((s) => s.measureResult);
+  const measurePoints = useCadStore((s) => s.measurePoints);
+  const clearMeasure = useCadStore((s) => s.clearMeasure);
+
   const [aiOpen, setAiOpen] = useState(false);
 
   const sketchTools = ["line", "arc", "circle", "rectangle"];
@@ -587,6 +596,26 @@ export default function DesignerPage() {
           </>
         )}
 
+        {/* Undo/Redo */}
+        <button
+          onClick={undo}
+          disabled={undoStack.length === 0}
+          title="Undo (Ctrl+Z)"
+          className="w-8 h-8 rounded flex items-center justify-center text-sm transition-all disabled:opacity-30 text-slate-400 hover:text-white hover:bg-[#21262d]"
+        >
+          ↩
+        </button>
+        <button
+          onClick={redo}
+          disabled={redoStack.length === 0}
+          title="Redo (Ctrl+Y)"
+          className="w-8 h-8 rounded flex items-center justify-center text-sm transition-all disabled:opacity-30 text-slate-400 hover:text-white hover:bg-[#21262d]"
+        >
+          ↪
+        </button>
+
+        <div className="h-5 w-px bg-[#21262d] mx-1" />
+
         <div className="flex-1" />
 
         {/* Sketch mode indicator */}
@@ -661,7 +690,32 @@ export default function DesignerPage() {
                 Click in viewport to draw
               </span>
             )}
+            {activeTool === "measure" && (
+              <span className="text-[10px] bg-[#161b22]/80 border border-yellow-500/40 rounded px-2 py-0.5 text-yellow-300">
+                {measurePoints.length === 0 ? "Click first point" : measurePoints.length === 1 ? "Click second point" : "Measurement complete"}
+              </span>
+            )}
           </div>
+
+          {/* Measurement result overlay */}
+          {measureResult && (
+            <div className="absolute top-2 right-2 bg-[#161b22]/95 border border-yellow-500/40 rounded-lg p-3 pointer-events-auto">
+              <div className="text-[10px] text-yellow-400 font-bold mb-1">Measurement</div>
+              <div className="text-xs text-white font-mono">
+                Distance: <span className="text-yellow-300">{measureResult.distance} {unit}</span>
+              </div>
+              <div className="text-[10px] text-slate-400 font-mono mt-1">
+                dX: {measureResult.dx} | dY: {measureResult.dy} | dZ: {measureResult.dz}
+              </div>
+              <button
+                onClick={clearMeasure}
+                className="mt-2 text-[10px] text-slate-500 hover:text-white"
+              >
+                Clear
+              </button>
+            </div>
+          )}
+
           {/* Axes label */}
           <div className="absolute bottom-4 left-4 flex items-center gap-2 text-[10px] pointer-events-none">
             <span className="text-red-400">X</span>

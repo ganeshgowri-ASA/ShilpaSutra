@@ -340,9 +340,22 @@ function GroundPlane() {
   const selectObject = useCadStore((s) => s.selectObject);
   const snapGrid = useCadStore((s) => s.snapGrid);
   const gridSize = useCadStore((s) => s.gridSize);
+  const addMeasurePoint = useCadStore((s) => s.addMeasurePoint);
 
   const handleClick = useCallback(
     (e: ThreeEvent<MouseEvent>) => {
+      // Measurement tool
+      if (activeTool === "measure") {
+        e.stopPropagation();
+        const p = e.point;
+        addMeasurePoint([
+          snap(p.x, gridSize, snapGrid),
+          0,
+          snap(p.z, gridSize, snapGrid),
+        ]);
+        return;
+      }
+
       const toolToType: Partial<Record<ToolId, CadObject["type"]>> = {
         box: "box",
         cylinder: "cylinder",
@@ -372,7 +385,7 @@ function GroundPlane() {
         });
       }
     },
-    [activeTool, addObject, selectObject, snapGrid, gridSize]
+    [activeTool, addObject, selectObject, snapGrid, gridSize, addMeasurePoint]
   );
 
   return (
@@ -644,6 +657,8 @@ function KeyboardHandler() {
   const deleteSelected = useCadStore((s) => s.deleteSelected);
   const setTransformMode = useCadStore((s) => s.setTransformMode);
   const setActiveTool = useCadStore((s) => s.setActiveTool);
+  const undo = useCadStore((s) => s.undo);
+  const redo = useCadStore((s) => s.redo);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -653,6 +668,23 @@ function KeyboardHandler() {
         e.target instanceof HTMLTextAreaElement
       )
         return;
+
+      // Ctrl+Z / Ctrl+Y for undo/redo
+      if ((e.ctrlKey || e.metaKey) && e.key === "z") {
+        e.preventDefault();
+        if (e.shiftKey) {
+          redo();
+        } else {
+          undo();
+        }
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === "y") {
+        e.preventDefault();
+        redo();
+        return;
+      }
+
       switch (e.key) {
         case "Delete":
         case "Backspace":
@@ -680,11 +712,14 @@ function KeyboardHandler() {
         case "c":
           if (!e.ctrlKey && !e.metaKey) setActiveTool("circle");
           break;
+        case "m":
+          setActiveTool("measure");
+          break;
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [deleteSelected, setTransformMode, setActiveTool]);
+  }, [deleteSelected, setTransformMode, setActiveTool, undo, redo]);
 
   return null;
 }
