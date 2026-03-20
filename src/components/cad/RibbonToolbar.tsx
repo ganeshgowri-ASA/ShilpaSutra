@@ -243,6 +243,7 @@ export default function RibbonToolbar() {
                     <button
                       key={mode}
                       onClick={() => setViewMode(mode)}
+                      title={`${mode.charAt(0).toUpperCase() + mode.slice(1)} display mode`}
                       className={`flex flex-col items-center justify-center w-[52px] h-[44px] rounded transition-colors ${
                         viewMode === mode
                           ? "bg-[#00D4FF]/20 text-[#00D4FF]"
@@ -264,6 +265,7 @@ export default function RibbonToolbar() {
                 <div className="flex items-center gap-0.5">
                   <button
                     onClick={() => setShowGrid(!showGrid)}
+                    title="Toggle grid display (G)"
                     className={`flex flex-col items-center justify-center w-[44px] h-[44px] rounded transition-colors ${
                       showGrid ? "bg-[#00D4FF]/20 text-[#00D4FF]" : "hover:bg-[#0f3460] text-slate-400"
                     }`}
@@ -273,6 +275,7 @@ export default function RibbonToolbar() {
                   </button>
                   <button
                     onClick={() => setShowOrigin(!showOrigin)}
+                    title="Toggle origin axes display"
                     className={`flex flex-col items-center justify-center w-[44px] h-[44px] rounded transition-colors ${
                       showOrigin ? "bg-[#00D4FF]/20 text-[#00D4FF]" : "hover:bg-[#0f3460] text-slate-400"
                     }`}

@@ -170,6 +170,9 @@ interface CadState {
   measureResult: { distance: number; dx: number; dy: number; dz: number } | null;
   measurements: Measurement[];
 
+  // Cursor position (updated from viewport raycaster)
+  cursorPosition: [number, number, number] | null;
+
   // Command bar
   commandHistory: string[];
 
@@ -216,11 +219,14 @@ interface CadState {
   addGeneratedObject: (obj: Partial<CadObject> & { type: CadObject["type"]; name: string }) => string;
   selectObject: (id: string | null) => void;
   toggleSelectObject: (id: string) => void;
+  selectAll: () => void;
+  duplicateSelected: () => void;
   updateObject: (id: string, updates: Partial<CadObject>) => void;
   deleteSelected: () => void;
   deleteObject: (id: string) => void;
   getSelected: () => CadObject | undefined;
   snapToGrid: (value: number) => number;
+  setCursorPosition: (pos: [number, number, number] | null) => void;
 
   // Feature tree actions
   addFeature: (node: Omit<FeatureNode, "children" | "expanded">) => void;
@@ -284,6 +290,9 @@ export const useCadStore = create<CadState>((set, get) => ({
   measurePoints: [],
   measureResult: null,
   measurements: [],
+
+  // Cursor position
+  cursorPosition: null,
 
   // Command
   commandHistory: [],
@@ -487,6 +496,44 @@ export const useCadStore = create<CadState>((set, get) => ({
       return { selectedIds: ids, selectedId: ids.length > 0 ? ids[ids.length - 1] : null };
     });
   },
+
+  selectAll: () => {
+    const { objects } = get();
+    const ids = objects.filter((o) => o.visible !== false).map((o) => o.id);
+    set({ selectedIds: ids, selectedId: ids.length > 0 ? ids[ids.length - 1] : null });
+  },
+
+  duplicateSelected: () => {
+    const { selectedId, selectedIds, objects } = get();
+    const idsTodup = selectedIds.length > 0 ? selectedIds : selectedId ? [selectedId] : [];
+    if (idsTodup.length === 0) return;
+    get().pushHistory();
+    const newIds: string[] = [];
+    idsTodup.forEach((id) => {
+      const obj = objects.find((o) => o.id === id);
+      if (!obj) return;
+      const newId = `obj_${++idCounter}_${Date.now()}`;
+      const newObj: CadObject = {
+        ...JSON.parse(JSON.stringify(obj)),
+        id: newId,
+        name: `${obj.name} (Copy)`,
+        position: [obj.position[0] + 0.5, obj.position[1], obj.position[2] + 0.5],
+      };
+      set((s) => ({ objects: [...s.objects, newObj] }));
+      get().addFeature({
+        id: `feat_${newId}`,
+        type: newObj.type,
+        name: newObj.name,
+        objectId: newId,
+        visible: true,
+        locked: false,
+      });
+      newIds.push(newId);
+    });
+    set({ selectedIds: newIds, selectedId: newIds.length > 0 ? newIds[newIds.length - 1] : null });
+  },
+
+  setCursorPosition: (pos) => set({ cursorPosition: pos }),
 
   addObject: (type) => {
     get().pushHistory();

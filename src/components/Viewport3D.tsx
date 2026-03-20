@@ -22,6 +22,7 @@ import DimensionOverlay from "@/components/cad/DimensionOverlay";
 import MeasurementTool from "@/components/cad/MeasurementTool";
 import ConstraintIndicators from "@/components/cad/ConstraintIndicators";
 import SmartDimensions from "@/components/cad/SmartDimensions";
+import ViewportContextMenu from "@/components/cad/ViewportContextMenu";
 
 const SKETCH_TOOLS: ToolId[] = ["line", "arc", "circle", "rectangle", "polygon", "spline", "ellipse", "construction_line"];
 const SKETCH_Y = 0.02;
@@ -41,6 +42,7 @@ function CadMesh({ obj }: { obj: CadObject }) {
   const toggleSelectObject = useCadStore((s) => s.toggleSelectObject);
   const activeTool = useCadStore((s) => s.activeTool);
   const isSelected = selectedId === obj.id || selectedIds.includes(obj.id);
+  const [hovered, setHovered] = useState(false);
 
   if (obj.visible === false) return null;
 
@@ -91,6 +93,8 @@ function CadMesh({ obj }: { obj: CadObject }) {
       rotation={obj.rotation}
       scale={obj.scale}
       onClick={handleClick}
+      onPointerEnter={(e) => { e.stopPropagation(); setHovered(true); }}
+      onPointerLeave={() => setHovered(false)}
       userData={{ cadId: obj.id }}
     >
       {geometry}
@@ -100,8 +104,8 @@ function CadMesh({ obj }: { obj: CadObject }) {
         roughness={obj.roughness ?? 0.5}
         opacity={obj.opacity ?? 1}
         transparent={(obj.opacity ?? 1) < 1}
-        emissive={isSelected ? "#00D4FF" : "#000000"}
-        emissiveIntensity={isSelected ? 0.15 : 0}
+        emissive={isSelected ? "#00D4FF" : hovered ? "#4a7aff" : "#000000"}
+        emissiveIntensity={isSelected ? 0.15 : hovered ? 0.08 : 0}
       />
       {isSelected && (
         <lineSegments>
@@ -722,6 +726,9 @@ function KeyboardHandler() {
   const setCameraView = useCadStore((s) => s.setCameraView);
   const setPerspectiveMode = useCadStore((s) => s.setPerspectiveMode);
   const perspectiveMode = useCadStore((s) => s.perspectiveMode);
+  const selectAll = useCadStore((s) => s.selectAll);
+  const duplicateSelected = useCadStore((s) => s.duplicateSelected);
+  const selectObject = useCadStore((s) => s.selectObject);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -741,6 +748,16 @@ function KeyboardHandler() {
       if ((e.ctrlKey || e.metaKey) && e.key === "y") {
         e.preventDefault();
         redo();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === "a") {
+        e.preventDefault();
+        selectAll();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === "d") {
+        e.preventDefault();
+        duplicateSelected();
         return;
       }
 
@@ -763,6 +780,7 @@ function KeyboardHandler() {
           break;
         case "Escape":
           setActiveTool("select");
+          selectObject(null);
           break;
         case "l":
           setActiveTool("line");
@@ -777,7 +795,7 @@ function KeyboardHandler() {
           setActiveTool("measure");
           break;
         case "d":
-          setShowDimensions(!showDimensions);
+          if (!e.ctrlKey && !e.metaKey) setShowDimensions(!showDimensions);
           break;
         case "f":
           setCameraView("iso");
@@ -798,7 +816,7 @@ function KeyboardHandler() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [deleteSelected, setTransformMode, setActiveTool, undo, redo, setSnapGrid, snapGrid, showDimensions, setShowDimensions, setCameraView, setPerspectiveMode, perspectiveMode]);
+  }, [deleteSelected, setTransformMode, setActiveTool, undo, redo, setSnapGrid, snapGrid, showDimensions, setShowDimensions, setCameraView, setPerspectiveMode, perspectiveMode, selectAll, duplicateSelected, selectObject]);
 
   return null;
 }
@@ -901,6 +919,36 @@ function SketchPlaneIndicator() {
   );
 }
 
+/* ── Cursor position tracker ── */
+function CursorTracker() {
+  const setCursorPosition = useCadStore((s) => s.setCursorPosition);
+  const { raycaster, camera, gl } = useThree();
+  const groundRef = useRef<THREE.Mesh>(null);
+
+  useFrame(() => {
+    if (!groundRef.current) return;
+    const intersects = raycaster.intersectObject(groundRef.current);
+    if (intersects.length > 0) {
+      const p = intersects[0].point;
+      setCursorPosition([
+        Math.round(p.x * 100) / 100,
+        Math.round(p.y * 100) / 100,
+        Math.round(p.z * 100) / 100,
+      ]);
+    }
+  });
+
+  void camera;
+  void gl;
+
+  return (
+    <mesh ref={groundRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} visible={false}>
+      <planeGeometry args={[1000, 1000]} />
+      <meshBasicMaterial transparent opacity={0} />
+    </mesh>
+  );
+}
+
 /* ── Background gradient ── */
 function GradientBackground() {
   const { scene } = useThree();
@@ -939,9 +987,22 @@ export default function Viewport3D({ mode }: Viewport3DProps) {
   const showOrigin = useCadStore((s) => s.showOrigin);
   const sketchPlane = useCadStore((s) => s.sketchPlane);
   const isSketchMode = SKETCH_TOOLS.includes(activeTool);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY });
+  }, []);
 
   return (
-    <div className="w-full h-full">
+    <div className="w-full h-full relative" onContextMenu={handleContextMenu}>
+      {contextMenu && (
+        <ViewportContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
       <Canvas
         camera={{ position: [5, 5, 5], fov: 50, near: 0.1, far: 1000 }}
         gl={{ antialias: true, alpha: false, preserveDrawingBuffer: true }}
@@ -1017,9 +1078,11 @@ export default function Viewport3D({ mode }: Viewport3DProps) {
         </GizmoHelper>
 
         <CameraController />
+        <CursorTracker />
         <Environment preset="city" />
         <KeyboardHandler />
       </Canvas>
     </div>
   );
 }
+
