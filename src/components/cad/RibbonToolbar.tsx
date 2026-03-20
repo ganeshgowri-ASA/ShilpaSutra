@@ -5,6 +5,7 @@ import {
   type RibbonTab,
   type ToolId,
 } from "@/stores/cad-store";
+import { useRouter } from "next/navigation";
 import {
   MousePointer2, Pencil, Square, Circle, Spline, Triangle,
   Ruler, Lock, Box, Cylinder, RotateCw, Layers,
@@ -15,6 +16,7 @@ import {
   MonitorSmartphone, Maximize2, Sun, Moon, Grid2X2, Axis3D,
   MessageSquare, Wand2, Zap, HelpCircle,
   Undo2, Redo2, ChevronDown, ChevronUp,
+  Activity, Wind,
 } from "lucide-react";
 
 interface ToolButton {
@@ -80,6 +82,8 @@ const aiTools: ToolButton[] = [
   { id: "ai_suggest", icon: <Wand2 size={ICON_SIZE} />, label: "Suggest Fix" },
   { id: "ai_optimize", icon: <Zap size={ICON_SIZE} />, label: "Optimize" },
   { id: "ai_explain", icon: <HelpCircle size={ICON_SIZE} />, label: "Explain" },
+  { id: "ai_fea", icon: <Activity size={ICON_SIZE} />, label: "Analyze Stress" },
+  { id: "ai_cfd", icon: <Wind size={ICON_SIZE} />, label: "Analyze Flow" },
 ];
 
 const tabs: { id: RibbonTab; label: string }[] = [
@@ -118,6 +122,7 @@ interface RibbonToolbarProps {
 }
 
 export default function RibbonToolbar({ onExtrude, onRevolve }: RibbonToolbarProps) {
+  const router = useRouter();
   const activeTab = useCadStore((s) => s.activeRibbonTab);
   const setActiveTab = useCadStore((s) => s.setActiveRibbonTab);
   const collapsed = useCadStore((s) => s.ribbonCollapsed);
@@ -152,6 +157,14 @@ export default function RibbonToolbar({ onExtrude, onRevolve }: RibbonToolbarPro
         return;
       }
       // Extrude/Revolve: open dialog
+      if (id === "ai_fea") {
+        router.push("/simulator?auto=true");
+        return;
+      }
+      if (id === "ai_cfd") {
+        router.push("/cfd?auto=true");
+        return;
+      }
       if (id === "extrude") {
         onExtrude?.();
         return;
