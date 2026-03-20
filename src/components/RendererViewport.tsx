@@ -8,7 +8,6 @@ import {
   GizmoHelper,
   GizmoViewport,
 } from "@react-three/drei";
-import { EffectComposer, SSAO } from "@react-three/postprocessing";
 import * as THREE from "three";
 import type { CadObject } from "@/stores/cad-store";
 
@@ -288,17 +287,6 @@ export default function RendererViewport({
             blur={2.5}
             far={4}
           />
-        )}
-
-        {ssaoEnabled && (
-          <EffectComposer>
-            <SSAO
-              radius={0.1}
-              intensity={30}
-              luminanceInfluence={0.6}
-              color={new THREE.Color("black")}
-            />
-          </EffectComposer>
         )}
 
         <OrbitControls
