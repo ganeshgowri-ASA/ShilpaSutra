@@ -13,6 +13,7 @@ interface Generation {
   vertices?: number;
   faces?: number;
   model?: string;
+  dims?: ParsedDimensions | null;
 }
 
 interface PromptTemplate {
@@ -41,8 +42,51 @@ const promptTemplates: PromptTemplate[] = [
   { label: "Custom", prompt: "", category: "Custom" },
 ];
 
+// --- Dimension parser ---
+interface ParsedDimensions {
+  width: number;
+  height: number;
+  depth: number;
+  unit: string;
+}
+
+function parseDimensions(text: string): ParsedDimensions | null {
+  // Match patterns like "200mm x 100mm x 50mm", "200 x 100 x 50mm", "200×100×50 mm"
+  const pattern =
+    /(\d+(?:\.\d+)?)\s*(mm|cm|m|in|")?\s*[x×*]\s*(\d+(?:\.\d+)?)\s*(mm|cm|m|in|")?\s*[x×*]\s*(\d+(?:\.\d+)?)\s*(mm|cm|m|in|")?/i;
+  const match = text.match(pattern);
+  if (!match) return null;
+
+  const unit = (match[2] || match[4] || match[6] || "mm").toLowerCase();
+  const toScale = (v: number, u: string): number => {
+    // normalise all units to mm then divide by 100 so 100mm = 1 Three.js unit
+    let mm = v;
+    if (u === "cm") mm = v * 10;
+    else if (u === "m") mm = v * 1000;
+    else if (u === "in" || u === '"') mm = v * 25.4;
+    return mm / 100;
+  };
+
+  return {
+    width: toScale(parseFloat(match[1]), unit),
+    height: toScale(parseFloat(match[3]), unit),
+    depth: toScale(parseFloat(match[5]), unit),
+    unit,
+  };
+}
+
 // --- 3D Preview geometry ---
-function GeneratedPreview({ shape }: { shape: string }) {
+function GeneratedPreview({ shape, dims }: { shape: string; dims?: ParsedDimensions | null }) {
+  // Parsed dimensions → exact BoxGeometry
+  if (dims) {
+    return (
+      <mesh>
+        <boxGeometry args={[dims.width, dims.height, dims.depth]} />
+        <meshStandardMaterial color="#00D4FF" metalness={0.3} roughness={0.5} transparent opacity={0.9} />
+      </mesh>
+    );
+  }
+
   if (shape === "bracket") {
     return (
       <group>
@@ -87,13 +131,13 @@ function GeneratedPreview({ shape }: { shape: string }) {
   );
 }
 
-function PreviewCanvas({ shape }: { shape: string }) {
+function PreviewCanvas({ shape, dims }: { shape: string; dims?: ParsedDimensions | null }) {
   return (
     <Canvas camera={{ position: [2, 1.5, 2], fov: 40 }}>
       <ambientLight intensity={0.4} />
       <directionalLight position={[3, 4, 2]} intensity={1} />
       <directionalLight position={[-2, 2, -1]} intensity={0.3} />
-      <GeneratedPreview shape={shape} />
+      <GeneratedPreview shape={shape} dims={dims} />
       <OrbitControls enablePan={false} autoRotate autoRotateSpeed={2} />
       <gridHelper args={[4, 20, "#21262d", "#21262d"]} />
     </Canvas>
@@ -134,12 +178,14 @@ export default function TextToCADPage() {
 
   const generate = useCallback(() => {
     if (!prompt.trim()) return;
+    const parsedDims = parseDimensions(prompt);
     const newGen: Generation = {
       id: `g${Date.now()}`,
       prompt,
       status: "generating",
       format: selectedFormat,
       model: selectedModel,
+      dims: parsedDims,
     };
     setGenerations((prev) => [newGen, ...prev]);
     setActiveGen(newGen.id);
@@ -361,7 +407,7 @@ export default function TextToCADPage() {
                     </div>
                   }
                 >
-                  <PreviewCanvas shape={getPreviewShape(activeGeneration.prompt)} />
+                  <PreviewCanvas shape={getPreviewShape(activeGeneration.prompt)} dims={activeGeneration.dims} />
                 </Suspense>
                 {/* Overlay info */}
                 <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between">
@@ -403,28 +449,53 @@ export default function TextToCADPage() {
           {activeGeneration && activeGeneration.status === "complete" && (
             <div className="h-28 bg-[#161b22] border-t border-[#21262d] flex-shrink-0 overflow-x-auto">
               <div className="px-4 py-2">
-                <div className="text-[10px] font-bold text-slate-400 mb-2">Generated Parameters</div>
+                <div className="text-[10px] font-bold text-slate-400 mb-2">
+                  Generated Parameters
+                  {activeGeneration.dims && (
+                    <span className="ml-2 text-[#00D4FF] font-normal">
+                      (parsed from prompt · {activeGeneration.dims.unit})
+                    </span>
+                  )}
+                </div>
                 <div className="flex gap-4">
-                  {[
-                    { label: "Width", value: "50.0", unit: "mm" },
-                    { label: "Height", value: "30.0", unit: "mm" },
-                    { label: "Thickness", value: "3.0", unit: "mm" },
-                    { label: "Holes", value: "2", unit: "" },
-                    { label: "Hole Dia", value: "8.5", unit: "mm" },
-                    { label: "Fillet Rad", value: "2.0", unit: "mm" },
-                  ].map((p) => (
-                    <div key={p.label} className="min-w-[80px]">
-                      <div className="text-[9px] text-slate-500">{p.label}</div>
-                      <div className="flex items-baseline gap-0.5 mt-0.5">
-                        <input
-                          type="number"
-                          defaultValue={p.value}
-                          className="w-14 bg-[#0d1117] border border-[#21262d] rounded px-1.5 py-0.5 text-xs text-white outline-none focus:border-[#00D4FF]"
-                        />
-                        {p.unit && <span className="text-[9px] text-slate-600">{p.unit}</span>}
-                      </div>
-                    </div>
-                  ))}
+                  {activeGeneration.dims
+                    ? [
+                        { label: "Width", value: (activeGeneration.dims.width * 100).toFixed(1), unit: activeGeneration.dims.unit },
+                        { label: "Height", value: (activeGeneration.dims.height * 100).toFixed(1), unit: activeGeneration.dims.unit },
+                        { label: "Depth", value: (activeGeneration.dims.depth * 100).toFixed(1), unit: activeGeneration.dims.unit },
+                      ].map((p) => (
+                        <div key={p.label} className="min-w-[80px]">
+                          <div className="text-[9px] text-slate-500">{p.label}</div>
+                          <div className="flex items-baseline gap-0.5 mt-0.5">
+                            <input
+                              type="number"
+                              defaultValue={p.value}
+                              className="w-14 bg-[#0d1117] border border-[#21262d] rounded px-1.5 py-0.5 text-xs text-white outline-none focus:border-[#00D4FF]"
+                            />
+                            <span className="text-[9px] text-slate-600">{p.unit}</span>
+                          </div>
+                        </div>
+                      ))
+                    : [
+                        { label: "Width", value: "50.0", unit: "mm" },
+                        { label: "Height", value: "30.0", unit: "mm" },
+                        { label: "Thickness", value: "3.0", unit: "mm" },
+                        { label: "Holes", value: "2", unit: "" },
+                        { label: "Hole Dia", value: "8.5", unit: "mm" },
+                        { label: "Fillet Rad", value: "2.0", unit: "mm" },
+                      ].map((p) => (
+                        <div key={p.label} className="min-w-[80px]">
+                          <div className="text-[9px] text-slate-500">{p.label}</div>
+                          <div className="flex items-baseline gap-0.5 mt-0.5">
+                            <input
+                              type="number"
+                              defaultValue={p.value}
+                              className="w-14 bg-[#0d1117] border border-[#21262d] rounded px-1.5 py-0.5 text-xs text-white outline-none focus:border-[#00D4FF]"
+                            />
+                            {p.unit && <span className="text-[9px] text-slate-600">{p.unit}</span>}
+                          </div>
+                        </div>
+                      ))}
                 </div>
               </div>
             </div>
