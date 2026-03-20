@@ -1,5 +1,6 @@
 "use client";
 import { useState, useCallback, useRef } from "react";
+import { useCadStore } from "@/stores/cad-store";
 
 /* ── Types ── */
 type FileFormat = "STEP" | "STL" | "OBJ" | "IGES" | "glTF" | "FBX" | "PLY" | "Unknown";
@@ -51,6 +52,45 @@ const formatColors: Record<FileFormat, string> = {
 };
 
 const exportFormats: FileFormat[] = ["STEP", "STL", "OBJ", "IGES", "glTF", "FBX", "PLY"];
+
+/* ── DXF generation ── */
+function generateDxf(objects: import("@/stores/cad-store").CadObject[]): string {
+  const sketchTypes = ["line", "arc", "circle", "rectangle"];
+  const entities = objects.filter((o) => sketchTypes.includes(o.type));
+
+  const lines: string[] = [];
+
+  // DXF header
+  lines.push("0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n0\nENDSEC");
+
+  // ENTITIES section
+  lines.push("0\nSECTION\n2\nENTITIES");
+
+  for (const obj of entities) {
+    if (obj.type === "line" && obj.linePoints && obj.linePoints.length >= 2) {
+      const [x1, , z1] = obj.linePoints[0];
+      const [x2, , z2] = obj.linePoints[1];
+      lines.push(`0\nLINE\n8\n0\n10\n${x1}\n20\n${z1}\n30\n0.0\n11\n${x2}\n21\n${z2}\n31\n0.0`);
+    } else if (obj.type === "circle" && obj.circleCenter && obj.circleRadius) {
+      const [cx, , cz] = obj.circleCenter;
+      lines.push(`0\nCIRCLE\n8\n0\n10\n${cx}\n20\n${cz}\n30\n0.0\n40\n${obj.circleRadius}`);
+    } else if (obj.type === "arc" && obj.arcPoints && obj.arcPoints.length >= 3) {
+      const [cx, , cz] = obj.arcPoints[0];
+      const r = obj.arcRadius || 1;
+      lines.push(`0\nARC\n8\n0\n10\n${cx}\n20\n${cz}\n30\n0.0\n40\n${r}\n50\n0.0\n51\n180.0`);
+    } else if (obj.type === "rectangle" && obj.rectCorners) {
+      const [[x1, , z1], [x2, , z2]] = obj.rectCorners;
+      // Rectangle as 4 lines
+      lines.push(`0\nLINE\n8\n0\n10\n${x1}\n20\n${z1}\n30\n0.0\n11\n${x2}\n21\n${z1}\n31\n0.0`);
+      lines.push(`0\nLINE\n8\n0\n10\n${x2}\n20\n${z1}\n30\n0.0\n11\n${x2}\n21\n${z2}\n31\n0.0`);
+      lines.push(`0\nLINE\n8\n0\n10\n${x2}\n20\n${z2}\n30\n0.0\n11\n${x1}\n21\n${z2}\n31\n0.0`);
+      lines.push(`0\nLINE\n8\n0\n10\n${x1}\n20\n${z2}\n30\n0.0\n11\n${x1}\n21\n${z1}\n31\n0.0`);
+    }
+  }
+
+  lines.push("0\nENDSEC\n0\nEOF");
+  return lines.join("\n");
+}
 const unitSystems: UnitSystem[] = ["mm", "cm", "m", "in"];
 
 const sampleFiles: ImportedFile[] = [
@@ -61,6 +101,7 @@ const sampleFiles: ImportedFile[] = [
 ];
 
 export default function ImportExportPage() {
+  const cadObjects = useCadStore((s) => s.objects);
   const [files, setFiles] = useState<ImportedFile[]>(sampleFiles);
   const [dragOver, setDragOver] = useState(false);
   const [showExport, setShowExport] = useState(false);
@@ -117,6 +158,17 @@ export default function ImportExportPage() {
     setShowExport(false);
   }, [exportOpts]);
 
+  const handleDxfExport = useCallback(() => {
+    const dxfContent = generateDxf(cadObjects);
+    const blob = new Blob([dxfContent], { type: "application/dxf" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `sketch_export_${Date.now()}.dxf`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [cadObjects]);
+
   return (
     <div className="flex flex-col h-full bg-[#0a0a0f] text-white">
       {/* Header */}
@@ -125,12 +177,21 @@ export default function ImportExportPage() {
           <span className="text-[#00D4FF] font-bold text-sm">I/O</span>
           <span className="text-slate-400 text-xs">Import / Export File Hub</span>
         </div>
-        <button
-          onClick={() => setShowExport(true)}
-          className="px-3 py-1.5 bg-[#00D4FF]/10 text-[#00D4FF] text-xs rounded hover:bg-[#00D4FF]/20 transition-colors border border-[#00D4FF]/20"
-        >
-          Export Model
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleDxfExport}
+            className="px-3 py-1.5 bg-yellow-500/10 text-yellow-400 text-xs rounded hover:bg-yellow-500/20 transition-colors border border-yellow-500/20"
+            title="Export 2D sketch entities (lines, circles, arcs, rectangles) as DXF"
+          >
+            Export DXF
+          </button>
+          <button
+            onClick={() => setShowExport(true)}
+            className="px-3 py-1.5 bg-[#00D4FF]/10 text-[#00D4FF] text-xs rounded hover:bg-[#00D4FF]/20 transition-colors border border-[#00D4FF]/20"
+          >
+            Export Model
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-auto p-6">

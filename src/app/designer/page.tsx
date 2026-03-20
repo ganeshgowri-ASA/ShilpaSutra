@@ -82,7 +82,7 @@ export default function DesignerPage() {
   const [aiMode, setAiMode] = useState<"basic" | "zookeeper">("zookeeper");
 
   const sketchTools = ["line", "arc", "circle", "rectangle", "polygon", "spline", "ellipse", "construction_line"];
-  const isSketchMode = sketchTools.includes(activeTool);
+  const isSketchMode = sketchTools.includes(activeTool) || !!sketchPlane;
 
   const handleCloseOperation = useCallback(() => {
     setActiveOperation(null);

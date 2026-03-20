@@ -420,12 +420,26 @@ function GroundPlane() {
 /* ── Sketch drawing tools ── */
 function SketchDrawTools() {
   const activeTool = useCadStore((s) => s.activeTool);
+  const sketchPlane = useCadStore((s) => s.sketchPlane);
   const addLine = useCadStore((s) => s.addLine);
   const addArc = useCadStore((s) => s.addArc);
   const addCircle = useCadStore((s) => s.addCircle);
   const addRectangle = useCadStore((s) => s.addRectangle);
   const snapGrid = useCadStore((s) => s.snapGrid);
   const gridSize = useCadStore((s) => s.gridSize);
+  // Determine plane rotation and coordinate mapping based on sketchPlane
+  // xz: ground plane (default), xy: front plane, yz: side plane
+  const plane = sketchPlane || "xz";
+  const planeRotation: [number, number, number] = plane === "xz"
+    ? [-Math.PI / 2, 0, 0]
+    : plane === "xy"
+    ? [0, 0, 0]
+    : [0, Math.PI / 2, 0];
+  const planeOffset: [number, number, number] = plane === "xz"
+    ? [0, 0.01, 0]
+    : plane === "xy"
+    ? [0, 0, 0.01]
+    : [0.01, 0, 0];
 
   const [clickPoints, setClickPoints] = useState<[number, number, number][]>([]);
   const [previewPoint, setPreviewPoint] = useState<[number, number, number] | null>(null);
@@ -438,11 +452,13 @@ function SketchDrawTools() {
   if (!SKETCH_TOOLS.includes(activeTool)) return null;
 
   const getSnappedPoint = (point: THREE.Vector3): [number, number, number] => {
-    return [
-      snap(point.x, gridSize, snapGrid),
-      SKETCH_Y,
-      snap(point.z, gridSize, snapGrid),
-    ];
+    if (plane === "xy") {
+      return [snap(point.x, gridSize, snapGrid), snap(point.y, gridSize, snapGrid), 0.01];
+    } else if (plane === "yz") {
+      return [0.01, snap(point.y, gridSize, snapGrid), snap(point.z, gridSize, snapGrid)];
+    }
+    // xz (default)
+    return [snap(point.x, gridSize, snapGrid), SKETCH_Y, snap(point.z, gridSize, snapGrid)];
   };
 
   const handleClick = (e: ThreeEvent<MouseEvent>) => {
@@ -579,13 +595,20 @@ function SketchDrawTools() {
     if (activeTool === "rectangle") {
       const c1 = clickPoints[0];
       const c2 = previewPoint;
-      const pts: [number, number, number][] = [
-        [c1[0], SKETCH_Y, c1[2]],
-        [c2[0], SKETCH_Y, c1[2]],
-        [c2[0], SKETCH_Y, c2[2]],
-        [c1[0], SKETCH_Y, c2[2]],
-        [c1[0], SKETCH_Y, c1[2]],
-      ];
+      const pts: [number, number, number][] = plane === "xy"
+        ? [
+            [c1[0], c1[1], 0.01], [c2[0], c1[1], 0.01],
+            [c2[0], c2[1], 0.01], [c1[0], c2[1], 0.01], [c1[0], c1[1], 0.01],
+          ]
+        : plane === "yz"
+        ? [
+            [0.01, c1[1], c1[2]], [0.01, c1[1], c2[2]],
+            [0.01, c2[1], c2[2]], [0.01, c2[1], c1[2]], [0.01, c1[1], c1[2]],
+          ]
+        : [
+            [c1[0], SKETCH_Y, c1[2]], [c2[0], SKETCH_Y, c1[2]],
+            [c2[0], SKETCH_Y, c2[2]], [c1[0], SKETCH_Y, c2[2]], [c1[0], SKETCH_Y, c1[2]],
+          ];
       return (
         <Line points={pts} color="#ffaa00" lineWidth={2} dashed dashSize={0.15} gapSize={0.1} />
       );
@@ -597,8 +620,8 @@ function SketchDrawTools() {
   return (
     <>
       <mesh
-        rotation={[-Math.PI / 2, 0, 0]}
-        position={[0, 0.01, 0]}
+        rotation={planeRotation}
+        position={planeOffset}
         onClick={handleClick}
         onPointerMove={handleMove}
         visible={false}
@@ -833,19 +856,48 @@ function computeArcThrough3Points(
 /* ── Sketch plane indicator ── */
 function SketchPlaneIndicator() {
   const activeTool = useCadStore((s) => s.activeTool);
+  const sketchPlane = useCadStore((s) => s.sketchPlane);
 
-  if (!SKETCH_TOOLS.includes(activeTool)) return null;
+  if (!SKETCH_TOOLS.includes(activeTool) && !sketchPlane) return null;
+
+  const plane = sketchPlane || "xz";
+  const rotation: [number, number, number] = plane === "xz"
+    ? [-Math.PI / 2, 0, 0]
+    : plane === "xy"
+    ? [0, 0, 0]
+    : [0, Math.PI / 2, 0];
+  const position: [number, number, number] = plane === "xz"
+    ? [0, 0.005, 0]
+    : plane === "xy"
+    ? [0, 0, 0.005]
+    : [0.005, 0, 0];
 
   return (
-    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.005, 0]}>
-      <planeGeometry args={[20, 20]} />
-      <meshBasicMaterial
-        color="#00D4FF"
-        transparent
-        opacity={0.03}
-        side={THREE.DoubleSide}
-      />
-    </mesh>
+    <>
+      <mesh rotation={rotation} position={position}>
+        <planeGeometry args={[20, 20]} />
+        <meshBasicMaterial color="#00D4FF" transparent opacity={0.04} side={THREE.DoubleSide} />
+      </mesh>
+      {/* Grid lines on sketch plane */}
+      {[-10, -8, -6, -4, -2, 0, 2, 4, 6, 8, 10].map((i) => (
+        <group key={i}>
+          <Line
+            points={plane === "xz" ? [[i, 0.006, -10], [i, 0.006, 10]] as [number,number,number][] : plane === "xy" ? [[i, -10, 0.006], [i, 10, 0.006]] as [number,number,number][] : [[0.006, i, -10], [0.006, i, 10]] as [number,number,number][]}
+            color="#00D4FF"
+            lineWidth={0.4}
+            transparent
+            opacity={0.15}
+          />
+          <Line
+            points={plane === "xz" ? [[-10, 0.006, i], [10, 0.006, i]] as [number,number,number][] : plane === "xy" ? [[-10, i, 0.006], [10, i, 0.006]] as [number,number,number][] : [[0.006, -10, i], [0.006, 10, i]] as [number,number,number][]}
+            color="#00D4FF"
+            lineWidth={0.4}
+            transparent
+            opacity={0.15}
+          />
+        </group>
+      ))}
+    </>
   );
 }
 
