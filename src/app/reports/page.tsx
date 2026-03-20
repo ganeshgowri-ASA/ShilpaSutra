@@ -2,225 +2,159 @@
 import { useState, useMemo, useCallback } from "react";
 
 /* ── Types ── */
-interface MemberForce {
+interface ReportSection {
   id: string;
-  member: string;
-  node_i: string;
-  node_j: string;
-  axial_kN: number;
-  shear_y_kN: number;
-  shear_z_kN: number;
-  moment_y_kNm: number;
-  moment_z_kNm: number;
-  torsion_kNm: number;
+  title: string;
+  icon: string;
+  content: string;
+  editable: boolean;
 }
 
-interface Reaction {
-  id: string;
-  node: string;
-  fx_kN: number;
-  fy_kN: number;
-  fz_kN: number;
-  mx_kNm: number;
-  my_kNm: number;
-  mz_kNm: number;
+interface AnalysisResult {
+  label: string;
+  value: string;
+  unit: string;
+  status: "good" | "warning" | "critical";
 }
 
-interface Displacement {
+interface BOMItem {
   id: string;
-  node: string;
-  dx_mm: number;
-  dy_mm: number;
-  dz_mm: number;
-  rx_rad: number;
-  ry_rad: number;
-  rz_rad: number;
+  partName: string;
+  quantity: number;
+  material: string;
+  mass: number;
+  cost: number;
 }
 
-interface CodeCheckResult {
-  id: string;
-  member: string;
-  section: string;
-  code: string;
-  ratio: number;
-  status: "PASS" | "FAIL" | "WARNING";
-  clause: string;
-  govCase: string;
-}
+type ReportTemplate = "engineering" | "design-review" | "test-report" | "quotation";
+type SortDir = "asc" | "desc";
 
-interface SafetyFactor {
-  id: string;
-  member: string;
-  loadCase: string;
-  yieldSF: number;
-  bucklingSF: number;
-  combinedSF: number;
-  govMode: string;
-}
-
-/* ── Sample Data Generators ── */
-function generateMemberForces(): MemberForce[] {
-  const members: MemberForce[] = [];
-  const memberNames = [
-    "BEAM-1", "BEAM-2", "BEAM-3", "COL-1", "COL-2", "COL-3", "COL-4",
-    "BRC-1", "BRC-2", "RAFTER-1", "RAFTER-2", "TIE-1", "PURLIN-1", "PURLIN-2",
+/* ── Sample Data ── */
+function generateFEAResults(): AnalysisResult[] {
+  return [
+    { label: "Max Von Mises Stress", value: "187.4", unit: "MPa", status: "good" },
+    { label: "Max Displacement", value: "0.342", unit: "mm", status: "good" },
+    { label: "Min Safety Factor", value: "1.82", unit: "", status: "warning" },
+    { label: "Total Strain Energy", value: "12.67", unit: "J", status: "good" },
+    { label: "Max Principal Stress", value: "201.3", unit: "MPa", status: "warning" },
+    { label: "Yield Utilization", value: "68.4", unit: "%", status: "good" },
   ];
-  for (let i = 0; i < memberNames.length; i++) {
-    members.push({
-      id: `mf-${i}`,
-      member: memberNames[i],
-      node_i: `N${i * 2 + 1}`,
-      node_j: `N${i * 2 + 2}`,
-      axial_kN: +(Math.random() * 200 - 100).toFixed(2),
-      shear_y_kN: +(Math.random() * 80 - 40).toFixed(2),
-      shear_z_kN: +(Math.random() * 60 - 30).toFixed(2),
-      moment_y_kNm: +(Math.random() * 120 - 60).toFixed(2),
-      moment_z_kNm: +(Math.random() * 150 - 75).toFixed(2),
-      torsion_kNm: +(Math.random() * 10 - 5).toFixed(2),
-    });
-  }
-  return members;
 }
 
-function generateReactions(): Reaction[] {
-  const nodes = ["N1", "N3", "N5", "N7"];
-  return nodes.map((node, i) => ({
-    id: `r-${i}`,
-    node,
-    fx_kN: +(Math.random() * 40 - 20).toFixed(2),
-    fy_kN: +(50 + Math.random() * 150).toFixed(2),
-    fz_kN: +(Math.random() * 30 - 15).toFixed(2),
-    mx_kNm: +(Math.random() * 20 - 10).toFixed(2),
-    my_kNm: +(Math.random() * 15 - 7.5).toFixed(2),
-    mz_kNm: +(Math.random() * 25 - 12.5).toFixed(2),
-  }));
-}
-
-function generateDisplacements(): Displacement[] {
-  const disps: Displacement[] = [];
-  for (let i = 1; i <= 12; i++) {
-    disps.push({
-      id: `d-${i}`,
-      node: `N${i}`,
-      dx_mm: +(Math.random() * 4 - 2).toFixed(3),
-      dy_mm: +(Math.random() * 8 - 4).toFixed(3),
-      dz_mm: +(Math.random() * 3 - 1.5).toFixed(3),
-      rx_rad: +(Math.random() * 0.01 - 0.005).toFixed(5),
-      ry_rad: +(Math.random() * 0.008 - 0.004).toFixed(5),
-      rz_rad: +(Math.random() * 0.012 - 0.006).toFixed(5),
-    });
-  }
-  return disps;
-}
-
-function generateCodeChecks(): CodeCheckResult[] {
-  const members = [
-    "BEAM-1", "BEAM-2", "BEAM-3", "COL-1", "COL-2", "COL-3", "COL-4",
-    "BRC-1", "BRC-2", "RAFTER-1", "RAFTER-2",
+function generateCFDResults(): AnalysisResult[] {
+  return [
+    { label: "Max Temperature", value: "94.2", unit: "\u00B0C", status: "warning" },
+    { label: "Min Temperature", value: "22.1", unit: "\u00B0C", status: "good" },
+    { label: "Avg Temperature", value: "58.3", unit: "\u00B0C", status: "good" },
+    { label: "Max Velocity", value: "3.42", unit: "m/s", status: "good" },
+    { label: "Drag Coefficient", value: "0.82", unit: "", status: "good" },
+    { label: "Heat Transfer Rate", value: "245.8", unit: "W", status: "good" },
   ];
-  const sections = ["ISMB 250", "ISMB 300", "ISHB 200", "ISA 100x100x10", "ISMC 200", "W12x26", "W10x33", "HEB 200", "IPE 240", "UB 254x146x37", "HEA 180"];
-  const codes = ["IS 800:2007", "AISC 360-16", "EN 1993-1-1"];
-  const clauses = ["Cl.8.2.1", "Cl.9.3.2", "Sec.E3", "Sec.H1", "Cl.6.3.1", "Cl.6.2.6"];
-  return members.map((m, i) => {
-    const ratio = +(Math.random() * 1.2).toFixed(3);
-    return {
-      id: `cc-${i}`,
-      member: m,
-      section: sections[i % sections.length],
-      code: codes[i % codes.length],
-      ratio,
-      status: ratio > 1.0 ? "FAIL" : ratio > 0.85 ? "WARNING" : "PASS",
-      clause: clauses[i % clauses.length],
-      govCase: `LC${1 + Math.floor(Math.random() * 5)}`,
-    };
-  });
 }
 
-function generateSafetyFactors(): SafetyFactor[] {
-  const members = ["BEAM-1", "BEAM-2", "COL-1", "COL-2", "COL-3", "BRC-1", "RAFTER-1", "RAFTER-2"];
-  const modes = ["Yielding", "Lateral Torsional Buckling", "Local Buckling", "Flexural Buckling", "Combined Bending + Axial"];
-  return members.map((m, i) => {
-    const ysf = +(1.2 + Math.random() * 3).toFixed(2);
-    const bsf = +(1.0 + Math.random() * 4).toFixed(2);
-    return {
-      id: `sf-${i}`,
-      member: m,
-      loadCase: `LC${1 + Math.floor(Math.random() * 4)}`,
-      yieldSF: ysf,
-      bucklingSF: bsf,
-      combinedSF: +Math.min(ysf, bsf).toFixed(2),
-      govMode: modes[i % modes.length],
-    };
-  });
+function generateBOM(): BOMItem[] {
+  return [
+    { id: "b1", partName: "Base Plate", quantity: 1, material: "Al 6061-T6", mass: 2.1, cost: 45.00 },
+    { id: "b2", partName: "Bracket Left", quantity: 1, material: "Steel AISI 304", mass: 1.4, cost: 32.00 },
+    { id: "b3", partName: "Bracket Right", quantity: 1, material: "Steel AISI 304", mass: 1.4, cost: 32.00 },
+    { id: "b4", partName: "Shaft", quantity: 1, material: "Steel AISI 304", mass: 0.8, cost: 18.50 },
+    { id: "b5", partName: "Motor Mount", quantity: 1, material: "Al 6061-T6", mass: 0.9, cost: 28.00 },
+    { id: "b6", partName: "M8 Hex Bolt", quantity: 12, material: "Grade 8.8", mass: 0.04, cost: 0.85 },
+    { id: "b7", partName: "M8 Nut", quantity: 12, material: "Grade 8", mass: 0.02, cost: 0.35 },
+    { id: "b8", partName: "M8 Washer", quantity: 24, material: "Steel", mass: 0.01, cost: 0.15 },
+    { id: "b9", partName: "Bearing 6205", quantity: 2, material: "Chrome Steel", mass: 0.12, cost: 8.50 },
+    { id: "b10", partName: "Retaining Ring", quantity: 2, material: "Spring Steel", mass: 0.005, cost: 1.20 },
+  ];
 }
+
+const convergenceData = Array.from({ length: 50 }, (_, i) => ({
+  iteration: i + 1,
+  residual: Math.exp(-0.08 * i) * (0.8 + Math.random() * 0.4),
+}));
+
+const stressDistribution = Array.from({ length: 20 }, (_, i) => ({
+  range: `${i * 10}-${(i + 1) * 10}`,
+  count: Math.floor(Math.random() * 40 + 5) * (i < 15 ? 1 : 0.3),
+}));
+
+const defaultSections: ReportSection[] = [
+  { id: "summary", title: "1. Project Summary", icon: "S", content: "This report presents the engineering analysis results for the Bracket Assembly (SS-BRK-001). The assembly consists of a base plate, two support brackets, a shaft, and motor mount. The design is intended for moderate load applications in industrial automation equipment.", editable: true },
+  { id: "specs", title: "2. Design Specifications", icon: "D", content: "Overall dimensions: 400mm x 300mm x 250mm\nTotal mass: 6.74 kg\nPrimary material: Aluminum 6061-T6 (base, motor mount)\nSecondary material: Steel AISI 304 (brackets, shaft)\nDesign life: 10,000 hours\nOperating temperature: -20\u00B0C to 85\u00B0C\nMax operating load: 5 kN", editable: true },
+  { id: "fea", title: "3. FEA Analysis Results", icon: "F", content: "Static structural analysis was performed using linear elastic FEM with tetrahedral elements. A total of 24,000 nodes and 18,500 elements were used. Loading: 1000N downward force on top face, fixed support on bottom face. Material: Steel AISI 1045.", editable: true },
+  { id: "cfd", title: "4. CFD Analysis Results", icon: "T", content: "Conjugate heat transfer analysis was performed using the k-epsilon turbulence model. Inlet velocity: 1.5 m/s air flow. Heat source: 50W on motor mount surface. Ambient temperature: 22\u00B0C.", editable: true },
+  { id: "bom", title: "5. Bill of Materials", icon: "B", content: "", editable: false },
+  { id: "drawings", title: "6. Drawing References", icon: "R", content: "Sheet 1: General Assembly (SS-BRK-001-GA)\nSheet 2: Section Views (SS-BRK-001-SEC)\nSheet 3: Detail Views (SS-BRK-001-DET)\n\nAll drawings conform to ISO 128 / ASME Y14.5 standards.", editable: true },
+  { id: "conclusions", title: "7. Conclusions & Recommendations", icon: "C", content: "The bracket assembly meets all design requirements with a minimum safety factor of 1.82 (target: 1.5). Thermal analysis shows peak temperature of 94.2\u00B0C which is within the 85\u00B0C operating limit with forced convection. Recommendations:\n- Consider adding a thermal pad between motor mount and bracket for improved heat dissipation\n- Increase fillet radius at bracket-base junction from 2mm to 4mm to reduce stress concentration\n- Add locating pins for assembly repeatability", editable: true },
+];
+
+const reportTemplates: { id: ReportTemplate; label: string; desc: string }[] = [
+  { id: "engineering", label: "Engineering Report", desc: "Full analysis with FEA/CFD results" },
+  { id: "design-review", label: "Design Review", desc: "Summary for design review meetings" },
+  { id: "test-report", label: "Test Report", desc: "Test procedures and results" },
+  { id: "quotation", label: "Quotation", desc: "Cost estimation and BOM" },
+];
 
 /* ── PDF Export ── */
-function exportReportPDF() {
-  // Generate a printable HTML and trigger print dialog
+function exportReportPDF(sections: ReportSection[], feaResults: AnalysisResult[], cfdResults: AnalysisResult[], bom: BOMItem[]) {
   const printWindow = window.open("", "_blank");
-  if (!printWindow) {
-    alert("Please allow popups to export PDF.");
-    return;
-  }
-
-  const memberForces = generateMemberForces();
-  const reactions = generateReactions();
-  const displacements = generateDisplacements();
-  const codeChecks = generateCodeChecks();
-  const safetyFactors = generateSafetyFactors();
+  if (!printWindow) { alert("Please allow popups to export PDF."); return; }
 
   const html = `<!DOCTYPE html>
-<html><head><title>ShilpaSutra Structural Report</title>
+<html><head><title>ShilpaSutra Engineering Report</title>
 <style>
-  body { font-family: 'Courier New', monospace; font-size: 10px; padding: 20px; color: #000; background: #fff; }
-  h1 { text-align: center; font-size: 16px; border-bottom: 2px solid #000; padding-bottom: 8px; }
-  h2 { font-size: 13px; margin-top: 24px; border-bottom: 1px solid #666; padding-bottom: 4px; }
-  h3 { font-size: 11px; color: #333; }
-  table { width: 100%; border-collapse: collapse; margin: 8px 0 16px; font-size: 9px; }
-  th, td { border: 1px solid #999; padding: 3px 6px; text-align: right; }
-  th { background: #ddd; font-weight: bold; text-align: center; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 11px; padding: 40px; color: #000; background: #fff; max-width: 800px; margin: 0 auto; }
+  .cover { text-align: center; padding: 80px 0; border-bottom: 3px solid #e94560; margin-bottom: 30px; }
+  .cover h1 { font-size: 28px; color: #1a1a2e; margin: 0; }
+  .cover h2 { font-size: 18px; color: #e94560; margin: 8px 0; }
+  .cover .meta { color: #666; font-size: 12px; margin-top: 20px; }
+  h2 { font-size: 16px; color: #1a1a2e; border-bottom: 2px solid #e94560; padding-bottom: 4px; margin-top: 30px; }
+  h3 { font-size: 13px; color: #333; }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0 20px; font-size: 10px; }
+  th, td { border: 1px solid #ccc; padding: 5px 8px; text-align: right; }
+  th { background: #f0f0f0; font-weight: bold; text-align: center; }
   td:first-child, th:first-child { text-align: left; }
-  .pass { color: green; font-weight: bold; }
-  .fail { color: red; font-weight: bold; }
-  .warn { color: #b45309; font-weight: bold; }
-  .header-info { display: flex; justify-content: space-between; margin-bottom: 16px; font-size: 10px; }
-  .header-info div { flex: 1; }
-  @media print { body { margin: 0; } }
+  .good { color: #16a34a; } .warning { color: #d97706; } .critical { color: #dc2626; }
+  .toc { margin: 20px 0; } .toc a { text-decoration: none; color: #1a1a2e; }
+  .page-num { text-align: center; font-size: 9px; color: #999; margin-top: 40px; }
+  pre { white-space: pre-wrap; font-family: inherit; margin: 0; }
+  @media print { body { margin: 0; padding: 20px; } }
 </style></head><body>
-<h1>STRUCTURAL ANALYSIS REPORT</h1>
-<div class="header-info">
-  <div>Project: ShilpaSutra Demo<br/>Engineer: Auto-Generated<br/>Date: ${new Date().toLocaleDateString()}</div>
-  <div style="text-align:right">Software: ShilpaSutra v1.0<br/>Analysis Type: Linear Static<br/>Units: kN, m, C</div>
+<div class="cover">
+  <h1>ENGINEERING ANALYSIS REPORT</h1>
+  <h2>Bracket Assembly - SS-BRK-001</h2>
+  <div class="meta">
+    <p>Project: ShilpaSutra Demo | Author: ShilpaSutra AI</p>
+    <p>Date: ${new Date().toLocaleDateString()} | Rev: A</p>
+    <p>Software: ShilpaSutra CAD &amp; CFD Platform v2.0</p>
+  </div>
 </div>
-
-<h2>1. MEMBER FORCES SUMMARY</h2>
-<table><tr><th>Member</th><th>Node-i</th><th>Node-j</th><th>Axial (kN)</th><th>Shear-Y (kN)</th><th>Shear-Z (kN)</th><th>Moment-Y (kNm)</th><th>Moment-Z (kNm)</th><th>Torsion (kNm)</th></tr>
-${memberForces.map(m => `<tr><td>${m.member}</td><td>${m.node_i}</td><td>${m.node_j}</td><td>${m.axial_kN}</td><td>${m.shear_y_kN}</td><td>${m.shear_z_kN}</td><td>${m.moment_y_kNm}</td><td>${m.moment_z_kNm}</td><td>${m.torsion_kNm}</td></tr>`).join("")}
-</table>
-
-<h2>2. REACTIONS SUMMARY</h2>
-<table><tr><th>Node</th><th>Fx (kN)</th><th>Fy (kN)</th><th>Fz (kN)</th><th>Mx (kNm)</th><th>My (kNm)</th><th>Mz (kNm)</th></tr>
-${reactions.map(r => `<tr><td>${r.node}</td><td>${r.fx_kN}</td><td>${r.fy_kN}</td><td>${r.fz_kN}</td><td>${r.mx_kNm}</td><td>${r.my_kNm}</td><td>${r.mz_kNm}</td></tr>`).join("")}
-</table>
-
-<h2>3. DISPLACEMENT SUMMARY</h2>
-<table><tr><th>Node</th><th>dX (mm)</th><th>dY (mm)</th><th>dZ (mm)</th><th>rX (rad)</th><th>rY (rad)</th><th>rZ (rad)</th></tr>
-${displacements.map(d => `<tr><td>${d.node}</td><td>${d.dx_mm}</td><td>${d.dy_mm}</td><td>${d.dz_mm}</td><td>${d.rx_rad}</td><td>${d.ry_rad}</td><td>${d.rz_rad}</td></tr>`).join("")}
-</table>
-
-<h2>4. CODE CHECK RESULTS</h2>
-<table><tr><th>Member</th><th>Section</th><th>Code</th><th>Ratio</th><th>Status</th><th>Clause</th><th>Gov. Case</th></tr>
-${codeChecks.map(c => `<tr><td>${c.member}</td><td>${c.section}</td><td>${c.code}</td><td>${c.ratio}</td><td class="${c.status === "PASS" ? "pass" : c.status === "FAIL" ? "fail" : "warn"}">${c.status}</td><td>${c.clause}</td><td>${c.govCase}</td></tr>`).join("")}
-</table>
-
-<h2>5. SAFETY FACTORS</h2>
-<table><tr><th>Member</th><th>Load Case</th><th>Yield SF</th><th>Buckling SF</th><th>Combined SF</th><th>Governing Mode</th></tr>
-${safetyFactors.map(s => `<tr><td>${s.member}</td><td>${s.loadCase}</td><td>${s.yieldSF}</td><td>${s.bucklingSF}</td><td style="font-weight:bold;color:${s.combinedSF < 1.5 ? "red" : s.combinedSF < 2.0 ? "#b45309" : "green"}">${s.combinedSF}</td><td>${s.govMode}</td></tr>`).join("")}
-</table>
-
-<div style="margin-top:24px;border-top:1px solid #666;padding-top:8px;font-size:9px;color:#666;text-align:center">
-Generated by ShilpaSutra AI CAD &amp; CFD Platform | ${new Date().toISOString()}
+<div class="toc">
+  <h2>Table of Contents</h2>
+  ${sections.map((s, i) => `<div style="margin:4px 0"><a href="#">${s.title}</a></div>`).join("")}
 </div>
+${sections.map(s => {
+    let sectionHtml = `<h2>${s.title}</h2>`;
+    if (s.content) sectionHtml += `<pre>${s.content}</pre>`;
+    if (s.id === "fea") {
+      sectionHtml += `<h3>FEA Results Summary</h3><table><tr><th>Parameter</th><th>Value</th><th>Unit</th><th>Status</th></tr>`;
+      sectionHtml += feaResults.map(r => `<tr><td>${r.label}</td><td>${r.value}</td><td>${r.unit}</td><td class="${r.status}">${r.status.toUpperCase()}</td></tr>`).join("");
+      sectionHtml += `</table>`;
+    }
+    if (s.id === "cfd") {
+      sectionHtml += `<h3>CFD Results Summary</h3><table><tr><th>Parameter</th><th>Value</th><th>Unit</th><th>Status</th></tr>`;
+      sectionHtml += cfdResults.map(r => `<tr><td>${r.label}</td><td>${r.value}</td><td>${r.unit}</td><td class="${r.status}">${r.status.toUpperCase()}</td></tr>`).join("");
+      sectionHtml += `</table>`;
+    }
+    if (s.id === "bom") {
+      sectionHtml += `<table><tr><th>#</th><th>Part Name</th><th>Qty</th><th>Material</th><th>Mass (kg)</th><th>Unit Cost</th><th>Total</th></tr>`;
+      sectionHtml += bom.map((b, i) => `<tr><td>${i+1}</td><td>${b.partName}</td><td>${b.quantity}</td><td>${b.material}</td><td>${b.mass.toFixed(3)}</td><td>$${b.cost.toFixed(2)}</td><td>$${(b.quantity * b.cost).toFixed(2)}</td></tr>`).join("");
+      const totalMass = bom.reduce((s,b) => s + b.quantity * b.mass, 0);
+      const totalCost = bom.reduce((s,b) => s + b.quantity * b.cost, 0);
+      sectionHtml += `<tr style="font-weight:bold;background:#f0f0f0"><td colspan="4">TOTAL</td><td>${totalMass.toFixed(3)}</td><td></td><td>$${totalCost.toFixed(2)}</td></tr></table>`;
+    }
+    return sectionHtml;
+  }).join("")}
+<div class="page-num">Generated by ShilpaSutra | ${new Date().toISOString()}</div>
 </body></html>`;
 
   printWindow.document.write(html);
@@ -228,446 +162,371 @@ Generated by ShilpaSutra AI CAD &amp; CFD Platform | ${new Date().toISOString()}
   setTimeout(() => printWindow.print(), 500);
 }
 
-/* ── Sort helper ── */
-type SortDir = "asc" | "desc";
+/* ── CSV Export ── */
+function exportBOMCSV(bom: BOMItem[]) {
+  const header = "Part Name,Quantity,Material,Mass (kg),Unit Cost ($),Total Cost ($)\n";
+  const rows = bom.map(b => `${b.partName},${b.quantity},${b.material},${b.mass},${b.cost.toFixed(2)},${(b.quantity * b.cost).toFixed(2)}`).join("\n");
+  const blob = new Blob([header + rows], { type: "text/csv" });
+  const link = document.createElement("a");
+  link.download = "bom_export.csv";
+  link.href = URL.createObjectURL(blob);
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
 
-/* ── Main Page Component ── */
+/* ── Main Component ── */
 export default function ReportsPage() {
-  const [activeTab, setActiveTab] = useState<"forces" | "reactions" | "displacements" | "codecheck" | "safety">("forces");
-  const [selectedCode, setSelectedCode] = useState<"IS 800:2007" | "AISC 360-16" | "EN 1993-1-1">("IS 800:2007");
-  const [sortCol, setSortCol] = useState<string>("");
-  const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [template, setTemplate] = useState<ReportTemplate>("engineering");
+  const [sections, setSections] = useState<ReportSection[]>(defaultSections);
+  const [activeSection, setActiveSection] = useState("summary");
+  const [editingSection, setEditingSection] = useState<string | null>(null);
 
-  // Generate data with useMemo so it's stable per render
-  const memberForces = useMemo(() => generateMemberForces(), []);
-  const reactions = useMemo(() => generateReactions(), []);
-  const displacements = useMemo(() => generateDisplacements(), []);
-  const codeChecks = useMemo(() => generateCodeChecks(), []);
-  const safetyFactors = useMemo(() => generateSafetyFactors(), []);
+  const feaResults = useMemo(() => generateFEAResults(), []);
+  const cfdResults = useMemo(() => generateCFDResults(), []);
+  const bom = useMemo(() => generateBOM(), []);
 
-  const filteredCodeChecks = useMemo(
-    () => codeChecks.filter((c) => c.code === selectedCode),
-    [codeChecks, selectedCode]
-  );
+  const totalMass = bom.reduce((s, b) => s + b.quantity * b.mass, 0);
+  const totalCost = bom.reduce((s, b) => s + b.quantity * b.cost, 0);
 
-  const handleSort = useCallback((col: string) => {
-    setSortDir((prev) => (sortCol === col ? (prev === "asc" ? "desc" : "asc") : "asc"));
-    setSortCol(col);
-  }, [sortCol]);
+  const updateSectionContent = (id: string, content: string) => {
+    setSections(prev => prev.map(s => s.id === id ? { ...s, content } : s));
+  };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function sortData<T>(data: T[], col: string): T[] {
-    if (!col) return data;
-    return [...data].sort((a, b) => {
-      const av = (a as any)[col];
-      const bv = (b as any)[col];
-      const cmp = typeof av === "number" ? av - (bv as number) : String(av).localeCompare(String(bv));
-      return sortDir === "asc" ? cmp : -cmp;
-    });
-  }
-
-  const sortIcon = (col: string) =>
-    sortCol === col ? (sortDir === "asc" ? " ↑" : " ↓") : "";
-
-  const tabs = [
-    { id: "forces" as const, label: "Member Forces", count: memberForces.length },
-    { id: "reactions" as const, label: "Reactions", count: reactions.length },
-    { id: "displacements" as const, label: "Displacements", count: displacements.length },
-    { id: "codecheck" as const, label: "Code Check", count: codeChecks.length },
-    { id: "safety" as const, label: "Safety Factors", count: safetyFactors.length },
-  ];
-
-  const passCount = codeChecks.filter((c) => c.status === "PASS").length;
-  const failCount = codeChecks.filter((c) => c.status === "FAIL").length;
-  const warnCount = codeChecks.filter((c) => c.status === "WARNING").length;
-  const avgSF = safetyFactors.length > 0
-    ? (safetyFactors.reduce((s, f) => s + f.combinedSF, 0) / safetyFactors.length).toFixed(2)
-    : "N/A";
-  const minSF = safetyFactors.length > 0
-    ? Math.min(...safetyFactors.map((f) => f.combinedSF)).toFixed(2)
-    : "N/A";
-
-  const thClass = "px-3 py-2 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider cursor-pointer hover:text-white select-none";
-  const tdClass = "px-3 py-1.5 text-xs text-slate-300 font-mono";
+  const maxBarHeight = Math.max(...stressDistribution.map(d => d.count));
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-[#0d1117]">
       {/* Header */}
       <div className="bg-[#161b22] border-b border-[#21262d] px-4 py-2 flex items-center gap-3 shrink-0">
-        <span className="text-xs font-bold text-[#e94560]">Structural Reports</span>
-        <span className="text-[10px] text-slate-500">STAAD-Style Analysis Output</span>
+        <span className="text-xs font-bold text-[#00D4FF]">Engineering Reports</span>
+        <div className="h-5 w-px bg-[#21262d]" />
+
+        {/* Template selector */}
+        <select
+          value={template}
+          onChange={(e) => setTemplate(e.target.value as ReportTemplate)}
+          className="bg-[#21262d] text-xs text-white rounded px-2 py-1 border border-[#30363d]"
+        >
+          {reportTemplates.map(t => (
+            <option key={t.id} value={t.id}>{t.label}</option>
+          ))}
+        </select>
+
         <div className="flex-1" />
 
-        {/* Summary badges */}
-        <div className="flex items-center gap-2 mr-4">
+        {/* Quick stats */}
+        <div className="flex items-center gap-2">
           <span className="text-[10px] bg-green-500/10 text-green-400 border border-green-500/30 rounded px-2 py-0.5">
-            Pass: {passCount}
+            SF: 1.82
           </span>
           <span className="text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/30 rounded px-2 py-0.5">
-            Warn: {warnCount}
-          </span>
-          <span className="text-[10px] bg-red-500/10 text-red-400 border border-red-500/30 rounded px-2 py-0.5">
-            Fail: {failCount}
+            Peak: 94.2C
           </span>
           <span className="text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/30 rounded px-2 py-0.5">
-            Min SF: {minSF}
+            Parts: {bom.length}
           </span>
         </div>
 
-        <a
-          href="/simulator"
-          className="text-[10px] text-slate-400 hover:text-white border border-[#21262d] rounded px-2 py-1 hover:bg-[#21262d] transition-colors"
-        >
-          Back to Simulator
-        </a>
+        <div className="h-5 w-px bg-[#21262d]" />
+
         <button
-          onClick={exportReportPDF}
-          className="bg-[#e94560] hover:bg-[#d63750] text-white text-xs px-4 py-1.5 rounded font-semibold transition-colors"
+          onClick={() => exportBOMCSV(bom)}
+          className="text-[10px] text-slate-400 hover:text-white border border-[#21262d] rounded px-2 py-1 hover:bg-[#21262d]"
+        >
+          Export BOM CSV
+        </button>
+        <button
+          onClick={() => exportReportPDF(sections, feaResults, cfdResults, bom)}
+          className="bg-[#00D4FF] hover:bg-[#00b8d9] text-black text-xs px-4 py-1.5 rounded font-semibold"
         >
           Export PDF
         </button>
       </div>
 
-      {/* Tabs */}
-      <div className="bg-[#161b22] border-b border-[#21262d] flex items-center shrink-0">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => { setActiveTab(tab.id); setSortCol(""); }}
-            className={`flex items-center gap-1.5 px-4 py-2 text-xs border-b-2 transition-all ${
-              activeTab === tab.id
-                ? "border-[#e94560] text-white bg-[#0d1117]"
-                : "border-transparent text-slate-500 hover:text-slate-300"
-            }`}
-          >
-            {tab.label}
-            <span className="text-[9px] bg-[#21262d] text-slate-400 rounded px-1.5 py-0.5">{tab.count}</span>
-          </button>
-        ))}
-        {activeTab === "codecheck" && (
-          <div className="ml-auto mr-3 flex items-center gap-2">
-            <span className="text-[10px] text-slate-500">Design Code:</span>
-            <select
-              value={selectedCode}
-              onChange={(e) => setSelectedCode(e.target.value as typeof selectedCode)}
-              className="bg-[#0d1117] text-xs text-white rounded px-2 py-1 border border-[#21262d]"
-            >
-              <option value="IS 800:2007">IS 800:2007 (Indian)</option>
-              <option value="AISC 360-16">AISC 360-16 (US)</option>
-              <option value="EN 1993-1-1">EN 1993-1-1 (Eurocode)</option>
-            </select>
+      <div className="flex-1 flex overflow-hidden">
+        {/* Left - Section Navigator */}
+        <div className="w-60 bg-[#161b22] border-r border-[#21262d] flex flex-col shrink-0">
+          <div className="px-3 py-2 border-b border-[#21262d]">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Report Sections</div>
           </div>
-        )}
-      </div>
+          <div className="flex-1 overflow-y-auto p-2">
+            {sections.map(s => (
+              <button
+                key={s.id}
+                onClick={() => setActiveSection(s.id)}
+                className={`w-full text-left px-3 py-2 rounded text-xs mb-1 flex items-center gap-2 ${
+                  activeSection === s.id
+                    ? "bg-[#00D4FF]/10 border border-[#00D4FF]/40 text-white"
+                    : "text-slate-400 hover:bg-[#21262d] hover:text-white"
+                }`}
+              >
+                <span className="w-5 h-5 rounded bg-[#21262d] text-[10px] flex items-center justify-center font-bold text-[#00D4FF]">{s.icon}</span>
+                <span className="truncate">{s.title}</span>
+              </button>
+            ))}
+          </div>
 
-      {/* Table Content */}
-      <div className="flex-1 overflow-auto">
-        {activeTab === "forces" && (
-          <table className="w-full border-collapse">
-            <thead className="sticky top-0 bg-[#161b22] z-10">
-              <tr>
-                {[
-                  ["member", "Member"],
-                  ["node_i", "Node-i"],
-                  ["node_j", "Node-j"],
-                  ["axial_kN", "Axial (kN)"],
-                  ["shear_y_kN", "Shear-Y (kN)"],
-                  ["shear_z_kN", "Shear-Z (kN)"],
-                  ["moment_y_kNm", "Moment-Y (kNm)"],
-                  ["moment_z_kNm", "Moment-Z (kNm)"],
-                  ["torsion_kNm", "Torsion (kNm)"],
-                ].map(([key, label]) => (
-                  <th key={key} onClick={() => handleSort(key)} className={thClass}>
-                    {label}{sortIcon(key)}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {sortData(memberForces, sortCol).map((m, i) => (
-                <tr key={m.id} className={`border-b border-[#21262d] ${i % 2 === 0 ? "bg-[#0d1117]" : "bg-[#161b22]/50"} hover:bg-[#21262d]/50`}>
-                  <td className={`${tdClass} text-white font-semibold`}>{m.member}</td>
-                  <td className={tdClass}>{m.node_i}</td>
-                  <td className={tdClass}>{m.node_j}</td>
-                  <td className={`${tdClass} ${m.axial_kN < 0 ? "text-blue-400" : "text-red-400"}`}>{m.axial_kN}</td>
-                  <td className={tdClass}>{m.shear_y_kN}</td>
-                  <td className={tdClass}>{m.shear_z_kN}</td>
-                  <td className={tdClass}>{m.moment_y_kNm}</td>
-                  <td className={tdClass}>{m.moment_z_kNm}</td>
-                  <td className={tdClass}>{m.torsion_kNm}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-
-        {activeTab === "reactions" && (
-          <table className="w-full border-collapse">
-            <thead className="sticky top-0 bg-[#161b22] z-10">
-              <tr>
-                {[
-                  ["node", "Node"],
-                  ["fx_kN", "Fx (kN)"],
-                  ["fy_kN", "Fy (kN)"],
-                  ["fz_kN", "Fz (kN)"],
-                  ["mx_kNm", "Mx (kNm)"],
-                  ["my_kNm", "My (kNm)"],
-                  ["mz_kNm", "Mz (kNm)"],
-                ].map(([key, label]) => (
-                  <th key={key} onClick={() => handleSort(key)} className={thClass}>
-                    {label}{sortIcon(key)}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {sortData(reactions, sortCol).map((r, i) => (
-                <tr key={r.id} className={`border-b border-[#21262d] ${i % 2 === 0 ? "bg-[#0d1117]" : "bg-[#161b22]/50"} hover:bg-[#21262d]/50`}>
-                  <td className={`${tdClass} text-white font-semibold`}>{r.node}</td>
-                  <td className={tdClass}>{r.fx_kN}</td>
-                  <td className={`${tdClass} text-green-400 font-semibold`}>{r.fy_kN}</td>
-                  <td className={tdClass}>{r.fz_kN}</td>
-                  <td className={tdClass}>{r.mx_kNm}</td>
-                  <td className={tdClass}>{r.my_kNm}</td>
-                  <td className={tdClass}>{r.mz_kNm}</td>
-                </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr className="bg-[#161b22] border-t-2 border-[#e94560]">
-                <td className={`${tdClass} text-white font-bold`}>TOTAL</td>
-                <td className={`${tdClass} font-bold`}>{reactions.reduce((s, r) => s + r.fx_kN, 0).toFixed(2)}</td>
-                <td className={`${tdClass} font-bold text-green-400`}>{reactions.reduce((s, r) => s + r.fy_kN, 0).toFixed(2)}</td>
-                <td className={`${tdClass} font-bold`}>{reactions.reduce((s, r) => s + r.fz_kN, 0).toFixed(2)}</td>
-                <td className={`${tdClass} font-bold`}>{reactions.reduce((s, r) => s + r.mx_kNm, 0).toFixed(2)}</td>
-                <td className={`${tdClass} font-bold`}>{reactions.reduce((s, r) => s + r.my_kNm, 0).toFixed(2)}</td>
-                <td className={`${tdClass} font-bold`}>{reactions.reduce((s, r) => s + r.mz_kNm, 0).toFixed(2)}</td>
-              </tr>
-            </tfoot>
-          </table>
-        )}
-
-        {activeTab === "displacements" && (
-          <table className="w-full border-collapse">
-            <thead className="sticky top-0 bg-[#161b22] z-10">
-              <tr>
-                {[
-                  ["node", "Node"],
-                  ["dx_mm", "dX (mm)"],
-                  ["dy_mm", "dY (mm)"],
-                  ["dz_mm", "dZ (mm)"],
-                  ["rx_rad", "rX (rad)"],
-                  ["ry_rad", "rY (rad)"],
-                  ["rz_rad", "rZ (rad)"],
-                ].map(([key, label]) => (
-                  <th key={key} onClick={() => handleSort(key)} className={thClass}>
-                    {label}{sortIcon(key)}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {sortData(displacements, sortCol).map((d, i) => {
-                const maxD = Math.max(Math.abs(d.dx_mm), Math.abs(d.dy_mm), Math.abs(d.dz_mm));
-                return (
-                  <tr key={d.id} className={`border-b border-[#21262d] ${i % 2 === 0 ? "bg-[#0d1117]" : "bg-[#161b22]/50"} hover:bg-[#21262d]/50`}>
-                    <td className={`${tdClass} text-white font-semibold`}>{d.node}</td>
-                    <td className={tdClass}>{d.dx_mm}</td>
-                    <td className={`${tdClass} ${maxD === Math.abs(d.dy_mm) ? "text-amber-400 font-semibold" : ""}`}>{d.dy_mm}</td>
-                    <td className={tdClass}>{d.dz_mm}</td>
-                    <td className={tdClass}>{d.rx_rad}</td>
-                    <td className={tdClass}>{d.ry_rad}</td>
-                    <td className={tdClass}>{d.rz_rad}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-            <tfoot>
-              <tr className="bg-[#161b22] border-t-2 border-[#e94560]">
-                <td className={`${tdClass} text-white font-bold`}>MAX ABS</td>
-                <td className={`${tdClass} font-bold`}>{Math.max(...displacements.map((d) => Math.abs(d.dx_mm))).toFixed(3)}</td>
-                <td className={`${tdClass} font-bold text-amber-400`}>{Math.max(...displacements.map((d) => Math.abs(d.dy_mm))).toFixed(3)}</td>
-                <td className={`${tdClass} font-bold`}>{Math.max(...displacements.map((d) => Math.abs(d.dz_mm))).toFixed(3)}</td>
-                <td className={`${tdClass} font-bold`}>{Math.max(...displacements.map((d) => Math.abs(d.rx_rad))).toFixed(5)}</td>
-                <td className={`${tdClass} font-bold`}>{Math.max(...displacements.map((d) => Math.abs(d.ry_rad))).toFixed(5)}</td>
-                <td className={`${tdClass} font-bold`}>{Math.max(...displacements.map((d) => Math.abs(d.rz_rad))).toFixed(5)}</td>
-              </tr>
-            </tfoot>
-          </table>
-        )}
-
-        {activeTab === "codecheck" && (
-          <div>
-            <div className="p-3 bg-[#161b22] border-b border-[#21262d]">
-              <div className="grid grid-cols-3 gap-3">
-                <div className="bg-[#0d1117] rounded-lg p-3 border border-[#21262d]">
-                  <div className="text-[10px] text-slate-500 uppercase">Design Code</div>
-                  <div className="text-sm text-white font-bold mt-1">{selectedCode}</div>
-                  <div className="text-[10px] text-slate-500 mt-1">
-                    {selectedCode === "IS 800:2007" && "Limit State Method - Indian Standard for Steel Structures"}
-                    {selectedCode === "AISC 360-16" && "Specification for Structural Steel Buildings (LRFD)"}
-                    {selectedCode === "EN 1993-1-1" && "Eurocode 3: Design of Steel Structures (General Rules)"}
-                  </div>
-                </div>
-                <div className="bg-[#0d1117] rounded-lg p-3 border border-[#21262d]">
-                  <div className="text-[10px] text-slate-500 uppercase">Utilization Summary</div>
-                  <div className="flex items-end gap-2 mt-1">
-                    <span className="text-2xl font-bold text-white">
-                      {(filteredCodeChecks.reduce((s, c) => s + c.ratio, 0) / Math.max(filteredCodeChecks.length, 1) * 100).toFixed(0)}%
-                    </span>
-                    <span className="text-[10px] text-slate-500 mb-1">avg. utilization</span>
-                  </div>
-                </div>
-                <div className="bg-[#0d1117] rounded-lg p-3 border border-[#21262d]">
-                  <div className="text-[10px] text-slate-500 uppercase">Check Summary</div>
-                  <div className="flex items-center gap-3 mt-2">
-                    <span className="text-xs text-green-400">{filteredCodeChecks.filter((c) => c.status === "PASS").length} Pass</span>
-                    <span className="text-xs text-amber-400">{filteredCodeChecks.filter((c) => c.status === "WARNING").length} Warn</span>
-                    <span className="text-xs text-red-400">{filteredCodeChecks.filter((c) => c.status === "FAIL").length} Fail</span>
-                  </div>
-                </div>
-              </div>
+          {/* Template info */}
+          <div className="px-3 py-2 border-t border-[#21262d]">
+            <div className="text-[9px] text-slate-500">
+              Template: <span className="text-white">{reportTemplates.find(t => t.id === template)?.label}</span>
             </div>
-            <table className="w-full border-collapse">
-              <thead className="sticky top-0 bg-[#161b22] z-10">
-                <tr>
-                  {[
-                    ["member", "Member"],
-                    ["section", "Section"],
-                    ["code", "Code"],
-                    ["ratio", "Ratio"],
-                    ["status", "Status"],
-                    ["clause", "Clause"],
-                    ["govCase", "Gov. Case"],
-                  ].map(([key, label]) => (
-                    <th key={key} onClick={() => handleSort(key)} className={thClass}>
-                      {label}{sortIcon(key)}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {sortData(filteredCodeChecks, sortCol).map((c, i) => (
-                  <tr key={c.id} className={`border-b border-[#21262d] ${i % 2 === 0 ? "bg-[#0d1117]" : "bg-[#161b22]/50"} hover:bg-[#21262d]/50`}>
-                    <td className={`${tdClass} text-white font-semibold`}>{c.member}</td>
-                    <td className={tdClass}>{c.section}</td>
-                    <td className={`${tdClass} text-slate-500`}>{c.code}</td>
-                    <td className={tdClass}>
-                      <div className="flex items-center gap-2">
-                        <div className="flex-1 h-1.5 bg-[#21262d] rounded-full overflow-hidden">
-                          <div
-                            className={`h-full rounded-full ${
-                              c.ratio > 1 ? "bg-red-500" : c.ratio > 0.85 ? "bg-amber-500" : "bg-green-500"
-                            }`}
-                            style={{ width: `${Math.min(c.ratio * 100, 100)}%` }}
-                          />
+            <div className="text-[9px] text-slate-500">
+              Sections: <span className="text-white">{sections.length}</span>
+            </div>
+            <div className="text-[9px] text-slate-500">
+              Last updated: <span className="text-white">Just now</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Center - Report Content */}
+        <div className="flex-1 overflow-y-auto p-6">
+          <div className="max-w-4xl mx-auto space-y-6">
+            {sections.filter(s => s.id === activeSection).map(section => (
+              <div key={section.id}>
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-bold text-white">{section.title}</h2>
+                  {section.editable && (
+                    <button
+                      onClick={() => setEditingSection(editingSection === section.id ? null : section.id)}
+                      className="text-[10px] text-[#00D4FF] hover:text-white border border-[#21262d] rounded px-2 py-1"
+                    >
+                      {editingSection === section.id ? "Done" : "Edit"}
+                    </button>
+                  )}
+                </div>
+
+                {/* Content */}
+                {section.editable && editingSection === section.id ? (
+                  <textarea
+                    value={section.content}
+                    onChange={(e) => updateSectionContent(section.id, e.target.value)}
+                    className="w-full h-48 bg-[#0d1117] text-sm text-slate-300 rounded-lg p-4 border border-[#21262d] focus:border-[#00D4FF] outline-none resize-y font-mono"
+                  />
+                ) : section.content ? (
+                  <div className="bg-[#161b22] rounded-lg p-4 border border-[#21262d] text-sm text-slate-300 whitespace-pre-wrap leading-relaxed">
+                    {section.content}
+                  </div>
+                ) : null}
+
+                {/* FEA Results */}
+                {section.id === "fea" && (
+                  <div className="mt-4 space-y-4">
+                    <h3 className="text-sm font-bold text-slate-300">FEA Results Summary</h3>
+                    <div className="grid grid-cols-3 gap-3">
+                      {feaResults.map(r => (
+                        <div key={r.label} className="bg-[#161b22] rounded-lg p-3 border border-[#21262d]">
+                          <div className="text-[10px] text-slate-500 uppercase">{r.label}</div>
+                          <div className={`text-xl font-bold mt-1 ${r.status === "good" ? "text-green-400" : r.status === "warning" ? "text-amber-400" : "text-red-400"}`}>
+                            {r.value} <span className="text-xs font-normal text-slate-500">{r.unit}</span>
+                          </div>
                         </div>
-                        <span className="w-12 text-right">{c.ratio.toFixed(3)}</span>
-                      </div>
-                    </td>
-                    <td className={tdClass}>
-                      <span
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          c.status === "PASS"
-                            ? "bg-green-500/20 text-green-400"
-                            : c.status === "FAIL"
-                            ? "bg-red-500/20 text-red-400"
-                            : "bg-amber-500/20 text-amber-400"
-                        }`}
-                      >
-                        {c.status}
-                      </span>
-                    </td>
-                    <td className={`${tdClass} text-slate-500`}>{c.clause}</td>
-                    <td className={tdClass}>{c.govCase}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                      ))}
+                    </div>
 
-        {activeTab === "safety" && (
-          <div>
-            <div className="p-3 bg-[#161b22] border-b border-[#21262d]">
-              <div className="grid grid-cols-4 gap-3">
-                <div className="bg-[#0d1117] rounded-lg p-3 border border-[#21262d]">
-                  <div className="text-[10px] text-slate-500 uppercase">Min Safety Factor</div>
-                  <div className={`text-2xl font-bold mt-1 ${parseFloat(minSF) < 1.5 ? "text-red-400" : parseFloat(minSF) < 2.0 ? "text-amber-400" : "text-green-400"}`}>
-                    {minSF}
+                    {/* Stress Distribution Chart */}
+                    <div className="bg-[#161b22] rounded-lg p-4 border border-[#21262d]">
+                      <div className="text-xs font-bold text-slate-300 mb-3">Stress Distribution Histogram</div>
+                      <div className="flex items-end gap-1 h-32">
+                        {stressDistribution.map((d, i) => (
+                          <div key={i} className="flex-1 flex flex-col items-center">
+                            <div
+                              className="w-full rounded-t"
+                              style={{
+                                height: `${(d.count / maxBarHeight) * 100}%`,
+                                backgroundColor: i < 8 ? "#22c55e" : i < 14 ? "#eab308" : "#ef4444",
+                                minHeight: "2px",
+                              }}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex justify-between text-[8px] text-slate-500 mt-1">
+                        <span>0 MPa</span>
+                        <span>100 MPa</span>
+                        <span>200 MPa</span>
+                      </div>
+                    </div>
+
+                    {/* Convergence Plot */}
+                    <div className="bg-[#161b22] rounded-lg p-4 border border-[#21262d]">
+                      <div className="text-xs font-bold text-slate-300 mb-3">Solver Convergence</div>
+                      <div className="flex items-end gap-px h-24">
+                        {convergenceData.map((d, i) => (
+                          <div
+                            key={i}
+                            className="flex-1 bg-[#00D4FF]/60 rounded-t"
+                            style={{ height: `${Math.min(100, d.residual * 100)}%` }}
+                          />
+                        ))}
+                      </div>
+                      <div className="flex justify-between text-[8px] text-slate-500 mt-1">
+                        <span>Iteration 1</span>
+                        <span>Iteration 50</span>
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <div className="bg-[#0d1117] rounded-lg p-3 border border-[#21262d]">
-                  <div className="text-[10px] text-slate-500 uppercase">Avg Safety Factor</div>
-                  <div className="text-2xl font-bold mt-1 text-blue-400">{avgSF}</div>
-                </div>
-                <div className="bg-[#0d1117] rounded-lg p-3 border border-[#21262d]">
-                  <div className="text-[10px] text-slate-500 uppercase">Members Below 1.5</div>
-                  <div className="text-2xl font-bold mt-1 text-red-400">
-                    {safetyFactors.filter((s) => s.combinedSF < 1.5).length}
+                )}
+
+                {/* CFD Results */}
+                {section.id === "cfd" && (
+                  <div className="mt-4 space-y-4">
+                    <h3 className="text-sm font-bold text-slate-300">CFD Results Summary</h3>
+                    <div className="grid grid-cols-3 gap-3">
+                      {cfdResults.map(r => (
+                        <div key={r.label} className="bg-[#161b22] rounded-lg p-3 border border-[#21262d]">
+                          <div className="text-[10px] text-slate-500 uppercase">{r.label}</div>
+                          <div className={`text-xl font-bold mt-1 ${r.status === "good" ? "text-green-400" : r.status === "warning" ? "text-amber-400" : "text-red-400"}`}>
+                            {r.value} <span className="text-xs font-normal text-slate-500">{r.unit}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Temperature Profile */}
+                    <div className="bg-[#161b22] rounded-lg p-4 border border-[#21262d]">
+                      <div className="text-xs font-bold text-slate-300 mb-3">Temperature Profile Along Flow Path</div>
+                      <div className="flex items-end gap-px h-24">
+                        {Array.from({ length: 40 }, (_, i) => {
+                          const t = i / 39;
+                          const temp = 22 + 72 * (1 - Math.exp(-3 * t)) * (0.9 + Math.random() * 0.2);
+                          return (
+                            <div
+                              key={i}
+                              className="flex-1 rounded-t"
+                              style={{
+                                height: `${((temp - 20) / 80) * 100}%`,
+                                backgroundColor: temp < 50 ? "#3b82f6" : temp < 70 ? "#22c55e" : temp < 85 ? "#eab308" : "#ef4444",
+                              }}
+                            />
+                          );
+                        })}
+                      </div>
+                      <div className="flex justify-between text-[8px] text-slate-500 mt-1">
+                        <span>Inlet</span>
+                        <span>Mid-section</span>
+                        <span>Outlet</span>
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <div className="bg-[#0d1117] rounded-lg p-3 border border-[#21262d]">
-                  <div className="text-[10px] text-slate-500 uppercase">Members Above 2.0</div>
-                  <div className="text-2xl font-bold mt-1 text-green-400">
-                    {safetyFactors.filter((s) => s.combinedSF >= 2.0).length}
+                )}
+
+                {/* BOM */}
+                {section.id === "bom" && (
+                  <div className="mt-2 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-bold text-slate-300">Bill of Materials</h3>
+                      <button
+                        onClick={() => exportBOMCSV(bom)}
+                        className="text-[10px] text-[#00D4FF] hover:text-white border border-[#21262d] rounded px-2 py-1"
+                      >
+                        Export CSV
+                      </button>
+                    </div>
+                    <table className="w-full border-collapse">
+                      <thead>
+                        <tr className="bg-[#161b22]">
+                          <th className="px-3 py-2 text-left text-[10px] font-bold text-slate-400 uppercase">#</th>
+                          <th className="px-3 py-2 text-left text-[10px] font-bold text-slate-400 uppercase">Part Name</th>
+                          <th className="px-3 py-2 text-center text-[10px] font-bold text-slate-400 uppercase">Qty</th>
+                          <th className="px-3 py-2 text-left text-[10px] font-bold text-slate-400 uppercase">Material</th>
+                          <th className="px-3 py-2 text-right text-[10px] font-bold text-slate-400 uppercase">Mass (kg)</th>
+                          <th className="px-3 py-2 text-right text-[10px] font-bold text-slate-400 uppercase">Unit Cost</th>
+                          <th className="px-3 py-2 text-right text-[10px] font-bold text-slate-400 uppercase">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {bom.map((b, i) => (
+                          <tr key={b.id} className={`border-b border-[#21262d] ${i % 2 === 0 ? "bg-[#0d1117]" : "bg-[#161b22]/50"}`}>
+                            <td className="px-3 py-1.5 text-xs text-slate-500">{i + 1}</td>
+                            <td className="px-3 py-1.5 text-xs text-white font-medium">{b.partName}</td>
+                            <td className="px-3 py-1.5 text-xs text-slate-300 text-center">{b.quantity}</td>
+                            <td className="px-3 py-1.5 text-xs text-slate-400">{b.material}</td>
+                            <td className="px-3 py-1.5 text-xs text-slate-300 text-right font-mono">{(b.quantity * b.mass).toFixed(3)}</td>
+                            <td className="px-3 py-1.5 text-xs text-slate-300 text-right font-mono">${b.cost.toFixed(2)}</td>
+                            <td className="px-3 py-1.5 text-xs text-white text-right font-mono font-medium">${(b.quantity * b.cost).toFixed(2)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-[#161b22] border-t-2 border-[#00D4FF]">
+                          <td colSpan={4} className="px-3 py-2 text-xs text-white font-bold">TOTAL</td>
+                          <td className="px-3 py-2 text-xs text-white text-right font-bold font-mono">{totalMass.toFixed(3)}</td>
+                          <td className="px-3 py-2 text-xs text-slate-500 text-right">—</td>
+                          <td className="px-3 py-2 text-xs text-[#00D4FF] text-right font-bold font-mono">${totalCost.toFixed(2)}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
                   </div>
-                </div>
+                )}
               </div>
-            </div>
-            <table className="w-full border-collapse">
-              <thead className="sticky top-0 bg-[#161b22] z-10">
-                <tr>
-                  {[
-                    ["member", "Member"],
-                    ["loadCase", "Load Case"],
-                    ["yieldSF", "Yield SF"],
-                    ["bucklingSF", "Buckling SF"],
-                    ["combinedSF", "Combined SF"],
-                    ["govMode", "Governing Mode"],
-                  ].map(([key, label]) => (
-                    <th key={key} onClick={() => handleSort(key)} className={thClass}>
-                      {label}{sortIcon(key)}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {sortData(safetyFactors, sortCol).map((s, i) => (
-                  <tr key={s.id} className={`border-b border-[#21262d] ${i % 2 === 0 ? "bg-[#0d1117]" : "bg-[#161b22]/50"} hover:bg-[#21262d]/50`}>
-                    <td className={`${tdClass} text-white font-semibold`}>{s.member}</td>
-                    <td className={tdClass}>{s.loadCase}</td>
-                    <td className={`${tdClass} ${s.yieldSF < 1.5 ? "text-red-400" : "text-green-400"}`}>{s.yieldSF}</td>
-                    <td className={`${tdClass} ${s.bucklingSF < 1.5 ? "text-red-400" : "text-green-400"}`}>{s.bucklingSF}</td>
-                    <td className={tdClass}>
-                      <span className={`px-2 py-0.5 rounded font-bold text-[11px] ${
-                        s.combinedSF < 1.5 ? "bg-red-500/20 text-red-400" : s.combinedSF < 2.0 ? "bg-amber-500/20 text-amber-400" : "bg-green-500/20 text-green-400"
-                      }`}>
-                        {s.combinedSF}
-                      </span>
-                    </td>
-                    <td className={`${tdClass} text-slate-400`}>{s.govMode}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            ))}
           </div>
-        )}
+        </div>
+
+        {/* Right - Quick Reference */}
+        <div className="w-56 bg-[#161b22] border-l border-[#21262d] flex flex-col shrink-0 overflow-y-auto">
+          <div className="px-3 py-2 border-b border-[#21262d]">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Quick Reference</div>
+          </div>
+
+          {/* Project Info */}
+          <div className="px-3 py-2 border-b border-[#21262d] space-y-1">
+            <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Project</div>
+            <div className="text-[9px] text-slate-500">Name: <span className="text-white">Bracket Assembly</span></div>
+            <div className="text-[9px] text-slate-500">Part: <span className="text-white">SS-BRK-001</span></div>
+            <div className="text-[9px] text-slate-500">Rev: <span className="text-white">A</span></div>
+            <div className="text-[9px] text-slate-500">Date: <span className="text-white">2026-03-20</span></div>
+          </div>
+
+          {/* Key Metrics */}
+          <div className="px-3 py-2 border-b border-[#21262d] space-y-1.5">
+            <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Key Metrics</div>
+            <div className="bg-[#0d1117] rounded p-2 border border-[#21262d]">
+              <div className="text-[9px] text-slate-500">Safety Factor</div>
+              <div className="text-lg font-bold text-amber-400">1.82</div>
+            </div>
+            <div className="bg-[#0d1117] rounded p-2 border border-[#21262d]">
+              <div className="text-[9px] text-slate-500">Max Stress</div>
+              <div className="text-lg font-bold text-green-400">187.4 <span className="text-xs">MPa</span></div>
+            </div>
+            <div className="bg-[#0d1117] rounded p-2 border border-[#21262d]">
+              <div className="text-[9px] text-slate-500">Peak Temperature</div>
+              <div className="text-lg font-bold text-amber-400">94.2 <span className="text-xs">C</span></div>
+            </div>
+            <div className="bg-[#0d1117] rounded p-2 border border-[#21262d]">
+              <div className="text-[9px] text-slate-500">Total Mass</div>
+              <div className="text-lg font-bold text-blue-400">{totalMass.toFixed(2)} <span className="text-xs">kg</span></div>
+            </div>
+            <div className="bg-[#0d1117] rounded p-2 border border-[#21262d]">
+              <div className="text-[9px] text-slate-500">Estimated Cost</div>
+              <div className="text-lg font-bold text-[#00D4FF]">${totalCost.toFixed(0)}</div>
+            </div>
+          </div>
+
+          {/* Links */}
+          <div className="px-3 py-2 space-y-1.5">
+            <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Related</div>
+            <a href="/simulator" className="block text-[10px] text-[#00D4FF] hover:text-white">Open FEA Simulator</a>
+            <a href="/cfd" className="block text-[10px] text-[#00D4FF] hover:text-white">Open CFD Analysis</a>
+            <a href="/assembly" className="block text-[10px] text-[#00D4FF] hover:text-white">Open Assembly</a>
+            <a href="/drawings" className="block text-[10px] text-[#00D4FF] hover:text-white">Open 2D Drawings</a>
+          </div>
+        </div>
       </div>
 
       {/* Footer */}
       <div className="bg-[#161b22] border-t border-[#21262d] px-4 py-1.5 flex items-center gap-4 text-[10px] text-slate-500 shrink-0">
-        <span>Analysis: Linear Static</span>
+        <span>Template: {reportTemplates.find(t => t.id === template)?.label}</span>
         <span>|</span>
-        <span>Units: kN, m, C</span>
+        <span>Sections: {sections.length}</span>
         <span>|</span>
-        <span>Members: {memberForces.length}</span>
+        <span>BOM Items: {bom.length}</span>
         <span>|</span>
-        <span>Nodes: {displacements.length}</span>
-        <span>|</span>
-        <span>Support Nodes: {reactions.length}</span>
+        <span>Total Mass: {totalMass.toFixed(2)} kg</span>
         <div className="flex-1" />
-        <span>ShilpaSutra Structural Report v1.0</span>
+        <span>ShilpaSutra Report Engine v2.0</span>
       </div>
     </div>
   );
