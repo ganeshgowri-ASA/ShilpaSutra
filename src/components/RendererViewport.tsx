@@ -41,6 +41,8 @@ interface RendererViewportProps {
   material: PBRMaterial;
   envPreset: EnvironmentPreset;
   envIntensity: number;
+  showEnvMap?: boolean;
+  showAO?: boolean;
   lights: LightConfig[];
   showShadows: boolean;
   showGround: boolean;
@@ -194,6 +196,8 @@ export default function RendererViewport({
   material,
   envPreset,
   envIntensity,
+  showEnvMap = true,
+  showAO = false,
   lights,
   showShadows,
   showGround,
@@ -248,7 +252,8 @@ export default function RendererViewport({
           <GizmoViewport labelColor="white" axisHeadScale={0.8} />
         </GizmoHelper>
 
-        <Environment preset={envPreset} environmentIntensity={envIntensity} />
+        {showEnvMap && <Environment preset={envPreset} environmentIntensity={envIntensity} />}
+        {showAO && <ambientLight color="#000000" intensity={0.6} />}
       </Canvas>
     </div>
   );

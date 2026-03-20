@@ -380,39 +380,61 @@ export default function AssemblyAdvancedPage() {
 
             {sideTab === "bom" && (
               <div>
-                <h4 className="text-[10px] text-slate-500 uppercase tracking-wider font-bold mb-3">
-                  Bill of Materials
-                </h4>
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="text-slate-500 border-b border-[#1a1a2e]">
-                      <th className="text-left py-2 font-medium">#</th>
-                      <th className="text-left py-2 font-medium">Part</th>
-                      <th className="text-right py-2 font-medium">Qty</th>
-                      <th className="text-right py-2 font-medium">Mass</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {bomData.map((row, i) => (
-                      <tr key={i} className="border-b border-[#1a1a2e]/50 text-slate-300">
-                        <td className="py-2 text-slate-500">{i + 1}</td>
-                        <td className="py-2">
-                          <div className="font-medium">{row.partName}</div>
-                          <div className="text-[10px] text-slate-500">{row.material}</div>
-                        </td>
-                        <td className="py-2 text-right">{row.quantity}</td>
-                        <td className="py-2 text-right">{row.mass.toFixed(1)} kg</td>
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">
+                    Bill of Materials
+                  </h4>
+                  <button
+                    onClick={() => {
+                      const headers = ["Item#", "Part Name", "Qty", "Material", "Weight (kg)"];
+                      const rows = bomData.map((row, i) =>
+                        [i + 1, row.partName, row.quantity, row.material, row.mass.toFixed(2)].join(",")
+                      );
+                      const totalRow = ["Total", "", bomData.reduce((s, b) => s + b.quantity, 0), "", totalMass.toFixed(2)].join(",");
+                      const csv = [headers.join(","), ...rows, totalRow].join("\n");
+                      const blob = new Blob([csv], { type: "text/csv" });
+                      const a = document.createElement("a");
+                      a.download = "assembly_bom.csv";
+                      a.href = URL.createObjectURL(blob);
+                      a.click();
+                    }}
+                    className="text-[10px] bg-green-700 hover:bg-green-600 text-white px-2 py-1 rounded font-bold"
+                  >
+                    CSV Export
+                  </button>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-[11px]">
+                    <thead>
+                      <tr className="text-slate-500 border-b border-[#1a1a2e] bg-[#0a0a0f]">
+                        <th className="text-left py-1.5 px-1 font-medium">#</th>
+                        <th className="text-left py-1.5 px-1 font-medium">Part Name</th>
+                        <th className="text-center py-1.5 px-1 font-medium">Qty</th>
+                        <th className="text-left py-1.5 px-1 font-medium">Material</th>
+                        <th className="text-right py-1.5 px-1 font-medium">Weight</th>
                       </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="border-t border-[#252540] text-white font-bold">
-                      <td colSpan={2} className="py-2">Total</td>
-                      <td className="py-2 text-right">{bomData.reduce((s, b) => s + b.quantity, 0)}</td>
-                      <td className="py-2 text-right">{totalMass.toFixed(1)} kg</td>
-                    </tr>
-                  </tfoot>
-                </table>
+                    </thead>
+                    <tbody>
+                      {bomData.map((row, i) => (
+                        <tr key={i} className={`border-b border-[#1a1a2e]/50 text-slate-300 ${i % 2 === 0 ? "" : "bg-[#0a0a0f]/40"}`}>
+                          <td className="py-1.5 px-1 text-slate-500">{i + 1}</td>
+                          <td className="py-1.5 px-1 font-medium text-white">{row.partName}</td>
+                          <td className="py-1.5 px-1 text-center">{row.quantity}</td>
+                          <td className="py-1.5 px-1 text-slate-400 text-[10px]">{row.material}</td>
+                          <td className="py-1.5 px-1 text-right text-slate-300">{row.mass.toFixed(2)} kg</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t-2 border-[#252540] text-white font-bold bg-[#0a0a0f]">
+                        <td colSpan={2} className="py-2 px-1">Total</td>
+                        <td className="py-2 px-1 text-center">{bomData.reduce((s, b) => s + b.quantity, 0)}</td>
+                        <td className="py-2 px-1" />
+                        <td className="py-2 px-1 text-right text-[#00D4FF]">{totalMass.toFixed(2)} kg</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
               </div>
             )}
           </div>

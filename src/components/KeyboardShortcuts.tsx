@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { X, Keyboard } from "lucide-react";
+import { useCadStore } from "@/stores/cad-store";
 
 const shortcutGroups = [
   {
@@ -10,7 +11,8 @@ const shortcutGroups = [
       { keys: ["?"], desc: "Keyboard Shortcuts" },
       { keys: ["Ctrl", "S"], desc: "Save Project" },
       { keys: ["Ctrl", "Z"], desc: "Undo" },
-      { keys: ["Ctrl", "Shift", "Z"], desc: "Redo" },
+      { keys: ["Ctrl", "Y"], desc: "Redo" },
+      { keys: ["Ctrl", "Shift", "Z"], desc: "Redo (alternate)" },
     ],
   },
   {
@@ -52,12 +54,42 @@ const shortcutGroups = [
 
 export default function KeyboardShortcuts() {
   const [visible, setVisible] = useState(false);
+  const undo = useCadStore((s) => s.undo);
+  const redo = useCadStore((s) => s.redo);
+  const canUndo = useCadStore((s) => s.canUndo);
+  const canRedo = useCadStore((s) => s.canRedo);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      const inInput = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT";
+
+      // Ctrl+Z → Undo
+      if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {
+        if (inInput) return;
+        e.preventDefault();
+        if (canUndo()) undo();
+        return;
+      }
+
+      // Ctrl+Y → Redo
+      if ((e.ctrlKey || e.metaKey) && e.key === "y") {
+        if (inInput) return;
+        e.preventDefault();
+        if (canRedo()) redo();
+        return;
+      }
+
+      // Ctrl+Shift+Z → Redo (alternate)
+      if ((e.ctrlKey || e.metaKey) && e.key === "z" && e.shiftKey) {
+        if (inInput) return;
+        e.preventDefault();
+        if (canRedo()) redo();
+        return;
+      }
+
       if (e.key === "?" && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        const target = e.target as HTMLElement;
-        if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT") return;
+        if (inInput) return;
         e.preventDefault();
         setVisible(v => !v);
       }
@@ -67,7 +99,7 @@ export default function KeyboardShortcuts() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [visible]);
+  }, [visible, undo, redo, canUndo, canRedo]);
 
   if (!visible) return null;
 

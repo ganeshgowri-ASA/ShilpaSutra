@@ -1,6 +1,73 @@
 "use client";
 import { useState } from "react";
 
+// ─── GD&T Types & Data ────────────────────────────────────────────────────────
+
+interface GdtAnnotation {
+  id: string;
+  symbolKey: string;
+  tolerance: string;
+  datum: string;
+  x: number;
+  y: number;
+}
+
+interface GdtSymbolDef {
+  key: string;
+  label: string;
+  symbol: string;
+  category: "form" | "orientation" | "location" | "runout";
+}
+
+const GDT_SYMBOLS: GdtSymbolDef[] = [
+  { key: "flatness",       label: "Flatness",       symbol: "⏥", category: "form" },
+  { key: "straightness",   label: "Straightness",   symbol: "⏤", category: "form" },
+  { key: "circularity",    label: "Circularity",    symbol: "○", category: "form" },
+  { key: "cylindricity",   label: "Cylindricity",   symbol: "⌭", category: "form" },
+  { key: "position",       label: "Position",       symbol: "⊕", category: "location" },
+  { key: "concentricity",  label: "Concentricity",  symbol: "◎", category: "location" },
+  { key: "parallelism",    label: "Parallelism",    symbol: "∥", category: "orientation" },
+  { key: "perpendicularity", label: "Perpendicularity", symbol: "⊥", category: "orientation" },
+];
+
+// ─── Feature Control Frame SVG ────────────────────────────────────────────────
+
+function FeatureControlFrame({
+  x, y, symbol, label, tolerance, datum,
+}: {
+  x: number; y: number; symbol: string; label: string; tolerance: string; datum: string;
+}) {
+  const c = "#1e3a5f";
+  const fw = datum ? 130 : 100;
+  const fh = 18;
+  return (
+    <g transform={`translate(${x},${y})`} fontFamily="Arial, sans-serif">
+      {/* Leader line */}
+      <line x1={-20} y1={0} x2={0} y2={0} stroke={c} strokeWidth={0.7} />
+      <polygon points="0,0 -6,-3 -6,3" fill={c} />
+      {/* Outer frame */}
+      <rect x={0} y={-fh / 2} width={fw} height={fh} fill="#f0f6ff" stroke={c} strokeWidth={0.8} />
+      {/* Symbol cell */}
+      <rect x={0} y={-fh / 2} width={22} height={fh} fill="#dbeafe" stroke={c} strokeWidth={0.8} />
+      <text x={11} y={5} fontSize="10" textAnchor="middle" fill={c} fontWeight="bold">{symbol}</text>
+      {/* Divider */}
+      <line x1={22} y1={-fh / 2} x2={22} y2={fh / 2} stroke={c} strokeWidth={0.5} />
+      {/* Tolerance cell */}
+      <text x={datum ? 55 : 61} y={5} fontSize="8" textAnchor="middle" fill={c}>⌀{tolerance}</text>
+      {datum && (
+        <>
+          <line x1={88} y1={-fh / 2} x2={88} y2={fh / 2} stroke={c} strokeWidth={0.5} />
+          {/* Datum cell */}
+          <rect x={88} y={-fh / 2} width={42} height={fh} fill="#e8f4e8" stroke={c} strokeWidth={0.8} />
+          <text x={109} y={5} fontSize="8" textAnchor="middle" fill="#1a5f1e" fontWeight="bold">{datum}</text>
+        </>
+      )}
+      {/* Label below */}
+      <text x={fw / 2} y={fh / 2 + 10} fontSize="7" textAnchor="middle" fill="#6b7280">{label}</text>
+    </g>
+  );
+}
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface TitleBlock {
@@ -273,10 +340,12 @@ function EngineeringSheet({
   title,
   revisions,
   scale,
+  annotations,
 }: {
   title: TitleBlock;
   revisions: RevisionRow[];
   scale: string;
+  annotations: GdtAnnotation[];
 }) {
   const W = 841, H = 594;
   const margin = 10, frame = 20;
@@ -340,6 +409,23 @@ function EngineeringSheet({
         <text x={0} y={20} fontSize="7" textAnchor="middle" fill="#1e3a5f">ISO E</text>
       </g>
 
+      {/* ── GD&T Annotations ── */}
+      {annotations.map((ann) => {
+        const sym = GDT_SYMBOLS.find((s) => s.key === ann.symbolKey);
+        if (!sym) return null;
+        return (
+          <FeatureControlFrame
+            key={ann.id}
+            x={ann.x}
+            y={ann.y}
+            symbol={sym.symbol}
+            label={sym.label}
+            tolerance={ann.tolerance}
+            datum={ann.datum}
+          />
+        );
+      })}
+
       {/* ── General notes ── */}
       <g transform="translate(70,465)">
         <text fontSize="8" fill="#1e3a5f" fontWeight="bold" y={0}>GENERAL NOTES:</text>
@@ -359,14 +445,40 @@ function EngineeringSheet({
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+let gdtIdCounter = 0;
+
 export default function DrawingsPage() {
   const [title, setTitle] = useState<TitleBlock>(defaultTitle);
   const [revisions, setRevisions] = useState<RevisionRow[]>(defaultRevisions);
   const [scale, setScale] = useState("1:1");
   const [editOpen, setEditOpen] = useState(false);
 
+  // GD&T state
+  const [gdtAnnotations, setGdtAnnotations] = useState<GdtAnnotation[]>([]);
+  const [selectedGdtKey, setSelectedGdtKey] = useState<string | null>(null);
+  const [gdtTolerance, setGdtTolerance] = useState("0.05");
+  const [gdtDatum, setGdtDatum] = useState("A");
+  const [gdtOpen, setGdtOpen] = useState(true);
+
   const updateTitle = (key: keyof TitleBlock, value: string) =>
     setTitle((prev) => ({ ...prev, [key]: value }));
+
+  const addGdtAnnotation = () => {
+    if (!selectedGdtKey) return;
+    const sym = GDT_SYMBOLS.find((s) => s.key === selectedGdtKey);
+    if (!sym) return;
+    const id = `gdt_${++gdtIdCounter}`;
+    // Place annotations in the front-view area of the SVG
+    const offsets = [0, 35, 70, 105, 140, 175, 210, 245];
+    const idx = gdtAnnotations.length % offsets.length;
+    setGdtAnnotations((prev) => [
+      ...prev,
+      { id, symbolKey: selectedGdtKey, tolerance: gdtTolerance, datum: gdtDatum, x: 250 + idx * 5, y: 195 + idx * 30 },
+    ]);
+  };
+
+  const removeGdtAnnotation = (id: string) =>
+    setGdtAnnotations((prev) => prev.filter((a) => a.id !== id));
 
   return (
     <div className="flex h-screen bg-[#0d1117] text-white overflow-hidden">
@@ -386,6 +498,86 @@ export default function DrawingsPage() {
           >
             {SCALES.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
+        </div>
+
+        {/* GD&T Annotations */}
+        <div className="px-3 py-2 border-b border-[#21262d]">
+          <button
+            onClick={() => setGdtOpen(!gdtOpen)}
+            className="text-[10px] text-[#00D4FF] hover:text-white w-full text-left font-bold uppercase"
+          >
+            {gdtOpen ? "▾" : "▸"} GD&amp;T Annotations
+          </button>
+          {gdtOpen && (
+            <div className="mt-2 space-y-2">
+              {/* Symbol grid */}
+              <div className="text-[9px] text-slate-500 uppercase mb-1">Symbols</div>
+              <div className="grid grid-cols-4 gap-1">
+                {GDT_SYMBOLS.map((sym) => (
+                  <button
+                    key={sym.key}
+                    onClick={() => setSelectedGdtKey(sym.key === selectedGdtKey ? null : sym.key)}
+                    title={sym.label}
+                    className={`flex flex-col items-center py-1.5 rounded border text-[14px] transition-colors ${
+                      selectedGdtKey === sym.key
+                        ? "bg-[#00D4FF]/20 border-[#00D4FF] text-[#00D4FF]"
+                        : "bg-[#0d1117] border-[#21262d] text-slate-300 hover:border-[#00D4FF]/50"
+                    }`}
+                  >
+                    <span>{sym.symbol}</span>
+                    <span className="text-[7px] text-slate-500 mt-0.5 leading-tight text-center">{sym.label}</span>
+                  </button>
+                ))}
+              </div>
+              {/* Tolerance + Datum */}
+              <div className="grid grid-cols-2 gap-1.5">
+                <div>
+                  <div className="text-[9px] text-slate-500 mb-0.5">Tolerance</div>
+                  <input
+                    value={gdtTolerance}
+                    onChange={(e) => setGdtTolerance(e.target.value)}
+                    placeholder="0.05"
+                    className="w-full bg-[#0d1117] border border-[#21262d] rounded px-1.5 py-0.5 text-[10px] text-white"
+                  />
+                </div>
+                <div>
+                  <div className="text-[9px] text-slate-500 mb-0.5">Datum Ref</div>
+                  <input
+                    value={gdtDatum}
+                    onChange={(e) => setGdtDatum(e.target.value)}
+                    placeholder="A"
+                    className="w-full bg-[#0d1117] border border-[#21262d] rounded px-1.5 py-0.5 text-[10px] text-white"
+                  />
+                </div>
+              </div>
+              <button
+                onClick={addGdtAnnotation}
+                disabled={!selectedGdtKey}
+                className="w-full bg-[#00D4FF]/20 hover:bg-[#00D4FF]/30 disabled:opacity-40 border border-[#00D4FF]/40 text-[#00D4FF] text-[10px] font-bold py-1.5 rounded"
+              >
+                + Add Annotation
+              </button>
+              {/* Active annotations */}
+              {gdtAnnotations.length > 0 && (
+                <div className="space-y-1 mt-1">
+                  <div className="text-[9px] text-slate-500 uppercase">Active ({gdtAnnotations.length})</div>
+                  {gdtAnnotations.map((ann) => {
+                    const sym = GDT_SYMBOLS.find((s) => s.key === ann.symbolKey);
+                    return (
+                      <div key={ann.id} className="flex items-center gap-1 bg-[#0d1117] rounded px-1.5 py-1 border border-[#21262d]">
+                        <span className="text-[12px]">{sym?.symbol}</span>
+                        <span className="text-[9px] text-slate-300 flex-1 truncate">{sym?.label} ⌀{ann.tolerance}</span>
+                        <button
+                          onClick={() => removeGdtAnnotation(ann.id)}
+                          className="text-slate-600 hover:text-red-400 text-[10px]"
+                        >✕</button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Title block editor */}
@@ -461,7 +653,7 @@ export default function DrawingsPage() {
       {/* ── Drawing canvas ── */}
       <div className="flex-1 bg-[#1a1f2e] flex items-center justify-center overflow-auto p-6">
         <div className="shadow-2xl" style={{ width: "min(100%, 1100px)", aspectRatio: "841/594" }}>
-          <EngineeringSheet title={title} revisions={revisions} scale={scale} />
+          <EngineeringSheet title={title} revisions={revisions} scale={scale} annotations={gdtAnnotations} />
         </div>
       </div>
     </div>

@@ -118,6 +118,8 @@ export default function RendererPage() {
   const [splitView, setSplitView] = useState(false);
   const [activeCameraPreset, setActiveCameraPreset] = useState<CameraPreset | null>(null);
   const [antialiasing, setAntialiasing] = useState(true);
+  const [showEnvMap, setShowEnvMap] = useState(true);
+  const [showAO, setShowAO] = useState(false);
 
   const applyPreset = (name: string) => {
     const preset = materialPresets[name];
@@ -279,7 +281,11 @@ export default function RendererPage() {
               <>
                 <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Environment Map</h3>
                 <div className="bg-[#0d1117] rounded p-3 border border-[#21262d] text-xs space-y-2">
-                  <div className="grid grid-cols-2 gap-1">
+                  <label className="flex items-center gap-2 text-slate-300 cursor-pointer">
+                    <input type="checkbox" checked={showEnvMap} onChange={e => setShowEnvMap(e.target.checked)} className="accent-[#00D4FF]" />
+                    Enable Environment Map
+                  </label>
+                  <div className={`grid grid-cols-2 gap-1 ${!showEnvMap ? "opacity-40 pointer-events-none" : ""}`}>
                     {envPresets.map(p => (
                       <button
                         key={p.id}
@@ -291,7 +297,7 @@ export default function RendererPage() {
                       </button>
                     ))}
                   </div>
-                  <div>
+                  <div className={!showEnvMap ? "opacity-40 pointer-events-none" : ""}>
                     <div className="flex items-center justify-between mb-1 mt-2">
                       <span className="text-slate-500">Intensity</span>
                       <span className="text-slate-400 text-[10px]">{envIntensity.toFixed(1)}</span>
@@ -299,6 +305,19 @@ export default function RendererPage() {
                     <input type="range" min="0" max="3" step="0.1" value={envIntensity}
                       onChange={e => setEnvIntensity(parseFloat(e.target.value))} className="w-full accent-[#00D4FF]" />
                   </div>
+                </div>
+
+                <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-2">Post-Processing</h3>
+                <div className="bg-[#0d1117] rounded p-3 border border-[#21262d] text-xs space-y-2">
+                  <label className="flex items-center gap-2 text-slate-300 cursor-pointer">
+                    <input type="checkbox" checked={showAO} onChange={e => setShowAO(e.target.checked)} className="accent-[#00D4FF]" />
+                    Ambient Occlusion
+                  </label>
+                  {showAO && (
+                    <div className="text-[10px] text-slate-500 bg-[#161b22] rounded px-2 py-1.5">
+                      SSAO enabled — darkens crevices and contact areas for depth
+                    </div>
+                  )}
                 </div>
 
                 <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-2">Lights</h3>
@@ -456,6 +475,8 @@ export default function RendererPage() {
                   <div className="text-slate-500">Lights: <span className="text-white">{lights.length}</span></div>
                   <div className="text-slate-500">Quality: <span className="text-white capitalize">{renderQuality}</span></div>
                   <div className="text-slate-500">Shadows: <span className="text-white">{showShadows ? "On" : "Off"}</span></div>
+                  <div className="text-slate-500">Env Map: <span className="text-white">{showEnvMap ? "On" : "Off"}</span></div>
+                  <div className="text-slate-500">Ambient Occlusion: <span className="text-white">{showAO ? "On" : "Off"}</span></div>
                   <div className="text-slate-500">Anti-Aliasing: <span className="text-white">{antialiasing ? "On" : "Off"}</span></div>
                   <div className="text-slate-500">Auto-Rotate: <span className="text-white">{autoRotate ? "On" : "Off"}</span></div>
                 </div>
@@ -471,6 +492,8 @@ export default function RendererPage() {
             material={material}
             envPreset={envPreset}
             envIntensity={envIntensity}
+            showEnvMap={showEnvMap}
+            showAO={showAO}
             lights={lights}
             showShadows={showShadows}
             showGround={showGround}
