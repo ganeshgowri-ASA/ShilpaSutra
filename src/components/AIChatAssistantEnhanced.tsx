@@ -638,7 +638,7 @@ I'm context-aware and know what's in your scene. Try asking "what's in the scene
         <span className="text-slate-500">Scene: <span className="text-slate-300">{objects.length} obj</span></span>
         <span className="text-slate-600">|</span>
         {selectedObj ? (
-          <span className="text-[#e94560]">Selected: {selectedObj.name}</span>
+          <span className="text-[#00D4FF]">Selected: {selectedObj.name}</span>
         ) : (
           <span className="text-slate-600">No selection</span>
         )}
@@ -696,7 +696,7 @@ I'm context-aware and know what's in your scene. Try asking "what's in the scene
                   {msg.objectId && (
                     <button
                       onClick={() => selectObject(msg.objectId!)}
-                      className="mt-1.5 text-[10px] bg-[#e94560]/20 text-[#e94560] border border-[#e94560]/30 rounded px-2 py-0.5 hover:bg-[#e94560]/30"
+                      className="mt-1.5 text-[10px] bg-[#00D4FF]/20 text-[#00D4FF] border border-[#00D4FF]/30 rounded px-2 py-0.5 hover:bg-[#00D4FF]/30"
                     >
                       Select in viewport
                     </button>

@@ -326,7 +326,7 @@ export default function AIChatSidebar({ onClose }: { onClose: () => void }) {
                   {msg.objectId && (
                     <button
                       onClick={() => useCadStore.getState().selectObject(msg.objectId!)}
-                      className="mt-1.5 text-[10px] bg-[#e94560]/20 text-[#e94560] border border-[#e94560]/30 rounded px-2 py-0.5 hover:bg-[#e94560]/30"
+                      className="mt-1.5 text-[10px] bg-[#00D4FF]/20 text-[#00D4FF] border border-[#00D4FF]/30 rounded px-2 py-0.5 hover:bg-[#00D4FF]/30"
                     >
                       Select in viewport
                     </button>
@@ -365,7 +365,7 @@ export default function AIChatSidebar({ onClose }: { onClose: () => void }) {
           <button
             onClick={sendMessage}
             disabled={!input.trim() || isGenerating}
-            className="px-3 py-2 bg-[#e94560] text-white rounded text-xs font-medium hover:bg-[#d63750] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="px-3 py-2 bg-[#00D4FF] text-black rounded text-xs font-medium hover:bg-[#00b8d9] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             Go
           </button>

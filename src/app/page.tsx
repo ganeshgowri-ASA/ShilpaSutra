@@ -38,7 +38,7 @@ const modules: ModuleCard[] = [
   { title: "2D Drawings", desc: "Engineering drawings with orthographic views, dimensions, GD&T symbols, title blocks, PDF/DXF/SVG export.", href: "/drawings", icon: "2D", badge: "v2", badgeColor: "bg-green-500/20 text-green-400", status: "active", lastAccessed: "1 day ago" },
   { title: "Reports", desc: "Auto-generated engineering reports with FEA/CFD results, BOM, charts, convergence plots, PDF export.", href: "/reports", icon: "Re", badge: "v2", badgeColor: "bg-green-500/20 text-green-400", status: "active", lastAccessed: "2 days ago" },
   { title: "Parts Library", desc: "Browse 248+ parametric components: gears, brackets, fasteners, enclosures. Search, filter, one-click import.", href: "/library", icon: "Li", badge: "", badgeColor: "", status: "active", lastAccessed: "3 days ago" },
-  { title: "Text to CAD", desc: "Describe any part in natural language and get a 3D model. Supports STEP, STL, OBJ export. AI-powered.", href: "/text-to-cad", icon: "AI", badge: "AI", badgeColor: "bg-[#e94560]/20 text-[#e94560]", status: "active", lastAccessed: "5 min ago" },
+  { title: "Text to CAD", desc: "Describe any part in natural language and get a 3D model. Supports STEP, STL, OBJ export. AI-powered.", href: "/text-to-cad", icon: "AI", badge: "AI", badgeColor: "bg-[#00D4FF]/20 text-[#00D4FF]", status: "active", lastAccessed: "5 min ago" },
 ];
 
 const recentFiles = [
@@ -65,7 +65,7 @@ export default function DashboardPage() {
     <div className="flex-1 overflow-y-auto bg-[#0d1117]">
       {/* Onboarding Banner */}
       {showOnboarding && (
-        <div className="bg-gradient-to-r from-[#00D4FF]/10 to-[#e94560]/10 border-b border-[#00D4FF]/20 px-6 py-3 flex items-center justify-between">
+        <div className="bg-gradient-to-r from-[#00D4FF]/10 to-[#00D4FF]/5 border-b border-[#00D4FF]/20 px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <span className="w-8 h-8 rounded-lg bg-[#00D4FF]/20 flex items-center justify-center text-[#00D4FF] font-bold text-sm">SS</span>
             <span className="text-sm text-slate-200">
