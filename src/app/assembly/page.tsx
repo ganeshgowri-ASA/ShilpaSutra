@@ -89,6 +89,51 @@ function checkCollisions(parts: AssemblyPart[]): CollisionResult[] {
   return results;
 }
 
+function solveConstraint(
+  partA: AssemblyPart,
+  partB: AssemblyPart,
+  constraintType: JointType,
+  value?: number
+): Partial<AssemblyPart> {
+  switch (constraintType) {
+    case "coincident":
+    case "tangent":
+      return {
+        position: [
+          partB.position[0],
+          partA.position[1] + partA.dimensions.height / 2 + partB.dimensions.height / 2,
+          partB.position[2],
+        ],
+      };
+    case "concentric":
+      return {
+        position: [
+          partA.position[0],
+          partB.position[1],
+          partA.position[2],
+        ],
+      };
+    case "distance": {
+      const dist = value ?? 0.1;
+      return {
+        position: [
+          partB.position[0],
+          partA.position[1] + partA.dimensions.height / 2 + dist + partB.dimensions.height / 2,
+          partB.position[2],
+        ],
+      };
+    }
+    case "fixed":
+      return {};
+    case "angle": {
+      const rad = ((value ?? 0) * Math.PI) / 180;
+      return { rotation: [partB.rotation[0], rad, partB.rotation[2]] };
+    }
+    default:
+      return {};
+  }
+}
+
 export default function AssemblyPage() {
   const [parts, setParts] = useState<AssemblyPart[]>(defaultParts);
   const [constraints, setConstraints] = useState<AssemblyConstraint[]>(defaultConstraints);
@@ -102,6 +147,7 @@ export default function AssemblyPage() {
   const [animProgress, setAnimProgress] = useState(0);
   const [showBOM, setShowBOM] = useState(false);
   const [showSection, setShowSection] = useState(false);
+  const [distanceValue, setDistanceValue] = useState(0.1);
 
   const collisions = showCollisions ? checkCollisions(parts) : [];
   const totalMass = parts.reduce((sum, p) => sum + p.mass, 0);
@@ -151,13 +197,37 @@ export default function AssemblyPage() {
 
   const addConstraint = () => {
     if (parts.length < 2) return;
-    const partA = selectedPart || parts[0].id;
-    const partB = parts.find(p => p.id !== partA)?.id;
-    if (!partB) return;
-    setConstraints(prev => [...prev, {
-      id: `con_${Date.now()}`, type: activeJointType, partA, partB,
-      label: `${parts.find(p => p.id === partA)?.name}-${parts.find(p => p.id === partB)?.name} ${activeJointType}`,
-    }]);
+    const partAId = selectedPart || parts[0].id;
+    const partBId = parts.find(p => p.id !== partAId)?.id;
+    if (!partBId) return;
+    const newConstraint: AssemblyConstraint = {
+      id: `con_${Date.now()}`, type: activeJointType, partA: partAId, partB: partBId,
+      label: `${parts.find(p => p.id === partAId)?.name}-${parts.find(p => p.id === partBId)?.name} ${activeJointType}`,
+      value: activeJointType === "distance" ? distanceValue : activeJointType === "angle" ? 45 : undefined,
+    };
+    setConstraints(prev => [...prev, newConstraint]);
+    // Solve constraint and update partB position
+    setParts(prev => {
+      const pA = prev.find(p => p.id === partAId);
+      const pB = prev.find(p => p.id === partBId);
+      if (!pA || !pB) return prev;
+      const updates = solveConstraint(pA, pB, activeJointType, newConstraint.value);
+      return prev.map(p => p.id === partBId ? { ...p, ...updates } : p);
+    });
+  };
+
+  const applyAllMates = () => {
+    setParts(prev => {
+      let updated = [...prev];
+      for (const c of constraints) {
+        const pA = updated.find(p => p.id === c.partA);
+        const pB = updated.find(p => p.id === c.partB);
+        if (!pA || !pB) continue;
+        const upd = solveConstraint(pA, pB, c.type, c.value);
+        updated = updated.map(p => p.id === c.partB ? { ...p, ...upd } : p);
+      }
+      return updated;
+    });
   };
 
   const removeConstraint = (id: string) => setConstraints(prev => prev.filter(c => c.id !== id));
@@ -291,9 +361,26 @@ export default function AssemblyPage() {
 
             {tab === "mates" && (
               <div className="space-y-2">
+                {activeJointType === "distance" && (
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[10px] text-slate-400">Distance (m):</span>
+                    <input
+                      type="number"
+                      step="0.05"
+                      min="0"
+                      value={distanceValue}
+                      onChange={e => setDistanceValue(parseFloat(e.target.value) || 0.1)}
+                      className="flex-1 bg-[#161b22] text-white rounded px-2 py-1 border border-[#21262d] text-xs text-right"
+                    />
+                  </div>
+                )}
                 <button onClick={addConstraint}
                   className="w-full bg-[#21262d] hover:bg-[#30363d] text-xs py-2 rounded text-white border border-[#21262d] mb-1">
                   + Add {activeJointType} Mate
+                </button>
+                <button onClick={applyAllMates}
+                  className="w-full bg-blue-600/20 hover:bg-blue-600/40 text-xs py-2 rounded text-blue-300 border border-blue-600/30 mb-1">
+                  Apply All Mates
                 </button>
 
                 {constraints.map(c => (

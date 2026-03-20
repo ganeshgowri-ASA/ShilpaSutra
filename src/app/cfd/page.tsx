@@ -45,6 +45,8 @@ interface CFDResults {
   convergenceHistory: number[];
   iterations: number;
   converged: boolean;
+  reynoldsNumber: number;
+  pressureDrop: number;
 }
 
 const faces = ["Top (+Y)", "Bottom (-Y)", "Front (+Z)", "Back (-Z)", "Left (-X)", "Right (+X)"];
@@ -64,7 +66,8 @@ const solidMaterials = [
 ];
 
 function computeThermalCFD(
-  boundaries: ThermalBoundary[], meshRes: number, solidMat: string, fluidMat: string, inletVelocity: number
+  boundaries: ThermalBoundary[], meshRes: number, solidMat: string, fluidMat: string, inletVelocity: number,
+  geoDims: { width: number; height: number; depth: number }
 ): CFDResults {
   const gridSize = meshRes;
   const totalNodes = gridSize * gridSize;
@@ -151,16 +154,27 @@ function computeThermalCFD(
   const minTemp = Math.min(...temps);
   const maxTemp = Math.max(...temps);
   const avgTemp = temps.reduce((a, b) => a + b, 0) / temps.length;
+  const maxVel = Math.max(...velocityField);
+
+  // Reynolds number: Re = rho * V * D / mu
+  const hydraulicDiameter = geoDims.width;
+  const reynoldsNumber = (fluid.density * inletVelocity * hydraulicDiameter) / fluid.mu;
+
+  // Pressure drop: dP = 0.5 * rho * V^2 * f * (L/D)
+  const frictionFactor = reynoldsNumber > 0 ? (reynoldsNumber < 2300 ? 64 / reynoldsNumber : 0.316 / Math.pow(reynoldsNumber, 0.25)) : 0;
+  const pressureDrop = 0.5 * fluid.density * maxVel * maxVel * frictionFactor * (geoDims.depth / hydraulicDiameter);
 
   return {
     temperatureField, velocityField, pressureField,
     minTemp: Math.round((minTemp - 273.15) * 100) / 100,
     maxTemp: Math.round((maxTemp - 273.15) * 100) / 100,
     avgTemp: Math.round((avgTemp - 273.15) * 100) / 100,
-    maxVelocity: Math.round(Math.max(...velocityField) * 1000) / 1000,
+    maxVelocity: Math.round(maxVel * 1000) / 1000,
     convergenceHistory,
     iterations: convergenceHistory.length,
     converged: convergenceHistory[convergenceHistory.length - 1] < 1e-3,
+    reynoldsNumber: Math.round(reynoldsNumber),
+    pressureDrop: Math.round(pressureDrop * 100) / 100,
   };
 }
 
@@ -213,7 +227,7 @@ export default function CFDPage() {
         if (p >= 100) {
           clearInterval(iv);
           setRunning(false);
-          const res = computeThermalCFD(boundaries, meshRes, solidMat, fluidMat, inletVelocity);
+          const res = computeThermalCFD(boundaries, meshRes, solidMat, fluidMat, inletVelocity, geoDims);
           setResults(res);
           setLeftTab("results");
           return 100;
@@ -528,6 +542,9 @@ export default function CFDPage() {
                     <div className="text-slate-300 font-medium mb-1">Flow</div>
                     <div className="text-slate-400">Max Velocity: <span className="text-cyan-400 font-bold">{results.maxVelocity.toFixed(3)} m/s</span></div>
                     <div className="text-slate-400">Model: <span className="text-white">{flowModel}</span></div>
+                    <div className="text-slate-400">Reynolds No.: <span className={`font-bold ${results.reynoldsNumber < 2300 ? "text-green-400" : results.reynoldsNumber < 4000 ? "text-amber-400" : "text-red-400"}`}>{results.reynoldsNumber.toLocaleString()}</span></div>
+                    <div className="text-slate-400">Regime: <span className="text-white">{results.reynoldsNumber < 2300 ? "Laminar" : results.reynoldsNumber < 4000 ? "Transitional" : "Turbulent"}</span></div>
+                    <div className="text-slate-400">Pressure Drop: <span className="text-purple-400 font-bold">{results.pressureDrop.toFixed(2)} Pa</span></div>
                   </div>
 
                   {/* Force Report */}

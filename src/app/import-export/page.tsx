@@ -6,6 +6,12 @@ import { useCadStore, type CadObject } from "@/stores/cad-store";
 type FileFormat = "STEP" | "STL" | "OBJ" | "IGES" | "glTF" | "FBX" | "PLY" | "Unknown";
 type UnitSystem = "mm" | "cm" | "m" | "in";
 
+interface ParsedStats {
+  triangles: number;
+  vertices: number;
+  bbox: { min: number[]; max: number[] };
+}
+
 interface ImportedFile {
   id: string;
   name: string;
@@ -13,6 +19,7 @@ interface ImportedFile {
   size: number;
   date: string;
   status: "ready" | "importing" | "error";
+  parsedStats?: ParsedStats;
 }
 
 interface ExportOptions {
@@ -53,6 +60,249 @@ const formatColors: Record<FileFormat, string> = {
 
 const exportFormats: FileFormat[] = ["STEP", "STL", "OBJ", "IGES", "glTF", "FBX", "PLY"];
 
+/* ── STL Parsing ── */
+function parseSTL(buffer: ArrayBuffer): ParsedStats {
+  const bytes = new Uint8Array(buffer);
+  // Check for ASCII STL: starts with "solid"
+  const header = String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3], bytes[4]);
+  const isAscii = header.toLowerCase() === "solid";
+
+  if (isAscii) {
+    const text = new TextDecoder().decode(buffer);
+    const vertMatches = text.match(/vertex\s+([-\d.eE+]+)\s+([-\d.eE+]+)\s+([-\d.eE+]+)/g) || [];
+    const triangles = Math.floor(vertMatches.length / 3);
+    const vertices = vertMatches.length;
+    const xs: number[] = [];
+    const ys: number[] = [];
+    const zs: number[] = [];
+    for (const m of vertMatches) {
+      const parts = m.replace("vertex", "").trim().split(/\s+/);
+      xs.push(parseFloat(parts[0]));
+      ys.push(parseFloat(parts[1]));
+      zs.push(parseFloat(parts[2]));
+    }
+    const bbox = {
+      min: [xs.length ? Math.min(...xs) : 0, ys.length ? Math.min(...ys) : 0, zs.length ? Math.min(...zs) : 0],
+      max: [xs.length ? Math.max(...xs) : 0, ys.length ? Math.max(...ys) : 0, zs.length ? Math.max(...zs) : 0],
+    };
+    return { triangles, vertices, bbox };
+  } else {
+    // Binary STL: 80-byte header, 4-byte uint32 triangle count, 50 bytes per triangle
+    const view = new DataView(buffer);
+    const triangles = view.getUint32(80, true);
+    const vertices = triangles * 3;
+    const xs: number[] = [];
+    const ys: number[] = [];
+    const zs: number[] = [];
+    for (let i = 0; i < triangles; i++) {
+      const offset = 84 + i * 50;
+      // Skip normal (12 bytes), read 3 vertices
+      for (let v = 0; v < 3; v++) {
+        const vOffset = offset + 12 + v * 12;
+        if (vOffset + 12 <= buffer.byteLength) {
+          xs.push(view.getFloat32(vOffset, true));
+          ys.push(view.getFloat32(vOffset + 4, true));
+          zs.push(view.getFloat32(vOffset + 8, true));
+        }
+      }
+    }
+    const bbox = {
+      min: [xs.length ? Math.min(...xs) : 0, ys.length ? Math.min(...ys) : 0, zs.length ? Math.min(...zs) : 0],
+      max: [xs.length ? Math.max(...xs) : 0, ys.length ? Math.max(...ys) : 0, zs.length ? Math.max(...zs) : 0],
+    };
+    return { triangles, vertices, bbox };
+  }
+}
+
+/* ── OBJ Parsing ── */
+function parseOBJ(text: string): ParsedStats {
+  const lines = text.split("\n");
+  const verts: number[][] = [];
+  let faces = 0;
+  for (const line of lines) {
+    const parts = line.trim().split(/\s+/);
+    if (parts[0] === "v") {
+      verts.push([parseFloat(parts[1]), parseFloat(parts[2]), parseFloat(parts[3])]);
+    } else if (parts[0] === "f") {
+      // Each face token can be "v", "v/vt", "v/vt/vn"
+      const count = parts.length - 1;
+      faces += Math.max(0, count - 2); // triangulate
+    }
+  }
+  const xs = verts.map(v => v[0]);
+  const ys = verts.map(v => v[1]);
+  const zs = verts.map(v => v[2]);
+  const bbox = {
+    min: [xs.length ? Math.min(...xs) : 0, ys.length ? Math.min(...ys) : 0, zs.length ? Math.min(...zs) : 0],
+    max: [xs.length ? Math.max(...xs) : 0, ys.length ? Math.max(...ys) : 0, zs.length ? Math.max(...zs) : 0],
+  };
+  return { triangles: faces, vertices: verts.length, bbox };
+}
+
+/* ── STL Binary Export ── */
+function boxTriangles(obj: CadObject): number[][] {
+  // Returns array of triangles, each triangle is [nx,ny,nz, ax,ay,az, bx,by,bz, cx,cy,cz]
+  const [px, py, pz] = obj.position;
+  const { width: w, height: h, depth: d } = obj.dimensions;
+  const hw = w / 2, hh = h / 2, hd = d / 2;
+  // 8 corners
+  const v = [
+    [px - hw, py - hh, pz - hd], // 0 LBF
+    [px + hw, py - hh, pz - hd], // 1 RBF
+    [px + hw, py + hh, pz - hd], // 2 RTF
+    [px - hw, py + hh, pz - hd], // 3 LTF
+    [px - hw, py - hh, pz + hd], // 4 LBB
+    [px + hw, py - hh, pz + hd], // 5 RBB
+    [px + hw, py + hh, pz + hd], // 6 RTB
+    [px - hw, py + hh, pz + hd], // 7 LTB
+  ];
+  // 6 faces x 2 triangles = 12 triangles
+  const faces: [number, number, number, [number,number,number]][] = [
+    // Front -Z: 0,1,2 and 0,2,3
+    [0, 1, 2, [0, 0, -1]], [0, 2, 3, [0, 0, -1]],
+    // Back +Z: 5,4,7 and 5,7,6
+    [5, 4, 7, [0, 0, 1]], [5, 7, 6, [0, 0, 1]],
+    // Left -X: 4,0,3 and 4,3,7
+    [4, 0, 3, [-1, 0, 0]], [4, 3, 7, [-1, 0, 0]],
+    // Right +X: 1,5,6 and 1,6,2
+    [1, 5, 6, [1, 0, 0]], [1, 6, 2, [1, 0, 0]],
+    // Bottom -Y: 4,5,1 and 4,1,0
+    [4, 5, 1, [0, -1, 0]], [4, 1, 0, [0, -1, 0]],
+    // Top +Y: 3,2,6 and 3,6,7
+    [3, 2, 6, [0, 1, 0]], [3, 6, 7, [0, 1, 0]],
+  ];
+  return faces.map(([ai, bi, ci, n]) => [...n, ...v[ai], ...v[bi], ...v[ci]]);
+}
+
+function cylinderTriangles(obj: CadObject, segments = 16): number[][] {
+  const [px, py, pz] = obj.position;
+  const { width: r, height: h } = obj.dimensions;
+  const hh = h / 2;
+  const tris: number[][] = [];
+  for (let i = 0; i < segments; i++) {
+    const a0 = (i / segments) * Math.PI * 2;
+    const a1 = ((i + 1) / segments) * Math.PI * 2;
+    const x0 = Math.cos(a0) * r, z0 = Math.sin(a0) * r;
+    const x1 = Math.cos(a1) * r, z1 = Math.sin(a1) * r;
+    // Side quads
+    const nx = Math.cos((a0 + a1) / 2), nz = Math.sin((a0 + a1) / 2);
+    tris.push([nx, 0, nz, px+x0, py-hh, pz+z0, px+x1, py-hh, pz+z1, px+x1, py+hh, pz+z1]);
+    tris.push([nx, 0, nz, px+x0, py-hh, pz+z0, px+x1, py+hh, pz+z1, px+x0, py+hh, pz+z0]);
+    // Top cap
+    tris.push([0, 1, 0, px, py+hh, pz, px+x0, py+hh, pz+z0, px+x1, py+hh, pz+z1]);
+    // Bottom cap
+    tris.push([0, -1, 0, px, py-hh, pz, px+x1, py-hh, pz+z1, px+x0, py-hh, pz+z0]);
+  }
+  return tris;
+}
+
+function sphereTriangles(obj: CadObject, segments = 12): number[][] {
+  const [px, py, pz] = obj.position;
+  const r = obj.dimensions.width / 2;
+  const tris: number[][] = [];
+  for (let lat = 0; lat < segments; lat++) {
+    const theta0 = (lat / segments) * Math.PI;
+    const theta1 = ((lat + 1) / segments) * Math.PI;
+    for (let lon = 0; lon < segments; lon++) {
+      const phi0 = (lon / segments) * Math.PI * 2;
+      const phi1 = ((lon + 1) / segments) * Math.PI * 2;
+      const p = (t: number, p: number) => [
+        Math.sin(t) * Math.cos(p) * r + px,
+        Math.cos(t) * r + py,
+        Math.sin(t) * Math.sin(p) * r + pz,
+        Math.sin(t) * Math.cos(p),
+        Math.cos(t),
+        Math.sin(t) * Math.sin(p),
+      ];
+      const [ax, ay, az, nx0, ny0, nz0] = p(theta0, phi0);
+      const [bx, by, bz] = p(theta0, phi1);
+      const [cx, cy, cz] = p(theta1, phi0);
+      const [dx, dy, dz, nx1, ny1, nz1] = p(theta1, phi1);
+      tris.push([nx0, ny0, nz0, ax, ay, az, bx, by, bz, cx, cy, cz]);
+      tris.push([nx1, ny1, nz1, bx, by, bz, dx, dy, dz, cx, cy, cz]);
+    }
+  }
+  return tris;
+}
+
+function generateSTLBinary(objects: CadObject[]): ArrayBuffer {
+  const allTris: number[][] = [];
+  for (const obj of objects) {
+    if (obj.visible === false) continue;
+    if (obj.type === "box") allTris.push(...boxTriangles(obj));
+    else if (obj.type === "cylinder") allTris.push(...cylinderTriangles(obj));
+    else if (obj.type === "sphere") allTris.push(...sphereTriangles(obj));
+  }
+
+  const triangleCount = allTris.length;
+  const bufferSize = 80 + 4 + triangleCount * 50;
+  const buffer = new ArrayBuffer(bufferSize);
+  const view = new DataView(buffer);
+
+  // 80-byte header
+  const headerText = "ShilpaSutra STL Export";
+  for (let i = 0; i < Math.min(headerText.length, 80); i++) {
+    view.setUint8(i, headerText.charCodeAt(i));
+  }
+
+  // Triangle count
+  view.setUint32(80, triangleCount, true);
+
+  for (let i = 0; i < triangleCount; i++) {
+    const tri = allTris[i];
+    const offset = 84 + i * 50;
+    // Normal (3 floats)
+    view.setFloat32(offset, tri[0], true);
+    view.setFloat32(offset + 4, tri[1], true);
+    view.setFloat32(offset + 8, tri[2], true);
+    // Vertex A
+    view.setFloat32(offset + 12, tri[3], true);
+    view.setFloat32(offset + 16, tri[4], true);
+    view.setFloat32(offset + 20, tri[5], true);
+    // Vertex B
+    view.setFloat32(offset + 24, tri[6], true);
+    view.setFloat32(offset + 28, tri[7], true);
+    view.setFloat32(offset + 32, tri[8], true);
+    // Vertex C
+    view.setFloat32(offset + 36, tri[9], true);
+    view.setFloat32(offset + 40, tri[10], true);
+    view.setFloat32(offset + 44, tri[11], true);
+    // Attribute byte count
+    view.setUint16(offset + 48, 0, true);
+  }
+
+  return buffer;
+}
+
+/* ── OBJ Text Export ── */
+function generateOBJ(objects: CadObject[]): string {
+  let lines = "# ShilpaSutra OBJ Export\n";
+  let vertexOffset = 1;
+
+  for (const obj of objects) {
+    if (obj.visible === false) continue;
+    lines += `\n# Object: ${obj.name}\ng ${obj.name.replace(/\s/g, "_")}\n`;
+
+    let tris: number[][] = [];
+    if (obj.type === "box") tris = boxTriangles(obj);
+    else if (obj.type === "cylinder") tris = cylinderTriangles(obj);
+    else if (obj.type === "sphere") tris = sphereTriangles(obj);
+
+    for (const tri of tris) {
+      lines += `v ${tri[3].toFixed(6)} ${tri[4].toFixed(6)} ${tri[5].toFixed(6)}\n`;
+      lines += `v ${tri[6].toFixed(6)} ${tri[7].toFixed(6)} ${tri[8].toFixed(6)}\n`;
+      lines += `v ${tri[9].toFixed(6)} ${tri[10].toFixed(6)} ${tri[11].toFixed(6)}\n`;
+    }
+    for (let i = 0; i < tris.length; i++) {
+      const a = vertexOffset + i * 3;
+      lines += `f ${a} ${a + 1} ${a + 2}\n`;
+    }
+    vertexOffset += tris.length * 3;
+  }
+
+  return lines;
+}
+
 /* ── DXF Generation ── */
 function generateDxf(objects: CadObject[]): string {
   let entities = "";
@@ -75,7 +325,6 @@ function generateDxf(objects: CadObject[]): string {
         `10\n${obj.circleCenter[0].toFixed(4)}\n20\n${obj.circleCenter[2].toFixed(4)}\n30\n0.0\n` +
         `40\n${obj.circleRadius.toFixed(4)}\n`;
     } else if (obj.type === "arc" && obj.arcPoints && obj.arcPoints.length >= 3) {
-      // Compute arc center/radius from 3 points
       const [p1, , p3] = obj.arcPoints;
       const cx = (p1[0] + p3[0]) / 2;
       const cz = (p1[2] + p3[2]) / 2;
@@ -132,6 +381,7 @@ function generateDxf(objects: CadObject[]): string {
 
   return `0\nSECTION\n2\nENTITIES\n${entities}0\nENDSEC\n0\nEOF\n`;
 }
+
 const unitSystems: UnitSystem[] = ["mm", "cm", "m", "in"];
 
 const sampleFiles: ImportedFile[] = [
@@ -155,49 +405,101 @@ export default function ImportExportPage() {
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
+  const processFile = useCallback((file: File, id: string): Promise<ImportedFile> => {
+    return new Promise((resolve) => {
+      const fmt = detectFormat(file.name);
+      const base: ImportedFile = {
+        id,
+        name: file.name,
+        format: fmt,
+        size: file.size,
+        date: new Date().toISOString().split("T")[0],
+        status: "ready",
+      };
+
+      if (fmt === "STL") {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          try {
+            const buf = e.target?.result as ArrayBuffer;
+            const stats = parseSTL(buf);
+            resolve({ ...base, parsedStats: stats });
+          } catch {
+            resolve(base);
+          }
+        };
+        reader.readAsArrayBuffer(file);
+      } else if (fmt === "OBJ") {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          try {
+            const text = e.target?.result as string;
+            const stats = parseOBJ(text);
+            resolve({ ...base, parsedStats: stats });
+          } catch {
+            resolve(base);
+          }
+        };
+        reader.readAsText(file);
+      } else {
+        resolve(base);
+      }
+    });
+  }, []);
+
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
     const droppedFiles = Array.from(e.dataTransfer.files);
-    const newFiles: ImportedFile[] = droppedFiles.map((f, i) => ({
-      id: `imp-${Date.now()}-${i}`,
-      name: f.name,
-      format: detectFormat(f.name),
-      size: f.size,
-      date: new Date().toISOString().split("T")[0],
-      status: "ready",
-    }));
+    const newFiles = await Promise.all(
+      droppedFiles.map((f, i) => processFile(f, `imp-${Date.now()}-${i}`))
+    );
     setFiles((prev) => [...newFiles, ...prev]);
-  }, []);
+  }, [processFile]);
 
-  const handleFileInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileInput = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = Array.from(e.target.files || []);
-    const newFiles: ImportedFile[] = selected.map((f, i) => ({
-      id: `inp-${Date.now()}-${i}`,
-      name: f.name,
-      format: detectFormat(f.name),
-      size: f.size,
-      date: new Date().toISOString().split("T")[0],
-      status: "ready",
-    }));
+    const newFiles = await Promise.all(
+      selected.map((f, i) => processFile(f, `inp-${Date.now()}-${i}`))
+    );
     setFiles((prev) => [...newFiles, ...prev]);
-  }, []);
+  }, [processFile]);
 
   const removeFile = useCallback((id: string) => {
     setFiles((prev) => prev.filter((f) => f.id !== id));
   }, []);
 
   const handleExport = useCallback(() => {
-    const content = `Export Configuration\nFormat: ${exportOpts.format}\nUnits: ${exportOpts.units}\nPrecision: ${exportOpts.precision}\nInclude Textures: ${exportOpts.includeTextures}\nMerge Meshes: ${exportOpts.mergeMeshes}`;
-    const blob = new Blob([content], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `export_config.${exportOpts.format.toLowerCase()}`;
-    a.click();
-    URL.revokeObjectURL(url);
+    if (exportOpts.format === "STL") {
+      const buf = generateSTLBinary(cadObjects);
+      const blob = new Blob([buf], { type: "application/octet-stream" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "shilpasutra_export.stl";
+      a.click();
+      URL.revokeObjectURL(url);
+    } else if (exportOpts.format === "OBJ") {
+      const text = generateOBJ(cadObjects);
+      const blob = new Blob([text], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "shilpasutra_export.obj";
+      a.click();
+      URL.revokeObjectURL(url);
+    } else {
+      const content = `Export Configuration\nFormat: ${exportOpts.format}\nUnits: ${exportOpts.units}\nPrecision: ${exportOpts.precision}\nInclude Textures: ${exportOpts.includeTextures}\nMerge Meshes: ${exportOpts.mergeMeshes}`;
+      const blob = new Blob([content], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `export_config.${exportOpts.format.toLowerCase()}`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
     setShowExport(false);
-  }, [exportOpts]);
+  }, [exportOpts, cadObjects]);
 
   const handleDxfExport = useCallback(() => {
     const dxfContent = generateDxf(cadObjects);
@@ -206,6 +508,28 @@ export default function ImportExportPage() {
     const a = document.createElement("a");
     a.href = url;
     a.download = "shilpasutra_export.dxf";
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [cadObjects]);
+
+  const handleSTLExport = useCallback(() => {
+    const buf = generateSTLBinary(cadObjects);
+    const blob = new Blob([buf], { type: "application/octet-stream" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "shilpasutra_export.stl";
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [cadObjects]);
+
+  const handleOBJExport = useCallback(() => {
+    const text = generateOBJ(cadObjects);
+    const blob = new Blob([text], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "shilpasutra_export.obj";
     a.click();
     URL.revokeObjectURL(url);
   }, [cadObjects]);
@@ -225,6 +549,20 @@ export default function ImportExportPage() {
             title="Export current CAD objects as DXF (LINE, CIRCLE, ARC primitives)"
           >
             Export DXF
+          </button>
+          <button
+            onClick={handleSTLExport}
+            className="px-3 py-1.5 bg-green-500/10 text-green-400 text-xs rounded hover:bg-green-500/20 transition-colors border border-green-500/20"
+            title="Export current CAD objects as binary STL"
+          >
+            Export STL
+          </button>
+          <button
+            onClick={handleOBJExport}
+            className="px-3 py-1.5 bg-yellow-500/10 text-yellow-400 text-xs rounded hover:bg-yellow-500/20 transition-colors border border-yellow-500/20"
+            title="Export current CAD objects as OBJ text"
+          >
+            Export OBJ
           </button>
           <button
             onClick={() => setShowExport(true)}
@@ -266,7 +604,7 @@ export default function ImportExportPage() {
             {dragOver ? "Drop files here" : "Drag & drop CAD files or click to browse"}
           </div>
           <div className="text-xs text-slate-500 mt-2">
-            STEP, STL, OBJ, IGES, glTF, FBX, PLY
+            STEP, STL, OBJ, IGES, glTF, FBX, PLY — STL and OBJ files will be parsed for geometry stats
           </div>
         </div>
 
@@ -288,6 +626,14 @@ export default function ImportExportPage() {
                   <div className="text-sm text-white font-medium truncate">{file.name}</div>
                   <div className="text-[11px] text-slate-500">
                     {formatSize(file.size)} · {file.date}
+                    {file.parsedStats && (
+                      <span className="ml-2 text-[#00D4FF]/70">
+                        {file.parsedStats.triangles.toLocaleString()} tri · {file.parsedStats.vertices.toLocaleString()} verts ·{" "}
+                        {(file.parsedStats.bbox.max[0] - file.parsedStats.bbox.min[0]).toFixed(1)}×
+                        {(file.parsedStats.bbox.max[1] - file.parsedStats.bbox.min[1]).toFixed(1)}×
+                        {(file.parsedStats.bbox.max[2] - file.parsedStats.bbox.min[2]).toFixed(1)} mm
+                      </span>
+                    )}
                   </div>
                 </div>
                 <span
@@ -421,7 +767,7 @@ export default function ImportExportPage() {
                 onClick={handleExport}
                 className="flex-1 py-2 rounded text-xs font-medium bg-[#00D4FF] text-black hover:bg-[#00bde6] transition-colors"
               >
-                Export
+                Export {(exportOpts.format === "STL" || exportOpts.format === "OBJ") ? "(Real Geometry)" : ""}
               </button>
             </div>
           </div>
