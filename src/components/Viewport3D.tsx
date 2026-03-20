@@ -623,12 +623,40 @@ function SketchDrawTools() {
   );
 }
 
-/* ── Camera Controller - responds to cameraView changes ── */
+/* ── Camera Controller - responds to cameraView and sketchPlane changes ── */
 function CameraController() {
   const cameraView = useCadStore((s) => s.cameraView);
   const setCameraView = useCadStore((s) => s.setCameraView);
-  const perspectiveMode = useCadStore((s) => s.perspectiveMode);
+  const sketchPlane = useCadStore((s) => s.sketchPlane);
   const { camera } = useThree();
+
+  // Lock camera to orthographic view when entering sketch mode
+  useEffect(() => {
+    const distance = 10;
+    if (sketchPlane) {
+      const positions: Record<string, [number, number, number]> = {
+        xy: [0, 0, distance],
+        xz: [0, distance, 0.01],
+        yz: [distance, 0, 0],
+      };
+      camera.position.set(...positions[sketchPlane]);
+      camera.lookAt(0, 0, 0);
+      // Switch to orthographic-like by using a very narrow FOV
+      if ((camera as THREE.PerspectiveCamera).fov !== undefined) {
+        (camera as THREE.PerspectiveCamera).fov = 2;
+        (camera as THREE.PerspectiveCamera).position.multiplyScalar(25);
+      }
+      camera.updateProjectionMatrix();
+    } else {
+      // Restore perspective camera
+      if ((camera as THREE.PerspectiveCamera).fov !== undefined) {
+        (camera as THREE.PerspectiveCamera).fov = 50;
+        camera.position.set(5, 5, 5);
+        camera.lookAt(0, 0, 0);
+      }
+      camera.updateProjectionMatrix();
+    }
+  }, [sketchPlane, camera]);
 
   useEffect(() => {
     if (!cameraView) return;
@@ -857,6 +885,7 @@ export default function Viewport3D({ mode }: Viewport3DProps) {
   const activeTool = useCadStore((s) => s.activeTool);
   const showGrid = useCadStore((s) => s.showGrid);
   const showOrigin = useCadStore((s) => s.showOrigin);
+  const sketchPlane = useCadStore((s) => s.sketchPlane);
   const isSketchMode = SKETCH_TOOLS.includes(activeTool);
 
   return (
@@ -921,6 +950,10 @@ export default function Viewport3D({ mode }: Viewport3DProps) {
           makeDefault
           enableDamping
           dampingFactor={0.05}
+          enabled={!sketchPlane}
+          enableRotate={!sketchPlane}
+          enableZoom={true}
+          enablePan={!sketchPlane}
         />
 
         <GizmoHelper alignment="bottom-left" margin={[60, 60]}>
