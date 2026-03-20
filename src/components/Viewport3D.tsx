@@ -33,6 +33,20 @@ function snap(value: number, gridSize: number, enabled: boolean): number {
   return Math.round(value / gridSize) * gridSize;
 }
 
+/* ── Custom mesh geometry from vertex/index data ── */
+function CustomBufferGeometry({ vertices, indices }: { vertices: number[]; indices: number[] }) {
+  const geoRef = useRef<THREE.BufferGeometry>(null);
+  useEffect(() => {
+    const geo = geoRef.current;
+    if (!geo) return;
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
+    geo.setIndex(indices);
+    geo.computeVertexNormals();
+    geo.computeBoundingSphere();
+  }, [vertices, indices]);
+  return <bufferGeometry ref={geoRef} />;
+}
+
 /* ── Single CAD mesh ── */
 function CadMesh({ obj }: { obj: CadObject }) {
   const meshRef = useRef<THREE.Mesh>(null);
@@ -58,6 +72,33 @@ function CadMesh({ obj }: { obj: CadObject }) {
     },
     [activeTool, selectObject, toggleSelectObject, obj.id]
   );
+
+  // For "mesh" type with vertex data, render as CustomBufferGeometry
+  if (obj.type === "mesh" && obj.meshVertices && obj.meshIndices && obj.meshVertices.length > 0) {
+    return (
+      <mesh
+        ref={meshRef}
+        position={obj.position}
+        rotation={obj.rotation}
+        scale={obj.scale}
+        onClick={handleClick}
+        onPointerEnter={(e) => { e.stopPropagation(); setHovered(true); }}
+        onPointerLeave={() => setHovered(false)}
+        userData={{ cadId: obj.id }}
+      >
+        <CustomBufferGeometry vertices={obj.meshVertices} indices={obj.meshIndices} />
+        <meshStandardMaterial
+          color={obj.color}
+          metalness={obj.metalness ?? 0.4}
+          roughness={obj.roughness ?? 0.5}
+          opacity={obj.opacity ?? 1}
+          transparent={(obj.opacity ?? 1) < 1}
+          emissive={isSelected ? "#00D4FF" : hovered ? "#4a7aff" : "#000000"}
+          emissiveIntensity={isSelected ? 0.15 : hovered ? 0.08 : 0}
+        />
+      </mesh>
+    );
+  }
 
   const geometry = (() => {
     switch (obj.type) {
