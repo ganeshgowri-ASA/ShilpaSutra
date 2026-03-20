@@ -3,6 +3,9 @@ import { useState, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { useCadStore } from "@/stores/cad-store";
 
+const ParametricPanel = dynamic(() => import("@/components/cad/ParametricPanel"), { ssr: false });
+const AnimationTimeline = dynamic(() => import("@/components/cad/AnimationTimeline"), { ssr: false });
+
 const Viewport3D = dynamic(() => import("@/components/Viewport3D"), {
   ssr: false,
   loading: () => (
@@ -80,6 +83,8 @@ export default function DesignerPage() {
 
   const [aiOpen, setAiOpen] = useState(false);
   const [aiMode, setAiMode] = useState<"basic" | "zookeeper">("zookeeper");
+  const [parametricOpen, setParametricOpen] = useState(false);
+  const [timelineOpen, setTimelineOpen] = useState(false);
 
   const sketchTools = ["line", "arc", "circle", "rectangle", "polygon", "spline", "ellipse", "construction_line"];
   const isSketchMode = sketchTools.includes(activeTool) || !!sketchPlane;
@@ -172,9 +177,16 @@ export default function DesignerPage() {
             </div>
           )}
 
+          {/* Parametric Panel */}
+          {parametricOpen && <ParametricPanel onClose={() => setParametricOpen(false)} />}
+
           {/* AI toggle button */}
           {!measureResult && (
             <div className="absolute top-2 right-2 flex items-center gap-1 z-10 pointer-events-auto">
+              <button onClick={() => setParametricOpen(!parametricOpen)}
+                className={`px-2 py-1 rounded text-xs font-medium transition-all ${parametricOpen ? "bg-green-600 text-white" : "text-slate-400 hover:text-white bg-[#1a1a2e]/80 hover:bg-[#0f3460] border border-[#16213e] backdrop-blur-sm"}`}>
+                Param
+              </button>
               {aiOpen && (
                 <button
                   onClick={() => setAiMode(aiMode === "basic" ? "zookeeper" : "basic")}
@@ -236,6 +248,17 @@ export default function DesignerPage() {
         {/* AI Chat Sidebar */}
         {aiOpen && aiMode === "basic" && <AIChatSidebar onClose={() => setAiOpen(false)} />}
         {aiOpen && aiMode === "zookeeper" && <AIChatAssistantEnhanced onClose={() => setAiOpen(false)} />}
+      </div>
+
+      {/* Animation Timeline (bottom) */}
+      {timelineOpen && <AnimationTimeline onClose={() => setTimelineOpen(false)} />}
+
+      {/* Timeline toggle in command bar area */}
+      <div className="flex items-center gap-2 px-3 py-0.5 bg-[#0d1117] border-t border-[#16213e]">
+        <button onClick={() => setTimelineOpen(!timelineOpen)}
+          className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${timelineOpen ? "border-[#00D4FF]/40 text-[#00D4FF] bg-[#00D4FF]/10" : "border-[#16213e] text-slate-500 hover:text-slate-300"}`}>
+          Timeline
+        </button>
       </div>
 
       {/* Command Bar (bottom 40px) */}
