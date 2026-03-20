@@ -245,6 +245,26 @@ interface CadState {
 
   // Command
   executeCommand: (cmd: string) => void;
+
+  // Selection helpers
+  selectAll: () => void;
+  duplicateSelected: () => void;
+
+  // Cursor tracking
+  cursorPosition: [number, number, number];
+  setCursorPosition: (pos: [number, number, number]) => void;
+
+  // Context menu
+  contextMenu: { x: number; y: number; objectId: string } | null;
+  setContextMenu: (menu: { x: number; y: number; objectId: string } | null) => void;
+
+  // Boolean operation state
+  booleanMode: "union" | "subtract" | "intersect" | null;
+  setBooleanMode: (mode: "union" | "subtract" | "intersect" | null) => void;
+
+  // Extrude dialog
+  extrudeDialogOpen: boolean;
+  setExtrudeDialogOpen: (v: boolean) => void;
 }
 
 export const useCadStore = create<CadState>((set, get) => ({
@@ -301,6 +321,18 @@ export const useCadStore = create<CadState>((set, get) => ({
   // History timeline
   showHistoryTimeline: false,
 
+  // Cursor position
+  cursorPosition: [0, 0, 0] as [number, number, number],
+
+  // Context menu
+  contextMenu: null,
+
+  // Boolean mode
+  booleanMode: null,
+
+  // Extrude dialog
+  extrudeDialogOpen: false,
+
   // Setters
   setActiveTool: (tool) => set({ activeTool: tool, measurePoints: [], measureResult: null }),
   setTransformMode: (mode) => set({ transformMode: mode }),
@@ -322,6 +354,10 @@ export const useCadStore = create<CadState>((set, get) => ({
   setAutoConstraints: (v) => set({ autoConstraints: v }),
   setActiveOperation: (op) => set({ activeOperation: op }),
   setShowHistoryTimeline: (v) => set({ showHistoryTimeline: v }),
+  setCursorPosition: (pos) => set({ cursorPosition: pos }),
+  setContextMenu: (menu) => set({ contextMenu: menu }),
+  setBooleanMode: (mode) => set({ booleanMode: mode }),
+  setExtrudeDialogOpen: (v) => set({ extrudeDialogOpen: v }),
 
   snapToGrid: (value: number) => {
     const { snapGrid, gridSize } = get();
@@ -739,6 +775,50 @@ export const useCadStore = create<CadState>((set, get) => ({
   getSelected: () => {
     const { objects, selectedId } = get();
     return objects.find((o) => o.id === selectedId);
+  },
+
+  selectAll: () => {
+    const { objects } = get();
+    const ids = objects.map((o) => o.id);
+    set({ selectedIds: ids, selectedId: ids[ids.length - 1] ?? null });
+  },
+
+  duplicateSelected: () => {
+    const { objects, selectedIds, selectedId } = get();
+    const ids = selectedIds.length > 0 ? selectedIds : selectedId ? [selectedId] : [];
+    if (ids.length === 0) return;
+    get().pushHistory();
+    const newIds: string[] = [];
+    const newObjects: CadObject[] = [];
+    const newFeatures: FeatureNode[] = [];
+    ids.forEach((id) => {
+      const obj = objects.find((o) => o.id === id);
+      if (!obj) return;
+      const newId = `obj_${++idCounter}_${Date.now()}`;
+      newIds.push(newId);
+      newObjects.push({
+        ...JSON.parse(JSON.stringify(obj)),
+        id: newId,
+        name: `${obj.name} (Copy)`,
+        position: [obj.position[0] + 0.5, obj.position[1], obj.position[2] + 0.5] as [number, number, number],
+      });
+      newFeatures.push({
+        id: `feat_${newId}`,
+        type: obj.type,
+        name: `${obj.name} (Copy)`,
+        objectId: newId,
+        visible: true,
+        locked: false,
+        children: [],
+        expanded: true,
+      });
+    });
+    set((s) => ({
+      objects: [...s.objects, ...newObjects],
+      featureHistory: [...s.featureHistory, ...newFeatures],
+      selectedIds: newIds,
+      selectedId: newIds[newIds.length - 1] ?? null,
+    }));
   },
 
   executeCommand: (cmd: string) => {

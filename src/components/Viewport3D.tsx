@@ -13,6 +13,7 @@ import {
   Html,
 } from "@react-three/drei";
 import * as THREE from "three";
+import { Evaluator, SUBTRACTION, ADDITION, INTERSECTION } from "three-bvh-csg";
 import {
   useCadStore,
   type CadObject,
