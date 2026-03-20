@@ -1,6 +1,6 @@
 "use client";
-import { useRef } from "react";
-import { Canvas } from "@react-three/fiber";
+import { useRef, useEffect } from "react";
+import { Canvas, useThree } from "@react-three/fiber";
 import {
   OrbitControls,
   Environment,
@@ -31,6 +31,11 @@ interface LightConfig {
 
 type EnvironmentPreset = "sunset" | "dawn" | "night" | "warehouse" | "forest" | "apartment" | "studio" | "city" | "park" | "lobby";
 
+interface CameraPreset {
+  position: [number, number, number];
+  target: [number, number, number];
+}
+
 interface RendererViewportProps {
   geometry: "box" | "cylinder" | "sphere" | "torus" | "torusKnot";
   material: PBRMaterial;
@@ -41,6 +46,31 @@ interface RendererViewportProps {
   showGround: boolean;
   groundColor: string;
   bgColor: string;
+  autoRotate?: boolean;
+  rotateSpeed?: number;
+  fov?: number;
+  cameraPreset?: CameraPreset | null;
+  antialias?: boolean;
+}
+
+function CameraController({ preset, fov }: { preset?: CameraPreset | null; fov?: number }) {
+  const { camera } = useThree();
+
+  useEffect(() => {
+    if (preset) {
+      camera.position.set(...preset.position);
+      camera.lookAt(new THREE.Vector3(...preset.target));
+    }
+  }, [preset, camera]);
+
+  useEffect(() => {
+    if (fov && camera instanceof THREE.PerspectiveCamera) {
+      camera.fov = fov;
+      camera.updateProjectionMatrix();
+    }
+  }, [fov, camera]);
+
+  return null;
 }
 
 function RenderGeometry({
@@ -169,14 +199,19 @@ export default function RendererViewport({
   showGround,
   groundColor,
   bgColor,
+  autoRotate = false,
+  rotateSpeed = 1.0,
+  fov = 45,
+  cameraPreset = null,
+  antialias = true,
 }: RendererViewportProps) {
   return (
     <div className="w-full h-full">
       <Canvas
-        camera={{ position: [4, 3, 4], fov: 45, near: 0.1, far: 1000 }}
+        camera={{ position: [4, 3, 4], fov, near: 0.1, far: 1000 }}
         shadows
         gl={{
-          antialias: true,
+          antialias,
           alpha: false,
           preserveDrawingBuffer: true,
           toneMapping: THREE.ACESFilmicToneMapping,
@@ -184,6 +219,7 @@ export default function RendererViewport({
         }}
         style={{ background: bgColor }}
       >
+        <CameraController preset={cameraPreset} fov={fov} />
         <SceneLights lights={lights} />
 
         <RenderGeometry geometry={geometry} material={material} />
@@ -200,7 +236,13 @@ export default function RendererViewport({
           />
         )}
 
-        <OrbitControls makeDefault enableDamping dampingFactor={0.05} />
+        <OrbitControls
+          makeDefault
+          enableDamping
+          dampingFactor={0.05}
+          autoRotate={autoRotate}
+          autoRotateSpeed={rotateSpeed * 2}
+        />
 
         <GizmoHelper alignment="bottom-right" margin={[60, 60]}>
           <GizmoViewport labelColor="white" axisHeadScale={0.8} />

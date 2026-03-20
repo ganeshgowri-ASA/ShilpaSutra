@@ -1,6 +1,18 @@
 "use client";
-import { useState, useRef, useCallback } from "react";
+import { useState, useCallback } from "react";
 import dynamic from "next/dynamic";
+import {
+  Camera,
+  Sun,
+  Palette,
+  Download,
+  RotateCw,
+  Eye,
+  Box,
+  Circle,
+  Square,
+  MonitorPlay,
+} from "lucide-react";
 
 const RendererViewport = dynamic(() => import("@/components/RendererViewport"), {
   ssr: false,
@@ -30,6 +42,11 @@ interface LightConfig {
   castShadow: boolean;
 }
 
+interface CameraPreset {
+  position: [number, number, number];
+  target: [number, number, number];
+}
+
 type EnvironmentPreset = "sunset" | "dawn" | "night" | "warehouse" | "forest" | "apartment" | "studio" | "city" | "park" | "lobby";
 type RenderQuality = "draft" | "standard" | "high";
 type BgMode = "solid" | "gradient" | "transparent" | "environment";
@@ -53,12 +70,27 @@ const materialPresets: Record<string, PBRMaterial> = {
   "Ceramic": { color: "#f5f5f0", metalness: 0.1, roughness: 0.4, emissive: "#000000", emissiveIntensity: 0, opacity: 1, transparent: false },
 };
 
-const envPresets: { id: EnvironmentPreset; label: string }[] = [
-  { id: "studio", label: "Studio" },
-  { id: "sunset", label: "Outdoor/Sunset" },
-  { id: "warehouse", label: "Workshop" },
-  { id: "lobby", label: "Showroom" },
-  { id: "dawn", label: "Dawn" },
+const envPresets: { id: EnvironmentPreset; label: string; category: string }[] = [
+  { id: "studio", label: "Studio", category: "Indoor" },
+  { id: "warehouse", label: "Workshop", category: "Indoor" },
+  { id: "lobby", label: "Showroom", category: "Indoor" },
+  { id: "apartment", label: "Apartment", category: "Indoor" },
+  { id: "sunset", label: "Sunset", category: "Outdoor" },
+  { id: "dawn", label: "Dawn", category: "Outdoor" },
+  { id: "park", label: "Park", category: "Outdoor" },
+  { id: "forest", label: "Forest", category: "Outdoor" },
+  { id: "city", label: "City", category: "HDR Sky" },
+  { id: "night", label: "Night", category: "HDR Sky" },
+];
+
+const cameraPresets: { label: string; shortLabel: string; preset: CameraPreset }[] = [
+  { label: "Front", shortLabel: "F", preset: { position: [0, 1.5, 6], target: [0, 1.5, 0] } },
+  { label: "Back", shortLabel: "Bk", preset: { position: [0, 1.5, -6], target: [0, 1.5, 0] } },
+  { label: "Left", shortLabel: "L", preset: { position: [-6, 1.5, 0], target: [0, 1.5, 0] } },
+  { label: "Right", shortLabel: "R", preset: { position: [6, 1.5, 0], target: [0, 1.5, 0] } },
+  { label: "Top", shortLabel: "T", preset: { position: [0, 8, 0], target: [0, 0, 0] } },
+  { label: "Bottom", shortLabel: "Bt", preset: { position: [0, -6, 0], target: [0, 1.5, 0] } },
+  { label: "Isometric", shortLabel: "Iso", preset: { position: [4, 3, 4], target: [0, 1, 0] } },
 ];
 
 export default function RendererPage() {
@@ -84,6 +116,8 @@ export default function RendererPage() {
   const [renderQuality, setRenderQuality] = useState<RenderQuality>("draft");
   const [resolution, setResolution] = useState<Resolution>("1080p");
   const [splitView, setSplitView] = useState(false);
+  const [activeCameraPreset, setActiveCameraPreset] = useState<CameraPreset | null>(null);
+  const [antialiasing, setAntialiasing] = useState(true);
 
   const applyPreset = (name: string) => {
     const preset = materialPresets[name];
@@ -112,6 +146,13 @@ export default function RendererPage() {
     link.click();
   }, [resolution]);
 
+  const tabIcons = {
+    material: <Palette size={11} />,
+    lighting: <Sun size={11} />,
+    camera: <Camera size={11} />,
+    export: <Download size={11} />,
+  };
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-[#0d1117]">
       {/* Header */}
@@ -129,6 +170,23 @@ export default function RendererPage() {
 
         <div className="flex-1" />
 
+        {/* Camera presets in header */}
+        <div className="flex items-center gap-0.5 mr-2">
+          <Camera size={11} className="text-slate-500 mr-1" />
+          {cameraPresets.map(cp => (
+            <button
+              key={cp.label}
+              onClick={() => setActiveCameraPreset({ ...cp.preset })}
+              title={cp.label}
+              className="text-[9px] px-1.5 py-0.5 rounded bg-[#21262d] text-slate-400 hover:text-white hover:bg-[#30363d] transition-colors"
+            >
+              {cp.shortLabel}
+            </button>
+          ))}
+        </div>
+
+        <div className="h-5 w-px bg-[#21262d]" />
+
         {/* Quality */}
         <select value={renderQuality} onChange={e => setRenderQuality(e.target.value as RenderQuality)}
           className="bg-[#21262d] text-[10px] text-white rounded px-2 py-1 border border-[#30363d]">
@@ -138,13 +196,13 @@ export default function RendererPage() {
         </select>
 
         <button onClick={() => setSplitView(!splitView)}
-          className={`text-[10px] px-2 py-1 rounded ${splitView ? "bg-purple-600 text-white" : "bg-[#21262d] text-slate-400"}`}>
-          Split View
+          className={`text-[10px] px-2 py-1 rounded flex items-center gap-1 ${splitView ? "bg-purple-600 text-white" : "bg-[#21262d] text-slate-400"}`}>
+          <MonitorPlay size={11} /> Split
         </button>
 
         <button onClick={() => setAutoRotate(!autoRotate)}
-          className={`text-[10px] px-2 py-1 rounded ${autoRotate ? "bg-amber-500 text-black" : "bg-[#21262d] text-slate-400"}`}>
-          Turntable
+          className={`text-[10px] px-2 py-1 rounded flex items-center gap-1 ${autoRotate ? "bg-amber-500 text-black" : "bg-[#21262d] text-slate-400"}`}>
+          <RotateCw size={11} /> Turntable
         </button>
 
         <div className="h-5 w-px bg-[#21262d]" />
@@ -164,8 +222,8 @@ export default function RendererPage() {
           <div className="flex border-b border-[#21262d]">
             {(["material", "lighting", "camera", "export"] as const).map(t => (
               <button key={t} onClick={() => setTab(t)}
-                className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-wider border-b-2 ${tab === t ? "border-[#00D4FF] text-white" : "border-transparent text-slate-500"}`}>
-                {t}
+                className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-wider border-b-2 flex items-center justify-center gap-1 ${tab === t ? "border-[#00D4FF] text-white" : "border-transparent text-slate-500"}`}>
+                {tabIcons[t]} {t}
               </button>
             ))}
           </div>
@@ -198,10 +256,10 @@ export default function RendererPage() {
                     <div key={p.key}>
                       <div className="flex items-center justify-between mb-1">
                         <span className="text-slate-500">{p.label}</span>
-                        <span className="text-slate-400 text-[10px]">{(material as any)[p.key].toFixed(2)}</span>
+                        <span className="text-slate-400 text-[10px]">{((material as unknown as Record<string, number>)[p.key]).toFixed(2)}</span>
                       </div>
                       <input type="range" min="0" max={p.max} step={p.step}
-                        value={(material as any)[p.key]}
+                        value={(material as unknown as Record<string, number>)[p.key]}
                         onChange={e => {
                           const val = parseFloat(e.target.value);
                           setMaterial(prev => ({ ...prev, [p.key]: val, ...(p.key === "opacity" && val < 1 ? { transparent: true } : p.key === "opacity" ? { transparent: false } : {}) }));
@@ -219,17 +277,22 @@ export default function RendererPage() {
 
             {tab === "lighting" && (
               <>
-                <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Environment</h3>
+                <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Environment Map</h3>
                 <div className="bg-[#0d1117] rounded p-3 border border-[#21262d] text-xs space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-500">HDR Preset</span>
-                    <select value={envPreset} onChange={e => setEnvPreset(e.target.value as EnvironmentPreset)}
-                      className="bg-[#161b22] text-white rounded px-2 py-1 border border-[#21262d]">
-                      {envPresets.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
-                    </select>
+                  <div className="grid grid-cols-2 gap-1">
+                    {envPresets.map(p => (
+                      <button
+                        key={p.id}
+                        onClick={() => setEnvPreset(p.id)}
+                        className={`text-[10px] py-1.5 px-2 rounded text-left ${envPreset === p.id ? "bg-[#00D4FF]/20 border-[#00D4FF] text-[#00D4FF]" : "bg-[#161b22] border-[#21262d] text-slate-400 hover:text-white"} border`}
+                      >
+                        <div className="font-medium">{p.label}</div>
+                        <div className="text-[8px] text-slate-600">{p.category}</div>
+                      </button>
+                    ))}
                   </div>
                   <div>
-                    <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center justify-between mb-1 mt-2">
                       <span className="text-slate-500">Intensity</span>
                       <span className="text-slate-400 text-[10px]">{envIntensity.toFixed(1)}</span>
                     </div>
@@ -275,7 +338,21 @@ export default function RendererPage() {
 
             {tab === "camera" && (
               <>
-                <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Camera</h3>
+                <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Camera Presets</h3>
+                <div className="grid grid-cols-4 gap-1">
+                  {cameraPresets.map(cp => (
+                    <button
+                      key={cp.label}
+                      onClick={() => setActiveCameraPreset({ ...cp.preset })}
+                      className="text-[10px] py-2 rounded bg-[#0d1117] border border-[#21262d] text-slate-300 hover:border-[#00D4FF] hover:text-[#00D4FF] transition-colors text-center"
+                      title={cp.label}
+                    >
+                      {cp.shortLabel}
+                    </button>
+                  ))}
+                </div>
+
+                <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-3">Camera Settings</h3>
                 <div className="bg-[#0d1117] rounded p-3 border border-[#21262d] text-xs space-y-3">
                   <div>
                     <div className="flex items-center justify-between mb-1">
@@ -288,6 +365,10 @@ export default function RendererPage() {
                   <label className="flex items-center gap-2 text-slate-300 cursor-pointer">
                     <input type="checkbox" checked={dofEnabled} onChange={e => setDofEnabled(e.target.checked)} className="accent-[#00D4FF]" />
                     Depth of Field
+                  </label>
+                  <label className="flex items-center gap-2 text-slate-300 cursor-pointer">
+                    <input type="checkbox" checked={antialiasing} onChange={e => setAntialiasing(e.target.checked)} className="accent-[#00D4FF]" />
+                    Anti-Aliasing
                   </label>
                 </div>
 
@@ -375,6 +456,7 @@ export default function RendererPage() {
                   <div className="text-slate-500">Lights: <span className="text-white">{lights.length}</span></div>
                   <div className="text-slate-500">Quality: <span className="text-white capitalize">{renderQuality}</span></div>
                   <div className="text-slate-500">Shadows: <span className="text-white">{showShadows ? "On" : "Off"}</span></div>
+                  <div className="text-slate-500">Anti-Aliasing: <span className="text-white">{antialiasing ? "On" : "Off"}</span></div>
                   <div className="text-slate-500">Auto-Rotate: <span className="text-white">{autoRotate ? "On" : "Off"}</span></div>
                 </div>
               </>
@@ -394,6 +476,11 @@ export default function RendererPage() {
             showGround={showGround}
             groundColor={groundColor}
             bgColor={bgColor}
+            autoRotate={autoRotate}
+            rotateSpeed={rotateSpeed}
+            fov={fov}
+            cameraPreset={activeCameraPreset}
+            antialias={antialiasing}
           />
 
           {/* Viewport info */}
