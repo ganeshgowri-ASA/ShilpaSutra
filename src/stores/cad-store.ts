@@ -11,10 +11,42 @@ export type ToolId =
   | "arc"
   | "circle"
   | "rectangle"
+  | "polygon"
+  | "spline"
   | "delete"
-  | "measure";
+  | "measure"
+  | "measure_angle"
+  | "extrude"
+  | "revolve"
+  | "loft"
+  | "sweep"
+  | "boolean_union"
+  | "boolean_subtract"
+  | "boolean_intersect"
+  | "fillet"
+  | "chamfer"
+  | "shell"
+  | "draft"
+  | "mirror"
+  | "scale_tool"
+  | "move_tool"
+  | "rotate_tool"
+  | "linear_pattern"
+  | "circular_pattern"
+  | "section_view"
+  | "mass_properties"
+  | "ai_text_to_cad"
+  | "ai_suggest"
+  | "ai_optimize"
+  | "ai_explain";
 
 export type TransformMode = "translate" | "rotate" | "scale";
+
+export type RibbonTab = "sketch" | "solid" | "modify" | "inspect" | "view" | "ai";
+
+export type ViewMode = "wireframe" | "shaded" | "realistic";
+
+export type UnitType = "mm" | "cm" | "m" | "inch";
 
 export interface CadObject {
   id: string;
@@ -26,19 +58,45 @@ export interface CadObject {
   dimensions: { width: number; height: number; depth: number };
   material: string;
   color: string;
+  visible: boolean;
+  locked: boolean;
+  // Material properties
+  opacity: number;
+  metalness: number;
+  roughness: number;
   // Line-specific
   linePoints?: [number, number, number][];
-  // Arc-specific: [center, start, end]
+  // Arc-specific
   arcPoints?: [number, number, number][];
   arcRadius?: number;
   // Circle-specific
   circleCenter?: [number, number, number];
   circleRadius?: number;
-  // Rectangle-specific: [corner1, corner2]
+  // Rectangle-specific
   rectCorners?: [[number, number, number], [number, number, number]];
   // Mesh-specific (AI-generated)
   meshVertices?: number[];
   meshIndices?: number[];
+}
+
+export interface FeatureNode {
+  id: string;
+  type: string;
+  name: string;
+  objectId: string;
+  parentId?: string;
+  children: string[];
+  visible: boolean;
+  locked: boolean;
+  expanded: boolean;
+}
+
+export interface Measurement {
+  id: string;
+  type: "distance" | "angle";
+  points: [number, number, number][];
+  value: number;
+  unit: string;
 }
 
 const materialColors: Record<string, string> = {
@@ -64,16 +122,37 @@ const MAX_HISTORY = 50;
 interface HistoryEntry {
   objects: CadObject[];
   selectedId: string | null;
+  featureHistory: FeatureNode[];
 }
 
 interface CadState {
   objects: CadObject[];
   selectedId: string | null;
+  selectedIds: string[];
   activeTool: ToolId;
   transformMode: TransformMode;
   snapGrid: boolean;
-  unit: string;
+  unit: UnitType;
   gridSize: number;
+
+  // Ribbon
+  activeRibbonTab: RibbonTab;
+  ribbonCollapsed: boolean;
+
+  // View
+  viewMode: ViewMode;
+  showGrid: boolean;
+  showOrigin: boolean;
+  showDimensions: boolean;
+  perspectiveMode: boolean;
+
+  // Feature tree
+  featureHistory: FeatureNode[];
+  selectedFeatures: string[];
+  featureTreeCollapsed: boolean;
+
+  // Property panel
+  propertyPanelCollapsed: boolean;
 
   // Undo/redo
   undoStack: HistoryEntry[];
@@ -82,11 +161,30 @@ interface CadState {
   // Measurement
   measurePoints: [number, number, number][];
   measureResult: { distance: number; dx: number; dy: number; dz: number } | null;
+  measurements: Measurement[];
 
+  // Command bar
+  commandHistory: string[];
+
+  // Camera target view
+  cameraView: string | null;
+
+  // Actions
   setActiveTool: (tool: ToolId) => void;
   setTransformMode: (mode: TransformMode) => void;
   setSnapGrid: (v: boolean) => void;
-  setUnit: (u: string) => void;
+  setUnit: (u: UnitType) => void;
+  setActiveRibbonTab: (tab: RibbonTab) => void;
+  setRibbonCollapsed: (v: boolean) => void;
+  setViewMode: (mode: ViewMode) => void;
+  setShowGrid: (v: boolean) => void;
+  setShowOrigin: (v: boolean) => void;
+  setShowDimensions: (v: boolean) => void;
+  setPerspectiveMode: (v: boolean) => void;
+  setFeatureTreeCollapsed: (v: boolean) => void;
+  setPropertyPanelCollapsed: (v: boolean) => void;
+  setCameraView: (view: string | null) => void;
+
   addObject: (type: CadObject["type"]) => string;
   addLine: (points: [number, number, number][]) => string;
   addArc: (points: [number, number, number][], radius: number) => string;
@@ -94,11 +192,20 @@ interface CadState {
   addRectangle: (corner1: [number, number, number], corner2: [number, number, number]) => string;
   addGeneratedObject: (obj: Partial<CadObject> & { type: CadObject["type"]; name: string }) => string;
   selectObject: (id: string | null) => void;
+  toggleSelectObject: (id: string) => void;
   updateObject: (id: string, updates: Partial<CadObject>) => void;
   deleteSelected: () => void;
   deleteObject: (id: string) => void;
   getSelected: () => CadObject | undefined;
   snapToGrid: (value: number) => number;
+
+  // Feature tree actions
+  addFeature: (node: Omit<FeatureNode, "children" | "expanded">) => void;
+  removeFeature: (id: string) => void;
+  reorderFeature: (id: string, newIndex: number) => void;
+  renameFeature: (id: string, name: string) => void;
+  toggleVisibility: (id: string) => void;
+  toggleLock: (id: string) => void;
 
   // Undo/redo
   undo: () => void;
@@ -110,25 +217,72 @@ interface CadState {
   // Measurement
   addMeasurePoint: (point: [number, number, number]) => void;
   clearMeasure: () => void;
+  addMeasurement: (measurement: Omit<Measurement, "id">) => void;
+  clearMeasurements: () => void;
+
+  // Command
+  executeCommand: (cmd: string) => void;
 }
 
 export const useCadStore = create<CadState>((set, get) => ({
   objects: [],
   selectedId: null,
+  selectedIds: [],
   activeTool: "select",
   transformMode: "translate",
   snapGrid: true,
   unit: "mm",
   gridSize: 0.5,
+
+  // Ribbon
+  activeRibbonTab: "solid",
+  ribbonCollapsed: false,
+
+  // View
+  viewMode: "shaded",
+  showGrid: true,
+  showOrigin: true,
+  showDimensions: true,
+  perspectiveMode: true,
+
+  // Feature tree
+  featureHistory: [],
+  selectedFeatures: [],
+  featureTreeCollapsed: false,
+
+  // Property panel
+  propertyPanelCollapsed: false,
+
+  // Undo/redo
   undoStack: [],
   redoStack: [],
+
+  // Measurement
   measurePoints: [],
   measureResult: null,
+  measurements: [],
 
+  // Command
+  commandHistory: [],
+
+  // Camera
+  cameraView: null,
+
+  // Setters
   setActiveTool: (tool) => set({ activeTool: tool, measurePoints: [], measureResult: null }),
   setTransformMode: (mode) => set({ transformMode: mode }),
   setSnapGrid: (v) => set({ snapGrid: v }),
   setUnit: (u) => set({ unit: u }),
+  setActiveRibbonTab: (tab) => set({ activeRibbonTab: tab }),
+  setRibbonCollapsed: (v) => set({ ribbonCollapsed: v }),
+  setViewMode: (mode) => set({ viewMode: mode }),
+  setShowGrid: (v) => set({ showGrid: v }),
+  setShowOrigin: (v) => set({ showOrigin: v }),
+  setShowDimensions: (v) => set({ showDimensions: v }),
+  setPerspectiveMode: (v) => set({ perspectiveMode: v }),
+  setFeatureTreeCollapsed: (v) => set({ featureTreeCollapsed: v }),
+  setPropertyPanelCollapsed: (v) => set({ propertyPanelCollapsed: v }),
+  setCameraView: (view) => set({ cameraView: view }),
 
   snapToGrid: (value: number) => {
     const { snapGrid, gridSize } = get();
@@ -137,10 +291,11 @@ export const useCadStore = create<CadState>((set, get) => ({
   },
 
   pushHistory: () => {
-    const { objects, selectedId, undoStack } = get();
+    const { objects, selectedId, featureHistory, undoStack } = get();
     const entry: HistoryEntry = {
       objects: JSON.parse(JSON.stringify(objects)),
       selectedId,
+      featureHistory: JSON.parse(JSON.stringify(featureHistory)),
     };
     const newStack = [...undoStack, entry];
     if (newStack.length > MAX_HISTORY) newStack.shift();
@@ -148,32 +303,36 @@ export const useCadStore = create<CadState>((set, get) => ({
   },
 
   undo: () => {
-    const { undoStack, objects, selectedId } = get();
+    const { undoStack, objects, selectedId, featureHistory } = get();
     if (undoStack.length === 0) return;
     const prev = undoStack[undoStack.length - 1];
     const currentEntry: HistoryEntry = {
       objects: JSON.parse(JSON.stringify(objects)),
       selectedId,
+      featureHistory: JSON.parse(JSON.stringify(featureHistory)),
     };
     set({
       objects: prev.objects,
       selectedId: prev.selectedId,
+      featureHistory: prev.featureHistory,
       undoStack: undoStack.slice(0, -1),
       redoStack: [...get().redoStack, currentEntry],
     });
   },
 
   redo: () => {
-    const { redoStack, objects, selectedId } = get();
+    const { redoStack, objects, selectedId, featureHistory } = get();
     if (redoStack.length === 0) return;
     const next = redoStack[redoStack.length - 1];
     const currentEntry: HistoryEntry = {
       objects: JSON.parse(JSON.stringify(objects)),
       selectedId,
+      featureHistory: JSON.parse(JSON.stringify(featureHistory)),
     };
     set({
       objects: next.objects,
       selectedId: next.selectedId,
+      featureHistory: next.featureHistory,
       redoStack: redoStack.slice(0, -1),
       undoStack: [...get().undoStack, currentEntry],
     });
@@ -206,6 +365,90 @@ export const useCadStore = create<CadState>((set, get) => ({
 
   clearMeasure: () => set({ measurePoints: [], measureResult: null }),
 
+  addMeasurement: (measurement) => {
+    const id = `meas_${Date.now()}`;
+    set((s) => ({
+      measurements: [...s.measurements, { ...measurement, id }],
+    }));
+  },
+
+  clearMeasurements: () => set({ measurements: [] }),
+
+  // Feature tree actions
+  addFeature: (node) => {
+    set((s) => ({
+      featureHistory: [
+        ...s.featureHistory,
+        { ...node, children: [], expanded: true },
+      ],
+    }));
+  },
+
+  removeFeature: (id) => {
+    set((s) => ({
+      featureHistory: s.featureHistory.filter((f) => f.id !== id),
+    }));
+  },
+
+  reorderFeature: (id, newIndex) => {
+    set((s) => {
+      const features = [...s.featureHistory];
+      const oldIndex = features.findIndex((f) => f.id === id);
+      if (oldIndex === -1) return s;
+      const [item] = features.splice(oldIndex, 1);
+      features.splice(newIndex, 0, item);
+      return { featureHistory: features };
+    });
+  },
+
+  renameFeature: (id, name) => {
+    set((s) => ({
+      featureHistory: s.featureHistory.map((f) =>
+        f.id === id ? { ...f, name } : f
+      ),
+    }));
+    // Also rename the associated object
+    const feature = get().featureHistory.find((f) => f.id === id);
+    if (feature) {
+      get().updateObject(feature.objectId, { name });
+    }
+  },
+
+  toggleVisibility: (id) => {
+    const feature = get().featureHistory.find((f) => f.id === id);
+    if (!feature) return;
+    const newVisible = !feature.visible;
+    set((s) => ({
+      featureHistory: s.featureHistory.map((f) =>
+        f.id === id ? { ...f, visible: newVisible } : f
+      ),
+    }));
+    get().updateObject(feature.objectId, { visible: newVisible });
+  },
+
+  toggleLock: (id) => {
+    const feature = get().featureHistory.find((f) => f.id === id);
+    if (!feature) return;
+    const newLocked = !feature.locked;
+    set((s) => ({
+      featureHistory: s.featureHistory.map((f) =>
+        f.id === id ? { ...f, locked: newLocked } : f
+      ),
+    }));
+    get().updateObject(feature.objectId, { locked: newLocked });
+  },
+
+  selectObject: (id) => set({ selectedId: id, selectedIds: id ? [id] : [] }),
+
+  toggleSelectObject: (id) => {
+    set((s) => {
+      const ids = s.selectedIds.includes(id)
+        ? s.selectedIds.filter((i) => i !== id)
+        : [...s.selectedIds, id];
+      return { selectedIds: ids, selectedId: ids.length > 0 ? ids[ids.length - 1] : null };
+    });
+  },
+
   addObject: (type) => {
     get().pushHistory();
     const id = `obj_${++idCounter}_${Date.now()}`;
@@ -230,8 +473,24 @@ export const useCadStore = create<CadState>((set, get) => ({
       dimensions: { ...d.dims },
       material: "Steel (AISI 1045)",
       color: getMaterialColor("Steel (AISI 1045)"),
+      visible: true,
+      locked: false,
+      opacity: 1,
+      metalness: 0.4,
+      roughness: 0.5,
     };
-    set((s) => ({ objects: [...s.objects, obj], selectedId: id }));
+    set((s) => ({ objects: [...s.objects, obj], selectedId: id, selectedIds: [id] }));
+
+    // Add feature node
+    get().addFeature({
+      id: `feat_${id}`,
+      type: obj.type,
+      name: obj.name,
+      objectId: id,
+      visible: true,
+      locked: false,
+    });
+
     return id;
   },
 
@@ -249,9 +508,22 @@ export const useCadStore = create<CadState>((set, get) => ({
       dimensions: { width: 0, height: 0, depth: 0 },
       material: "Steel (AISI 1045)",
       color: "#00ffff",
+      visible: true,
+      locked: false,
+      opacity: 1,
+      metalness: 0,
+      roughness: 1,
       linePoints: points,
     };
-    set((s) => ({ objects: [...s.objects, obj], selectedId: id }));
+    set((s) => ({ objects: [...s.objects, obj], selectedId: id, selectedIds: [id] }));
+    get().addFeature({
+      id: `feat_${id}`,
+      type: "line",
+      name: obj.name,
+      objectId: id,
+      visible: true,
+      locked: false,
+    });
     return id;
   },
 
@@ -269,10 +541,23 @@ export const useCadStore = create<CadState>((set, get) => ({
       dimensions: { width: 0, height: 0, depth: 0 },
       material: "Steel (AISI 1045)",
       color: "#ff00ff",
+      visible: true,
+      locked: false,
+      opacity: 1,
+      metalness: 0,
+      roughness: 1,
       arcPoints: points,
       arcRadius: radius,
     };
-    set((s) => ({ objects: [...s.objects, obj], selectedId: id }));
+    set((s) => ({ objects: [...s.objects, obj], selectedId: id, selectedIds: [id] }));
+    get().addFeature({
+      id: `feat_${id}`,
+      type: "arc",
+      name: obj.name,
+      objectId: id,
+      visible: true,
+      locked: false,
+    });
     return id;
   },
 
@@ -290,10 +575,23 @@ export const useCadStore = create<CadState>((set, get) => ({
       dimensions: { width: radius * 2, height: 0, depth: radius * 2 },
       material: "Steel (AISI 1045)",
       color: "#00ff00",
+      visible: true,
+      locked: false,
+      opacity: 1,
+      metalness: 0,
+      roughness: 1,
       circleCenter: center,
       circleRadius: radius,
     };
-    set((s) => ({ objects: [...s.objects, obj], selectedId: id }));
+    set((s) => ({ objects: [...s.objects, obj], selectedId: id, selectedIds: [id] }));
+    get().addFeature({
+      id: `feat_${id}`,
+      type: "circle",
+      name: obj.name,
+      objectId: id,
+      visible: true,
+      locked: false,
+    });
     return id;
   },
 
@@ -315,9 +613,22 @@ export const useCadStore = create<CadState>((set, get) => ({
       },
       material: "Steel (AISI 1045)",
       color: "#ffaa00",
+      visible: true,
+      locked: false,
+      opacity: 1,
+      metalness: 0,
+      roughness: 1,
       rectCorners: [corner1, corner2],
     };
-    set((s) => ({ objects: [...s.objects, obj], selectedId: id }));
+    set((s) => ({ objects: [...s.objects, obj], selectedId: id, selectedIds: [id] }));
+    get().addFeature({
+      id: `feat_${id}`,
+      type: "rectangle",
+      name: obj.name,
+      objectId: id,
+      visible: true,
+      locked: false,
+    });
     return id;
   },
 
@@ -332,13 +643,24 @@ export const useCadStore = create<CadState>((set, get) => ({
       dimensions: { width: 2, height: 2, depth: 2 },
       material: "Steel (AISI 1045)",
       color: getMaterialColor("Steel (AISI 1045)"),
+      visible: true,
+      locked: false,
+      opacity: 1,
+      metalness: 0.4,
+      roughness: 0.5,
       ...partial,
     };
-    set((s) => ({ objects: [...s.objects, obj], selectedId: id }));
+    set((s) => ({ objects: [...s.objects, obj], selectedId: id, selectedIds: [id] }));
+    get().addFeature({
+      id: `feat_${id}`,
+      type: obj.type,
+      name: obj.name,
+      objectId: id,
+      visible: true,
+      locked: false,
+    });
     return id;
   },
-
-  selectObject: (id) => set({ selectedId: id }),
 
   updateObject: (id, updates) =>
     set((s) => ({
@@ -353,12 +675,15 @@ export const useCadStore = create<CadState>((set, get) => ({
     })),
 
   deleteSelected: () => {
-    const { selectedId } = get();
-    if (!selectedId) return;
+    const { selectedId, selectedIds } = get();
+    const idsToDelete = selectedIds.length > 0 ? selectedIds : selectedId ? [selectedId] : [];
+    if (idsToDelete.length === 0) return;
     get().pushHistory();
     set((s) => ({
-      objects: s.objects.filter((o) => o.id !== selectedId),
+      objects: s.objects.filter((o) => !idsToDelete.includes(o.id)),
+      featureHistory: s.featureHistory.filter((f) => !idsToDelete.includes(f.objectId)),
       selectedId: null,
+      selectedIds: [],
     }));
   },
 
@@ -366,12 +691,101 @@ export const useCadStore = create<CadState>((set, get) => ({
     get().pushHistory();
     set((s) => ({
       objects: s.objects.filter((o) => o.id !== id),
+      featureHistory: s.featureHistory.filter((f) => f.objectId !== id),
       selectedId: s.selectedId === id ? null : s.selectedId,
+      selectedIds: s.selectedIds.filter((i) => i !== id),
     }));
   },
 
   getSelected: () => {
     const { objects, selectedId } = get();
     return objects.find((o) => o.id === selectedId);
+  },
+
+  executeCommand: (cmd: string) => {
+    const parts = cmd.trim().toUpperCase().split(/\s+/);
+    const command = parts[0];
+    const store = get();
+
+    set((s) => ({
+      commandHistory: [...s.commandHistory.slice(-49), cmd],
+    }));
+
+    switch (command) {
+      case "UNDO":
+        store.undo();
+        break;
+      case "REDO":
+        store.redo();
+        break;
+      case "DELETE":
+        store.deleteSelected();
+        break;
+      case "COPY": {
+        const sel = store.getSelected();
+        if (sel) {
+          const newObj = { ...sel, name: `${sel.name} (Copy)` };
+          store.addGeneratedObject(newObj);
+        }
+        break;
+      }
+      case "BOX":
+        store.addObject("box");
+        break;
+      case "CYLINDER":
+        store.addObject("cylinder");
+        break;
+      case "SPHERE":
+        store.addObject("sphere");
+        break;
+      case "CONE":
+        store.addObject("cone");
+        break;
+      case "EXTRUDE": {
+        store.setActiveTool("extrude");
+        break;
+      }
+      case "FILLET": {
+        const radius = parseFloat(parts[1]) || 1;
+        store.setActiveTool("fillet");
+        // Store radius in a way the tool can access
+        void radius;
+        break;
+      }
+      case "CHAMFER": {
+        const dist = parseFloat(parts[1]) || 1;
+        store.setActiveTool("chamfer");
+        void dist;
+        break;
+      }
+      case "MOVE": {
+        if (parts.length >= 4) {
+          const sel = store.getSelected();
+          if (sel) {
+            const x = parseFloat(parts[1]) || 0;
+            const y = parseFloat(parts[2]) || 0;
+            const z = parseFloat(parts[3]) || 0;
+            store.pushHistory();
+            store.updateObject(sel.id, {
+              position: [sel.position[0] + x, sel.position[1] + y, sel.position[2] + z],
+            });
+          }
+        }
+        break;
+      }
+      case "ROTATE": {
+        const angle = parseFloat(parts[1]) || 0;
+        const sel = store.getSelected();
+        if (sel) {
+          store.pushHistory();
+          store.updateObject(sel.id, {
+            rotation: [sel.rotation[0], sel.rotation[1] + (angle * Math.PI) / 180, sel.rotation[2]],
+          });
+        }
+        break;
+      }
+      default:
+        break;
+    }
   },
 }));
