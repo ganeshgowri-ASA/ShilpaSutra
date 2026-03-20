@@ -10,6 +10,7 @@ import {
   PenLine, Search, Layers, MoreVertical, Trash2, Copy,
   Edit3, PanelLeftClose, PanelLeft,
 } from "lucide-react";
+import ConstraintManager from "@/components/cad/ConstraintManager";
 
 function getTypeIcon(type: string, size = 14) {
   switch (type) {
@@ -263,6 +264,9 @@ export default function FeatureTree() {
           </div>
         )}
       </div>
+
+      {/* Constraint Manager */}
+      <ConstraintManager />
 
       {/* Footer */}
       <div className="px-3 py-1.5 border-t border-[#16213e] text-[10px] text-slate-600">
