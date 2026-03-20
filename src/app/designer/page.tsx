@@ -75,6 +75,8 @@ export default function DesignerPage() {
   const activeOperation = useCadStore((s) => s.activeOperation);
   const setActiveOperation = useCadStore((s) => s.setActiveOperation);
   const sketchPlane = useCadStore((s) => s.sketchPlane);
+  const enterSketchMode = useCadStore((s) => s.enterSketchMode);
+  const exitSketchMode = useCadStore((s) => s.exitSketchMode);
 
   const [aiOpen, setAiOpen] = useState(false);
   const [aiMode, setAiMode] = useState<"basic" | "zookeeper">("zookeeper");
@@ -119,10 +121,35 @@ export default function DesignerPage() {
                 Selected
               </span>
             )}
-            {isSketchMode && (
+            {sketchPlane && (
               <span className="text-[10px] bg-[#1a1a2e]/90 border border-[#00D4FF]/30 rounded px-2 py-0.5 text-[#00D4FF]/80 backdrop-blur-sm">
                 Sketch Mode - {sketchPlane.toUpperCase()} Plane
               </span>
+            )}
+          </div>
+
+          {/* Sketch plane selector - bottom left */}
+          <div className="absolute bottom-2 left-2 flex items-center gap-1 z-10 pointer-events-auto">
+            {!sketchPlane ? (
+              <>
+                <span className="text-[10px] text-slate-500 mr-1">Sketch:</span>
+                {(["xy", "xz", "yz"] as const).map((plane) => (
+                  <button
+                    key={plane}
+                    onClick={() => enterSketchMode(plane)}
+                    className="text-[10px] px-2 py-0.5 rounded border border-[#16213e] text-slate-400 bg-[#1a1a2e]/80 hover:border-[#00D4FF]/40 hover:text-[#00D4FF] transition-colors backdrop-blur-sm"
+                  >
+                    {plane.toUpperCase()}
+                  </button>
+                ))}
+              </>
+            ) : (
+              <button
+                onClick={exitSketchMode}
+                className="text-[10px] px-3 py-1 rounded border border-red-500/40 text-red-400 bg-red-500/10 hover:bg-red-500/20 transition-colors backdrop-blur-sm"
+              >
+                Exit Sketch
+              </button>
             )}
           </div>
 

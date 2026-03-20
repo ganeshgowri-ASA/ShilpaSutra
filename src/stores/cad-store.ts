@@ -177,7 +177,7 @@ interface CadState {
   cameraView: string | null;
 
   // Sketch mode
-  sketchPlane: "xy" | "xz" | "yz";
+  sketchPlane: "xy" | "xz" | "yz" | null;
   autoConstraints: boolean;
 
   // Active operation dialogs
@@ -201,7 +201,9 @@ interface CadState {
   setFeatureTreeCollapsed: (v: boolean) => void;
   setPropertyPanelCollapsed: (v: boolean) => void;
   setCameraView: (view: string | null) => void;
-  setSketchPlane: (plane: "xy" | "xz" | "yz") => void;
+  setSketchPlane: (plane: "xy" | "xz" | "yz" | null) => void;
+  enterSketchMode: (plane: "xy" | "xz" | "yz") => void;
+  exitSketchMode: () => void;
   setAutoConstraints: (v: boolean) => void;
   setActiveOperation: (op: CadState["activeOperation"]) => void;
   setShowHistoryTimeline: (v: boolean) => void;
@@ -290,7 +292,7 @@ export const useCadStore = create<CadState>((set, get) => ({
   cameraView: null,
 
   // Sketch mode
-  sketchPlane: "xz",
+  sketchPlane: null,
   autoConstraints: true,
 
   // Active operation
@@ -315,6 +317,8 @@ export const useCadStore = create<CadState>((set, get) => ({
   setPropertyPanelCollapsed: (v) => set({ propertyPanelCollapsed: v }),
   setCameraView: (view) => set({ cameraView: view }),
   setSketchPlane: (plane) => set({ sketchPlane: plane }),
+  enterSketchMode: (plane) => set({ sketchPlane: plane, activeRibbonTab: "sketch" }),
+  exitSketchMode: () => set({ sketchPlane: null, activeTool: "select" }),
   setAutoConstraints: (v) => set({ autoConstraints: v }),
   setActiveOperation: (op) => set({ activeOperation: op }),
   setShowHistoryTimeline: (v) => set({ showHistoryTimeline: v }),
