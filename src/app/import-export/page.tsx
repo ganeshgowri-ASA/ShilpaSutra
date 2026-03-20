@@ -1,5 +1,6 @@
 "use client";
 import { useState, useCallback, useRef } from "react";
+import { useCadStore, type CadObject } from "@/stores/cad-store";
 
 /* ── Types ── */
 type FileFormat = "STEP" | "STL" | "OBJ" | "IGES" | "glTF" | "FBX" | "PLY" | "Unknown";
@@ -39,6 +40,86 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/* ── DXF Generation ── */
+function generateDxf(objects: CadObject[]): string {
+  let entities = "";
+
+  for (const obj of objects) {
+    if (obj.visible === false) continue;
+
+    if (obj.type === "line" && obj.linePoints && obj.linePoints.length >= 2) {
+      for (let i = 0; i < obj.linePoints.length - 1; i++) {
+        const p1 = obj.linePoints[i];
+        const p2 = obj.linePoints[i + 1];
+        entities +=
+          `0\nLINE\n8\n0\n` +
+          `10\n${p1[0].toFixed(4)}\n20\n${p1[2].toFixed(4)}\n30\n0.0\n` +
+          `11\n${p2[0].toFixed(4)}\n21\n${p2[2].toFixed(4)}\n31\n0.0\n`;
+      }
+    } else if (obj.type === "circle" && obj.circleCenter && obj.circleRadius) {
+      entities +=
+        `0\nCIRCLE\n8\n0\n` +
+        `10\n${obj.circleCenter[0].toFixed(4)}\n20\n${obj.circleCenter[2].toFixed(4)}\n30\n0.0\n` +
+        `40\n${obj.circleRadius.toFixed(4)}\n`;
+    } else if (obj.type === "arc" && obj.arcPoints && obj.arcPoints.length >= 3) {
+      // Compute arc center/radius from 3 points
+      const [p1, , p3] = obj.arcPoints;
+      const cx = (p1[0] + p3[0]) / 2;
+      const cz = (p1[2] + p3[2]) / 2;
+      const radius = Math.sqrt(Math.pow(p3[0] - p1[0], 2) + Math.pow(p3[2] - p1[2], 2)) / 2;
+      const startAngle = (Math.atan2(p1[2] - cz, p1[0] - cx) * 180) / Math.PI;
+      const endAngle = (Math.atan2(p3[2] - cz, p3[0] - cx) * 180) / Math.PI;
+      entities +=
+        `0\nARC\n8\n0\n` +
+        `10\n${cx.toFixed(4)}\n20\n${cz.toFixed(4)}\n30\n0.0\n` +
+        `40\n${radius.toFixed(4)}\n` +
+        `50\n${startAngle.toFixed(4)}\n51\n${endAngle.toFixed(4)}\n`;
+    } else if (obj.type === "rectangle" && obj.rectCorners) {
+      const [c1, c2] = obj.rectCorners;
+      const corners: [number, number][] = [
+        [c1[0], c1[2]],
+        [c2[0], c1[2]],
+        [c2[0], c2[2]],
+        [c1[0], c2[2]],
+      ];
+      for (let i = 0; i < 4; i++) {
+        const from = corners[i];
+        const to = corners[(i + 1) % 4];
+        entities +=
+          `0\nLINE\n8\n0\n` +
+          `10\n${from[0].toFixed(4)}\n20\n${from[1].toFixed(4)}\n30\n0.0\n` +
+          `11\n${to[0].toFixed(4)}\n21\n${to[1].toFixed(4)}\n31\n0.0\n`;
+      }
+    } else if (obj.type === "box") {
+      const { width, depth } = obj.dimensions;
+      const [px, , pz] = obj.position;
+      const hw = width / 2, hd = depth / 2;
+      const corners: [number, number][] = [
+        [px - hw, pz - hd],
+        [px + hw, pz - hd],
+        [px + hw, pz + hd],
+        [px - hw, pz + hd],
+      ];
+      for (let i = 0; i < 4; i++) {
+        const from = corners[i];
+        const to = corners[(i + 1) % 4];
+        entities +=
+          `0\nLINE\n8\n0\n` +
+          `10\n${from[0].toFixed(4)}\n20\n${from[1].toFixed(4)}\n30\n0.0\n` +
+          `11\n${to[0].toFixed(4)}\n21\n${to[1].toFixed(4)}\n31\n0.0\n`;
+      }
+    } else if (obj.type === "cylinder" || obj.type === "cone" || obj.type === "sphere") {
+      const radius = obj.dimensions.width;
+      entities +=
+        `0\nCIRCLE\n8\n0\n` +
+        `10\n${obj.position[0].toFixed(4)}\n20\n${obj.position[2].toFixed(4)}\n30\n0.0\n` +
+        `40\n${radius.toFixed(4)}\n`;
+    }
+  }
+
+  return `0\nSECTION\n2\nENTITIES\n${entities}0\nENDSEC\n0\nEOF\n`;
+}
+
 const formatColors: Record<FileFormat, string> = {
   STEP: "text-blue-400 bg-blue-400/10",
   STL: "text-green-400 bg-green-400/10",
@@ -61,6 +142,7 @@ const sampleFiles: ImportedFile[] = [
 ];
 
 export default function ImportExportPage() {
+  const cadObjects = useCadStore((s) => s.objects);
   const [files, setFiles] = useState<ImportedFile[]>(sampleFiles);
   const [dragOver, setDragOver] = useState(false);
   const [showExport, setShowExport] = useState(false);
@@ -105,6 +187,17 @@ export default function ImportExportPage() {
     setFiles((prev) => prev.filter((f) => f.id !== id));
   }, []);
 
+  const handleDxfExport = useCallback(() => {
+    const dxfContent = generateDxf(cadObjects);
+    const blob = new Blob([dxfContent], { type: "application/dxf" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "shilpasutra_export.dxf";
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [cadObjects]);
+
   const handleExport = useCallback(() => {
     const content = `Export Configuration\nFormat: ${exportOpts.format}\nUnits: ${exportOpts.units}\nPrecision: ${exportOpts.precision}\nInclude Textures: ${exportOpts.includeTextures}\nMerge Meshes: ${exportOpts.mergeMeshes}`;
     const blob = new Blob([content], { type: "text/plain" });
@@ -125,12 +218,21 @@ export default function ImportExportPage() {
           <span className="text-[#00D4FF] font-bold text-sm">I/O</span>
           <span className="text-slate-400 text-xs">Import / Export File Hub</span>
         </div>
-        <button
-          onClick={() => setShowExport(true)}
-          className="px-3 py-1.5 bg-[#00D4FF]/10 text-[#00D4FF] text-xs rounded hover:bg-[#00D4FF]/20 transition-colors border border-[#00D4FF]/20"
-        >
-          Export Model
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleDxfExport}
+            className="px-3 py-1.5 bg-orange-500/10 text-orange-400 text-xs rounded hover:bg-orange-500/20 transition-colors border border-orange-500/20"
+            title="Export current CAD objects as DXF (LINE, CIRCLE, ARC primitives)"
+          >
+            Export DXF
+          </button>
+          <button
+            onClick={() => setShowExport(true)}
+            className="px-3 py-1.5 bg-[#00D4FF]/10 text-[#00D4FF] text-xs rounded hover:bg-[#00D4FF]/20 transition-colors border border-[#00D4FF]/20"
+          >
+            Export Model
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-auto p-6">

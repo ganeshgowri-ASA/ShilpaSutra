@@ -148,28 +148,34 @@ function SphereDimensions({ obj }: { obj: CadObject }) {
 }
 
 export default function DimensionOverlay() {
-  const selectedId = useCadStore((s) => s.selectedId);
   const objects = useCadStore((s) => s.objects);
   const showDimensions = useCadStore((s) => s.showDimensions);
 
-  const selected = objects.find((o) => o.id === selectedId);
-
-  if (!showDimensions || !selected) return null;
+  if (!showDimensions) return null;
 
   const sketchTypes = ["line", "arc", "circle", "rectangle"];
-  if (sketchTypes.includes(selected.type)) return null;
-  if (selected.visible === false) return null;
+  const visible3DObjects = objects.filter(
+    (o) => !sketchTypes.includes(o.type) && o.visible !== false
+  );
 
-  switch (selected.type) {
-    case "box":
-      return <BoxDimensions obj={selected} />;
-    case "cylinder":
-      return <CylinderDimensions obj={selected} />;
-    case "sphere":
-      return <SphereDimensions obj={selected} />;
-    case "cone":
-      return <CylinderDimensions obj={selected} />;
-    default:
-      return null;
-  }
+  if (visible3DObjects.length === 0) return null;
+
+  return (
+    <>
+      {visible3DObjects.map((obj) => {
+        switch (obj.type) {
+          case "box":
+            return <BoxDimensions key={obj.id} obj={obj} />;
+          case "cylinder":
+            return <CylinderDimensions key={obj.id} obj={obj} />;
+          case "sphere":
+            return <SphereDimensions key={obj.id} obj={obj} />;
+          case "cone":
+            return <CylinderDimensions key={obj.id} obj={obj} />;
+          default:
+            return null;
+        }
+      })}
+    </>
+  );
 }
