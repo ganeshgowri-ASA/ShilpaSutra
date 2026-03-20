@@ -21,6 +21,11 @@ const navItems: NavItem[] = [
   { href: "/drawings", label: "2D Drawings", abbr: "2D", icon: "2", tooltip: "2D Drawings & GD&T", section: "main" },
   { href: "/reports", label: "Reports", abbr: "Rep", icon: "P", tooltip: "Engineering Reports", section: "main" },
   { href: "/library", label: "Parts Library", abbr: "Lib", icon: "L", tooltip: "Parts & Components Library", section: "main" },
+  { href: "/fea-advanced", label: "FEA Advanced", abbr: "FE+", icon: "FE", tooltip: "Advanced FEA: Modal, Thermal, Fatigue", section: "main" },
+  { href: "/cfd-advanced", label: "CFD Advanced", abbr: "CF+", icon: "CF", tooltip: "Advanced CFD: Turbulence, Streamlines, Probes", section: "main" },
+  { href: "/assembly-advanced", label: "Assembly+", abbr: "As+", icon: "As", tooltip: "Advanced Assembly with Constraints & BOM", section: "main" },
+  { href: "/import-export", label: "Import/Export", abbr: "I/O", icon: "IO", tooltip: "File Import & Export Hub", section: "main" },
+  { href: "/reports-advanced", label: "Reports+", abbr: "Rp+", icon: "Rp", tooltip: "Advanced Report Generator", section: "main" },
   { href: "/text-to-cad", label: "Text to CAD", abbr: "AI", icon: "AI", tooltip: "AI Text / Multimodal to CAD", section: "ai" },
   { href: "/settings", label: "Settings", abbr: "Set", icon: "S", tooltip: "Settings & Preferences", section: "bottom" },
 ];
