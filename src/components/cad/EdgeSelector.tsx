@@ -40,15 +40,29 @@ export default function EdgeSelector({ mode, onClose }: EdgeSelectorProps) {
 
     if (mode === "fillet") {
       const radius = filletType === "constant" ? filletRadius : (filletStartRadius + filletEndRadius) / 2;
-      // Apply fillet by modifying geometry dimensions (simplified visual fillet)
-      const bevelSize = Math.min(radius, selected.dimensions.width * 0.3, selected.dimensions.height * 0.3);
+      // Visually approximate fillet: shrink dimensions slightly to simulate rounded edges
+      // and store fillet metadata in name for downstream use
+      const shrink = Math.min(radius * 0.15, selected.dimensions.width * 0.05, selected.dimensions.height * 0.05);
       updateObject(selected.id, {
-        name: `${selected.name} [Fillet R${radius.toFixed(1)}]`,
+        name: `${selected.name.replace(/ \[Fillet.*\]/, "")} [Fillet R${radius.toFixed(2)}]`,
+        dimensions: {
+          width: Math.max(0.1, selected.dimensions.width - shrink),
+          height: Math.max(0.1, selected.dimensions.height - shrink),
+          depth: Math.max(0.1, selected.dimensions.depth - shrink),
+        },
+        roughness: Math.max(0.1, (selected.roughness ?? 0.5) - 0.1),
       });
     } else {
-      const dist = chamferMode === "equal" ? chamferDist1 : chamferDist1;
+      const dist = chamferMode === "equal" ? chamferDist1 : (chamferDist1 + chamferDist2) / 2;
+      // Approximate chamfer: slightly shrink geometry and mark
+      const shrink = Math.min(dist * 0.12, selected.dimensions.width * 0.04);
       updateObject(selected.id, {
-        name: `${selected.name} [Chamfer ${dist.toFixed(1)}]`,
+        name: `${selected.name.replace(/ \[Chamfer.*\]/, "")} [Chamfer ${dist.toFixed(2)}]`,
+        dimensions: {
+          width: Math.max(0.1, selected.dimensions.width - shrink),
+          height: Math.max(0.1, selected.dimensions.height - shrink),
+          depth: Math.max(0.1, selected.dimensions.depth - shrink),
+        },
       });
     }
 

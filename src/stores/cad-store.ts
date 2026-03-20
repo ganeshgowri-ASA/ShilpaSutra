@@ -417,7 +417,7 @@ export const useCadStore = create<CadState>((set, get) => ({
   canRedo: () => get().redoStack.length > 0,
 
   addMeasurePoint: (point) => {
-    const { measurePoints } = get();
+    const { measurePoints, unit } = get();
     if (measurePoints.length === 0) {
       set({ measurePoints: [point], measureResult: null });
     } else {
@@ -426,15 +426,18 @@ export const useCadStore = create<CadState>((set, get) => ({
       const dy = point[1] - p1[1];
       const dz = point[2] - p1[2];
       const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      const result = {
+        distance: Math.round(distance * 1000) / 1000,
+        dx: Math.round(Math.abs(dx) * 1000) / 1000,
+        dy: Math.round(Math.abs(dy) * 1000) / 1000,
+        dz: Math.round(Math.abs(dz) * 1000) / 1000,
+      };
       set({
         measurePoints: [measurePoints[0], point],
-        measureResult: {
-          distance: Math.round(distance * 1000) / 1000,
-          dx: Math.round(Math.abs(dx) * 1000) / 1000,
-          dy: Math.round(Math.abs(dy) * 1000) / 1000,
-          dz: Math.round(Math.abs(dz) * 1000) / 1000,
-        },
+        measureResult: result,
       });
+      // Auto-persist measurement annotation
+      get().addMeasurement({ type: "distance", points: [measurePoints[0], point], value: result.distance, unit });
     }
   },
 

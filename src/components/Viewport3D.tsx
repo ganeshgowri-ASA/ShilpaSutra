@@ -13,7 +13,7 @@ import {
   Html,
 } from "@react-three/drei";
 import * as THREE from "three";
-import { Evaluator, SUBTRACTION, ADDITION, INTERSECTION } from "three-bvh-csg";
+import { Evaluator, Brush, SUBTRACTION, ADDITION, INTERSECTION } from "three-bvh-csg";
 import {
   useCadStore,
   type CadObject,
@@ -25,12 +25,128 @@ import ConstraintIndicators from "@/components/cad/ConstraintIndicators";
 import SmartDimensions from "@/components/cad/SmartDimensions";
 
 const SKETCH_TOOLS: ToolId[] = ["line", "arc", "circle", "rectangle", "polygon", "spline", "ellipse", "construction_line"];
+const BOOLEAN_TOOLS: ToolId[] = ["boolean_union", "boolean_subtract", "boolean_intersect"];
 const SKETCH_Y = 0.02;
 
 /* ── Snap helper ── */
 function snap(value: number, gridSize: number, enabled: boolean): number {
   if (!enabled) return value;
   return Math.round(value / gridSize) * gridSize;
+}
+
+/* ── Helper: build THREE geometry from CadObject ── */
+function buildGeometry(obj: CadObject): THREE.BufferGeometry {
+  switch (obj.type) {
+    case "box":
+      return new THREE.BoxGeometry(obj.dimensions.width, obj.dimensions.height, obj.dimensions.depth);
+    case "cylinder":
+      return new THREE.CylinderGeometry(obj.dimensions.width, obj.dimensions.width, obj.dimensions.height, 32);
+    case "sphere":
+      return new THREE.SphereGeometry(obj.dimensions.width, 32, 32);
+    case "cone":
+      return new THREE.ConeGeometry(obj.dimensions.width, obj.dimensions.height, 32);
+    default:
+      return new THREE.BoxGeometry(1, 1, 1);
+  }
+}
+
+/* ── Boolean CSG Operations ── */
+function BooleanOperator() {
+  const booleanMode = useCadStore((s) => s.booleanMode);
+  const setBooleanMode = useCadStore((s) => s.setBooleanMode);
+  const selectedIds = useCadStore((s) => s.selectedIds);
+  const objects = useCadStore((s) => s.objects);
+  const addGeneratedObject = useCadStore((s) => s.addGeneratedObject);
+  const deleteObject = useCadStore((s) => s.deleteObject);
+  const pushHistory = useCadStore((s) => s.pushHistory);
+
+  useEffect(() => {
+    if (!booleanMode) return;
+    if (selectedIds.length < 2) {
+      alert("Select 2 objects first, then choose a boolean operation.");
+      setBooleanMode(null);
+      return;
+    }
+
+    const objs = selectedIds.map((id) => objects.find((o) => o.id === id)).filter(Boolean) as CadObject[];
+    const solidObjs = objs.filter((o) => ["box","cylinder","sphere","cone","mesh"].includes(o.type));
+    if (solidObjs.length < 2) {
+      alert("Boolean operations require 2 solid objects.");
+      setBooleanMode(null);
+      return;
+    }
+
+    try {
+      const evaluator = new Evaluator();
+      const matA = new THREE.MeshStandardMaterial({ color: solidObjs[0].color });
+      const matB = new THREE.MeshStandardMaterial({ color: solidObjs[1].color });
+
+      const geoA = buildGeometry(solidObjs[0]);
+      const geoB = buildGeometry(solidObjs[1]);
+      const meshA = new Brush(geoA, matA);
+      const meshB = new Brush(geoB, matB);
+
+      // Apply transforms
+      meshA.position.set(...solidObjs[0].position);
+      meshA.rotation.set(...solidObjs[0].rotation);
+      meshA.scale.set(...solidObjs[0].scale);
+      meshB.position.set(...solidObjs[1].position);
+      meshB.rotation.set(...solidObjs[1].rotation);
+      meshB.scale.set(...solidObjs[1].scale);
+
+      meshA.updateMatrixWorld(true);
+      meshB.updateMatrixWorld(true);
+
+      const op = booleanMode === "union" ? ADDITION : booleanMode === "subtract" ? SUBTRACTION : INTERSECTION;
+      const result = evaluator.evaluate(meshA, meshB, op);
+
+      // Extract vertices and indices from result
+      const geo = result.geometry;
+      const positions = geo.attributes.position;
+      const vertices: number[] = [];
+      const indices: number[] = [];
+
+      for (let i = 0; i < positions.count; i++) {
+        vertices.push(positions.getX(i), positions.getY(i), positions.getZ(i));
+      }
+
+      if (geo.index) {
+        for (let i = 0; i < geo.index.count; i++) {
+          indices.push(geo.index.getX(i));
+        }
+      } else {
+        for (let i = 0; i < positions.count; i++) indices.push(i);
+      }
+
+      pushHistory();
+      const opName = booleanMode === "union" ? "Union" : booleanMode === "subtract" ? "Subtract" : "Intersect";
+      addGeneratedObject({
+        type: "mesh",
+        name: `${opName}(${solidObjs[0].name}, ${solidObjs[1].name})`,
+        position: [0, 0, 0],
+        color: solidObjs[0].color,
+        material: solidObjs[0].material,
+        meshVertices: vertices,
+        meshIndices: indices,
+      });
+
+      // Delete source objects
+      solidObjs.forEach((o) => deleteObject(o.id));
+
+      // Cleanup
+      geoA.dispose();
+      geoB.dispose();
+      matA.dispose();
+      matB.dispose();
+    } catch (err) {
+      console.error("Boolean operation failed:", err);
+    }
+
+    setBooleanMode(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [booleanMode]);
+
+  return null;
 }
 
 /* ── Single CAD mesh ── */
@@ -40,8 +156,10 @@ function CadMesh({ obj }: { obj: CadObject }) {
   const selectedIds = useCadStore((s) => s.selectedIds);
   const selectObject = useCadStore((s) => s.selectObject);
   const toggleSelectObject = useCadStore((s) => s.toggleSelectObject);
+  const setContextMenu = useCadStore((s) => s.setContextMenu);
   const activeTool = useCadStore((s) => s.activeTool);
   const isSelected = selectedId === obj.id || selectedIds.includes(obj.id);
+  const [hovered, setHovered] = useState(false);
 
   if (obj.visible === false) return null;
 
@@ -56,6 +174,16 @@ function CadMesh({ obj }: { obj: CadObject }) {
       }
     },
     [activeTool, selectObject, toggleSelectObject, obj.id]
+  );
+
+  const handleContextMenu = useCallback(
+    (e: ThreeEvent<MouseEvent>) => {
+      e.stopPropagation();
+      e.nativeEvent.preventDefault();
+      selectObject(obj.id);
+      setContextMenu({ x: e.nativeEvent.clientX, y: e.nativeEvent.clientY, objectId: obj.id });
+    },
+    [selectObject, setContextMenu, obj.id]
   );
 
   const geometry = (() => {
@@ -80,6 +208,22 @@ function CadMesh({ obj }: { obj: CadObject }) {
             args={[obj.dimensions.width, obj.dimensions.height, 32]}
           />
         );
+      case "mesh":
+        if (obj.meshVertices && obj.meshIndices) {
+          return (
+            <bufferGeometry>
+              <bufferAttribute
+                attach="attributes-position"
+                args={[new Float32Array(obj.meshVertices), 3]}
+              />
+              <bufferAttribute
+                attach="index"
+                args={[new Uint32Array(obj.meshIndices), 1]}
+              />
+            </bufferGeometry>
+          );
+        }
+        return <boxGeometry args={[1, 1, 1]} />;
       default:
         return <boxGeometry args={[1, 1, 1]} />;
     }
@@ -92,6 +236,9 @@ function CadMesh({ obj }: { obj: CadObject }) {
       rotation={obj.rotation}
       scale={obj.scale}
       onClick={handleClick}
+      onContextMenu={handleContextMenu}
+      onPointerOver={(e) => { e.stopPropagation(); setHovered(true); document.body.style.cursor = "pointer"; }}
+      onPointerOut={() => { setHovered(false); document.body.style.cursor = "default"; }}
       userData={{ cadId: obj.id }}
     >
       {geometry}
@@ -101,8 +248,8 @@ function CadMesh({ obj }: { obj: CadObject }) {
         roughness={obj.roughness ?? 0.5}
         opacity={obj.opacity ?? 1}
         transparent={(obj.opacity ?? 1) < 1}
-        emissive={isSelected ? "#00D4FF" : "#000000"}
-        emissiveIntensity={isSelected ? 0.15 : 0}
+        emissive={isSelected ? "#00D4FF" : hovered ? "#334466" : "#000000"}
+        emissiveIntensity={isSelected ? 0.2 : hovered ? 0.12 : 0}
       />
       {isSelected && (
         <lineSegments>
@@ -359,17 +506,25 @@ function GroundPlane() {
   const snapGrid = useCadStore((s) => s.snapGrid);
   const gridSize = useCadStore((s) => s.gridSize);
   const addMeasurePoint = useCadStore((s) => s.addMeasurePoint);
+  const setCursorPosition = useCadStore((s) => s.setCursorPosition);
 
   const handleClick = useCallback(
     (e: ThreeEvent<MouseEvent>) => {
-      if (activeTool === "measure" || activeTool === "measure_angle") {
+      if (activeTool === "measure") {
         e.stopPropagation();
         const p = e.point;
-        addMeasurePoint([
-          snap(p.x, gridSize, snapGrid),
-          0,
-          snap(p.z, gridSize, snapGrid),
-        ]);
+        addMeasurePoint([snap(p.x, gridSize, snapGrid), 0, snap(p.z, gridSize, snapGrid)]);
+        return;
+      }
+      if (activeTool === "measure_angle") {
+        e.stopPropagation();
+        const p = e.point;
+        const pts = useCadStore.getState().measurePoints;
+        if (pts.length < 3) {
+          addMeasurePoint([snap(p.x, gridSize, snapGrid), 0, snap(p.z, gridSize, snapGrid)]);
+        } else {
+          useCadStore.getState().clearMeasure();
+        }
         return;
       }
 
@@ -410,6 +565,14 @@ function GroundPlane() {
       rotation={[-Math.PI / 2, 0, 0]}
       position={[0, -0.01, 0]}
       onClick={handleClick}
+      onPointerMove={(e) => {
+        const p = e.point;
+        setCursorPosition([
+          Math.round(snap(p.x, gridSize, snapGrid) * 100) / 100,
+          0,
+          Math.round(snap(p.z, gridSize, snapGrid) * 100) / 100,
+        ]);
+      }}
       visible={false}
     >
       <planeGeometry args={[100, 100]} />
@@ -474,6 +637,21 @@ function SketchDrawTools() {
         setClickPoints([]);
         setPreviewPoint(null);
       }
+    } else if (activeTool === "polygon") {
+      // Double-click closes polygon; single click adds vertex
+      const newPoints = [...clickPoints, p];
+      if (clickPoints.length >= 2 && Math.sqrt(
+        Math.pow(p[0] - clickPoints[0][0], 2) + Math.pow(p[2] - clickPoints[0][2], 2)
+      ) < 0.3) {
+        // Close polygon - draw edges
+        for (let i = 0; i < clickPoints.length; i++) {
+          addLine([clickPoints[i], clickPoints[(i + 1) % clickPoints.length]]);
+        }
+        setClickPoints([]);
+        setPreviewPoint(null);
+      } else {
+        setClickPoints(newPoints);
+      }
     } else if (activeTool === "arc") {
       const newPoints = [...clickPoints, p];
       if (newPoints.length < 3) {
@@ -524,16 +702,17 @@ function SketchDrawTools() {
   const renderPreview = () => {
     if (clickPoints.length === 0 || !previewPoint) return null;
 
-    if (activeTool === "line") {
+    if (activeTool === "line" || activeTool === "polygon") {
+      const pts: [number,number,number][] = clickPoints.length >= 2
+        ? [...clickPoints, previewPoint]
+        : [clickPoints[0], previewPoint];
       return (
-        <Line
-          points={[clickPoints[0], previewPoint]}
-          color="#ffff00"
-          lineWidth={2}
-          dashed
-          dashSize={0.15}
-          gapSize={0.1}
-        />
+        <>
+          <Line points={pts} color="#ffff00" lineWidth={2} dashed dashSize={0.15} gapSize={0.1} />
+          {activeTool === "polygon" && clickPoints.length >= 2 && (
+            <Line points={[previewPoint, clickPoints[0]]} color="#ffff0060" lineWidth={1} dashed dashSize={0.1} gapSize={0.1} />
+          )}
+        </>
       );
     }
 
@@ -712,8 +891,11 @@ function CameraController() {
 /* ── Keyboard shortcuts ── */
 function KeyboardHandler() {
   const deleteSelected = useCadStore((s) => s.deleteSelected);
+  const selectAll = useCadStore((s) => s.selectAll);
+  const duplicateSelected = useCadStore((s) => s.duplicateSelected);
   const setTransformMode = useCadStore((s) => s.setTransformMode);
   const setActiveTool = useCadStore((s) => s.setActiveTool);
+  const selectObject = useCadStore((s) => s.selectObject);
   const undo = useCadStore((s) => s.undo);
   const redo = useCadStore((s) => s.redo);
   const setSnapGrid = useCadStore((s) => s.setSnapGrid);
@@ -723,6 +905,7 @@ function KeyboardHandler() {
   const setCameraView = useCadStore((s) => s.setCameraView);
   const setPerspectiveMode = useCadStore((s) => s.setPerspectiveMode);
   const perspectiveMode = useCadStore((s) => s.perspectiveMode);
+  const objects = useCadStore((s) => s.objects);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -739,9 +922,19 @@ function KeyboardHandler() {
         else undo();
         return;
       }
-      if ((e.ctrlKey || e.metaKey) && e.key === "y") {
+      if ((e.ctrlKey || e.metaKey) && (e.key === "y" || (e.shiftKey && e.key === "Z"))) {
         e.preventDefault();
         redo();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === "a") {
+        e.preventDefault();
+        selectAll();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === "d") {
+        e.preventDefault();
+        duplicateSelected();
         return;
       }
 
@@ -764,6 +957,7 @@ function KeyboardHandler() {
           break;
         case "Escape":
           setActiveTool("select");
+          selectObject(null);
           break;
         case "l":
           setActiveTool("line");
@@ -778,11 +972,13 @@ function KeyboardHandler() {
           setActiveTool("measure");
           break;
         case "d":
-          setShowDimensions(!showDimensions);
+          if (!e.ctrlKey && !e.metaKey) setShowDimensions(!showDimensions);
           break;
-        case "f":
+        case "f": {
+          // Fit/zoom to selection or all objects
           setCameraView("iso");
           break;
+        }
         case "1":
           setCameraView("front");
           break;
@@ -799,7 +995,7 @@ function KeyboardHandler() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [deleteSelected, setTransformMode, setActiveTool, undo, redo, setSnapGrid, snapGrid, showDimensions, setShowDimensions, setCameraView, setPerspectiveMode, perspectiveMode]);
+  }, [deleteSelected, selectAll, duplicateSelected, selectObject, setTransformMode, setActiveTool, undo, redo, setSnapGrid, snapGrid, showDimensions, setShowDimensions, setCameraView, setPerspectiveMode, perspectiveMode, objects]);
 
   return null;
 }
@@ -928,6 +1124,170 @@ function GradientBackground() {
   return null;
 }
 
+/* ── Context Menu ── */
+function ContextMenu() {
+  const contextMenu = useCadStore((s) => s.contextMenu);
+  const setContextMenu = useCadStore((s) => s.setContextMenu);
+  const objects = useCadStore((s) => s.objects);
+  const deleteObject = useCadStore((s) => s.deleteObject);
+  const toggleVisibility = useCadStore((s) => s.toggleVisibility);
+  const featureHistory = useCadStore((s) => s.featureHistory);
+  const duplicateSelected = useCadStore((s) => s.duplicateSelected);
+  const updateObject = useCadStore((s) => s.updateObject);
+  const [colorInput, setColorInput] = useState<string | null>(null);
+
+  useEffect(() => {
+    const close = () => setContextMenu(null);
+    window.addEventListener("click", close);
+    window.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+    return () => window.removeEventListener("click", close);
+  }, [setContextMenu]);
+
+  if (!contextMenu) return null;
+
+  const obj = objects.find((o) => o.id === contextMenu.objectId);
+  const feat = featureHistory.find((f) => f.objectId === contextMenu.objectId);
+  if (!obj) return null;
+
+  const items = [
+    {
+      label: feat?.visible !== false ? "Hide" : "Show",
+      action: () => {
+        if (feat) toggleVisibility(feat.id);
+        setContextMenu(null);
+      },
+    },
+    {
+      label: "Duplicate",
+      action: () => { duplicateSelected(); setContextMenu(null); },
+    },
+    { label: "divider" },
+    {
+      label: "Change Color",
+      action: () => { setColorInput(obj.color); },
+    },
+    { label: "divider" },
+    {
+      label: "Delete",
+      action: () => { deleteObject(obj.id); setContextMenu(null); },
+      danger: true,
+    },
+  ];
+
+  return (
+    <div
+      style={{ position: "fixed", left: contextMenu.x, top: contextMenu.y, zIndex: 9999 }}
+      className="bg-[#1a1a2e] border border-[#16213e] rounded-lg shadow-2xl py-1 min-w-[160px]"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="px-3 py-1.5 text-[10px] text-slate-500 border-b border-[#16213e] mb-1 font-medium truncate">
+        {obj.name}
+      </div>
+      {colorInput !== null && (
+        <div className="px-3 py-2 flex items-center gap-2">
+          <input
+            type="color"
+            value={colorInput}
+            onChange={(e) => setColorInput(e.target.value)}
+            className="w-6 h-6 rounded cursor-pointer border-0"
+          />
+          <button
+            className="text-[11px] text-[#00D4FF] hover:text-white"
+            onClick={() => {
+              updateObject(obj.id, { color: colorInput! });
+              setColorInput(null);
+              setContextMenu(null);
+            }}
+          >
+            Apply
+          </button>
+          <button
+            className="text-[11px] text-slate-500 hover:text-white"
+            onClick={() => setColorInput(null)}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+      {items.map((item, i) =>
+        item.label === "divider" ? (
+          <div key={i} className="my-1 h-px bg-[#16213e]" />
+        ) : (
+          <button
+            key={i}
+            onClick={item.action}
+            className={`w-full text-left px-3 py-1.5 text-[12px] transition-colors hover:bg-[#0f3460] ${
+              item.danger ? "text-red-400 hover:text-red-300" : "text-slate-300 hover:text-white"
+            }`}
+          >
+            {item.label}
+          </button>
+        )
+      )}
+    </div>
+  );
+}
+
+/* ── Boolean Operation UI trigger ── */
+function BooleanToolActivator() {
+  const activeTool = useCadStore((s) => s.activeTool);
+  const setBooleanMode = useCadStore((s) => s.setBooleanMode);
+  const setActiveTool = useCadStore((s) => s.setActiveTool);
+
+  useEffect(() => {
+    if (BOOLEAN_TOOLS.includes(activeTool)) {
+      const mode = activeTool === "boolean_union" ? "union"
+        : activeTool === "boolean_subtract" ? "subtract" : "intersect";
+      setBooleanMode(mode);
+      setActiveTool("select");
+    }
+  }, [activeTool, setBooleanMode, setActiveTool]);
+
+  return null;
+}
+
+/* ── Angle measurement annotation ── */
+function AngleMeasurement() {
+  const measurePoints = useCadStore((s) => s.measurePoints);
+  const activeTool = useCadStore((s) => s.activeTool);
+  const addMeasurePoint = useCadStore((s) => s.addMeasurePoint);
+
+  if (activeTool !== "measure_angle") return null;
+
+  let angleDisplay = "";
+  if (measurePoints.length === 3) {
+    const [p1, p2, p3] = measurePoints;
+    const v1 = new THREE.Vector3(p1[0] - p2[0], p1[1] - p2[1], p1[2] - p2[2]).normalize();
+    const v2 = new THREE.Vector3(p3[0] - p2[0], p3[1] - p2[1], p3[2] - p2[2]).normalize();
+    const angle = (Math.acos(Math.max(-1, Math.min(1, v1.dot(v2)))) * 180) / Math.PI;
+    angleDisplay = `${angle.toFixed(1)}°`;
+  }
+
+  return (
+    <>
+      {measurePoints.map((pt, i) => (
+        <mesh key={i} position={pt}>
+          <sphereGeometry args={[0.08, 16, 16]} />
+          <meshBasicMaterial color="#ffaa00" />
+        </mesh>
+      ))}
+      {measurePoints.length >= 2 && (
+        <Line points={[measurePoints[0], measurePoints[1]]} color="#ffaa00" lineWidth={2} dashed dashSize={0.15} gapSize={0.1} />
+      )}
+      {measurePoints.length === 3 && (
+        <>
+          <Line points={[measurePoints[1], measurePoints[2]]} color="#ffaa00" lineWidth={2} dashed dashSize={0.15} gapSize={0.1} />
+          <Html position={measurePoints[1]}>
+            <div className="bg-[#1a1a2e]/95 border border-yellow-500/50 rounded px-2 py-1 text-xs text-yellow-300 font-mono whitespace-nowrap pointer-events-none -translate-x-1/2 -translate-y-8">
+              {angleDisplay}
+            </div>
+          </Html>
+        </>
+      )}
+    </>
+  );
+}
+
 /* ── Main Viewport ── */
 interface Viewport3DProps {
   mode?: "designer" | "simulator" | "assembly";
@@ -940,14 +1300,16 @@ export default function Viewport3D({ mode }: Viewport3DProps) {
   const showOrigin = useCadStore((s) => s.showOrigin);
   const sketchPlane = useCadStore((s) => s.sketchPlane);
   const isSketchMode = SKETCH_TOOLS.includes(activeTool);
+  const contextMenu = useCadStore((s) => s.contextMenu);
 
   return (
-    <div className="w-full h-full">
+    <div className="w-full h-full relative">
       <Canvas
         camera={{ position: [5, 5, 5], fov: 50, near: 0.1, far: 1000 }}
         gl={{ antialias: true, alpha: false, preserveDrawingBuffer: true }}
         onPointerMissed={() => {
           useCadStore.getState().selectObject(null);
+          useCadStore.getState().setContextMenu(null);
         }}
       >
         <GradientBackground />
@@ -991,10 +1353,13 @@ export default function Viewport3D({ mode }: Viewport3DProps) {
           }
         })}
 
+        <BooleanOperator />
+        <BooleanToolActivator />
         <SelectedTransform />
         <DimensionOverlay />
         <SmartDimensions />
         <MeasurementTool />
+        <AngleMeasurement />
         <ConstraintIndicators />
 
         <ContactShadows position={[0, -0.01, 0]} opacity={0.4} blur={2} />
@@ -1021,6 +1386,7 @@ export default function Viewport3D({ mode }: Viewport3DProps) {
         <Environment preset="city" />
         <KeyboardHandler />
       </Canvas>
+      {contextMenu && <ContextMenu />}
     </div>
   );
 }

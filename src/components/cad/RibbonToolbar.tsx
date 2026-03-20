@@ -133,11 +133,25 @@ export default function RibbonToolbar() {
   const setPerspectiveMode = useCadStore((s) => s.setPerspectiveMode);
 
   const setActiveOperation = useCadStore((s) => s.setActiveOperation);
+  const setBooleanMode = useCadStore((s) => s.setBooleanMode);
+  const setExtrudeDialogOpen = useCadStore((s) => s.setExtrudeDialogOpen);
+  const selectedIds = useCadStore((s) => s.selectedIds);
+  const selectedId = useCadStore((s) => s.selectedId);
 
   const handleToolClick = useCallback(
     (id: string) => {
       if (id === "delete") {
         useCadStore.getState().deleteSelected();
+        return;
+      }
+      // Extrude
+      if (id === "extrude") {
+        setExtrudeDialogOpen(true);
+        return;
+      }
+      // Boolean operations — trigger CSG
+      if (id === "boolean_union" || id === "boolean_subtract" || id === "boolean_intersect") {
+        setBooleanMode(id === "boolean_union" ? "union" : id === "boolean_subtract" ? "subtract" : "intersect");
         return;
       }
       // Open operation dialogs for fillet/chamfer/shell/draft/mirror/patterns
@@ -147,7 +161,7 @@ export default function RibbonToolbar() {
       }
       setActiveTool(id as ToolId);
     },
-    [setActiveTool, setActiveOperation]
+    [setActiveTool, setActiveOperation, setBooleanMode, selectedIds, selectedId]
   );
 
   const handleTabDoubleClick = useCallback(() => {
@@ -165,18 +179,28 @@ export default function RibbonToolbar() {
           <button
             onClick={undo}
             disabled={undoStack.length === 0}
-            title="Undo (Ctrl+Z)"
-            className="w-7 h-7 rounded flex items-center justify-center text-slate-400 hover:text-white hover:bg-[#0f3460] disabled:opacity-30 transition-colors"
+            title={`Undo (Ctrl+Z) — ${undoStack.length} step${undoStack.length !== 1 ? "s" : ""}`}
+            className="relative w-7 h-7 rounded flex items-center justify-center text-slate-400 hover:text-white hover:bg-[#0f3460] disabled:opacity-30 transition-colors"
           >
             <Undo2 size={14} />
+            {undoStack.length > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 bg-[#00D4FF] text-[8px] text-black rounded-full w-3.5 h-3.5 flex items-center justify-center font-bold leading-none">
+                {undoStack.length > 9 ? "9+" : undoStack.length}
+              </span>
+            )}
           </button>
           <button
             onClick={redo}
             disabled={redoStack.length === 0}
-            title="Redo (Ctrl+Y)"
-            className="w-7 h-7 rounded flex items-center justify-center text-slate-400 hover:text-white hover:bg-[#0f3460] disabled:opacity-30 transition-colors"
+            title={`Redo (Ctrl+Shift+Z) — ${redoStack.length} step${redoStack.length !== 1 ? "s" : ""}`}
+            className="relative w-7 h-7 rounded flex items-center justify-center text-slate-400 hover:text-white hover:bg-[#0f3460] disabled:opacity-30 transition-colors"
           >
             <Redo2 size={14} />
+            {redoStack.length > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 bg-orange-400 text-[8px] text-black rounded-full w-3.5 h-3.5 flex items-center justify-center font-bold leading-none">
+                {redoStack.length > 9 ? "9+" : redoStack.length}
+              </span>
+            )}
           </button>
         </div>
 

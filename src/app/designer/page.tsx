@@ -2,6 +2,7 @@
 import { useState, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { useCadStore } from "@/stores/cad-store";
+import ExtrudeSketchDialog from "@/components/cad/ExtrudeSketchDialog";
 
 const Viewport3D = dynamic(() => import("@/components/Viewport3D"), {
   ssr: false,
@@ -77,6 +78,8 @@ export default function DesignerPage() {
   const sketchPlane = useCadStore((s) => s.sketchPlane);
   const enterSketchMode = useCadStore((s) => s.enterSketchMode);
   const exitSketchMode = useCadStore((s) => s.exitSketchMode);
+  const extrudeDialogOpen = useCadStore((s) => s.extrudeDialogOpen);
+  const setExtrudeDialogOpen = useCadStore((s) => s.setExtrudeDialogOpen);
 
   const [aiOpen, setAiOpen] = useState(false);
   const [aiMode, setAiMode] = useState<"basic" | "zookeeper">("zookeeper");
@@ -224,6 +227,11 @@ export default function DesignerPage() {
               }
               onClose={handleCloseOperation}
             />
+          )}
+
+          {/* Extrude Sketch Dialog */}
+          {extrudeDialogOpen && (
+            <ExtrudeSketchDialog onClose={() => setExtrudeDialogOpen(false)} />
           )}
 
           {/* History Timeline (floating, bottom right) */}

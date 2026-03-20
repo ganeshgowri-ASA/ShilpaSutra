@@ -1,7 +1,7 @@
 "use client";
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useCadStore } from "@/stores/cad-store";
-import { Terminal, Grid3X3 } from "lucide-react";
+import { Terminal, Grid3X3, Cpu } from "lucide-react";
 
 const COMMANDS = [
   "BOX", "CYLINDER", "SPHERE", "CONE",
@@ -24,8 +24,25 @@ export default function DesignerCommandBar() {
   const setSnapGrid = useCadStore((s) => s.setSnapGrid);
   const selectedIds = useCadStore((s) => s.selectedIds);
   const selectedId = useCadStore((s) => s.selectedId);
+  const activeTool = useCadStore((s) => s.activeTool);
+  const objects = useCadStore((s) => s.objects);
+  const cursorPosition = useCadStore((s) => s.cursorPosition);
 
   const selCount = selectedIds.length || (selectedId ? 1 : 0);
+  const objCount = objects.length;
+
+  const [memUsage, setMemUsage] = useState<string>("");
+  useEffect(() => {
+    const update = () => {
+      if (typeof window !== "undefined" && "memory" in performance) {
+        const mem = (performance as unknown as { memory: { usedJSHeapSize: number } }).memory;
+        setMemUsage(`${(mem.usedJSHeapSize / 1048576).toFixed(0)} MB`);
+      }
+    };
+    update();
+    const id = setInterval(update, 3000);
+    return () => clearInterval(id);
+  }, []);
 
   const suggestions = input.trim()
     ? COMMANDS.filter((c) => c.startsWith(input.trim().toUpperCase())).slice(0, 6)
@@ -121,14 +138,24 @@ export default function DesignerCommandBar() {
 
       {/* Status indicators */}
       <div className="flex items-center gap-3 text-[10px] text-slate-500 font-mono shrink-0 ml-4">
-        <span className="text-slate-400">{unit}</span>
+        {/* Active tool */}
+        <span className="text-slate-400 capitalize bg-[#0f3460]/60 px-1.5 py-0.5 rounded">
+          {activeTool.replace(/_/g, " ")}
+        </span>
 
+        {/* Cursor position */}
+        <span className="text-slate-600" title="Cursor position (X, Y, Z)">
+          {cursorPosition[0].toFixed(2)}, {cursorPosition[1].toFixed(2)}, {cursorPosition[2].toFixed(2)}
+        </span>
+
+        {/* Unit */}
+        <span className="text-slate-500">{unit}</span>
+
+        {/* Grid snap toggle */}
         <button
           onClick={() => setSnapGrid(!snapGrid)}
           className={`flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors ${
-            snapGrid
-              ? "text-[#00D4FF] bg-[#00D4FF]/10"
-              : "text-slate-600 hover:text-slate-400"
+            snapGrid ? "text-[#00D4FF] bg-[#00D4FF]/10" : "text-slate-600 hover:text-slate-400"
           }`}
           title="Toggle Grid Snap (G)"
         >
@@ -136,13 +163,21 @@ export default function DesignerCommandBar() {
           <span>Snap {snapGrid ? "ON" : "OFF"}</span>
         </button>
 
+        {/* Object count */}
+        <span className="text-slate-600">{objCount} obj{objCount !== 1 ? "s" : ""}</span>
+
+        {/* Selection count */}
         {selCount > 0 && (
-          <span className="text-[#00D4FF]">
-            {selCount} selected
-          </span>
+          <span className="text-[#00D4FF]">{selCount} sel</span>
         )}
 
-        <span className="text-slate-600">0, 0, 0</span>
+        {/* Memory */}
+        {memUsage && (
+          <span className="flex items-center gap-0.5 text-slate-700" title="JS heap memory">
+            <Cpu size={9} />
+            {memUsage}
+          </span>
+        )}
       </div>
     </div>
   );
