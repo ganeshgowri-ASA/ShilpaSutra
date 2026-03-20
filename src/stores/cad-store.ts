@@ -317,7 +317,7 @@ export const useCadStore = create<CadState>((set, get) => ({
   setPropertyPanelCollapsed: (v) => set({ propertyPanelCollapsed: v }),
   setCameraView: (view) => set({ cameraView: view }),
   setSketchPlane: (plane) => set({ sketchPlane: plane }),
-  enterSketchMode: (plane) => set({ sketchPlane: plane, activeRibbonTab: "sketch" }),
+  enterSketchMode: (plane) => set({ sketchPlane: plane, activeRibbonTab: "sketch", activeTool: "line" }),
   exitSketchMode: () => set({ sketchPlane: null, activeTool: "select" }),
   setAutoConstraints: (v) => set({ autoConstraints: v }),
   setActiveOperation: (op) => set({ activeOperation: op }),

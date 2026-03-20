@@ -121,6 +121,7 @@ export default function RendererPage() {
   const [activeCameraPreset, setActiveCameraPreset] = useState<CameraPreset | null>(null);
   const [antialiasing, setAntialiasing] = useState(true);
   const [ssaoEnabled, setSsaoEnabled] = useState(false);
+  const [envMapEnabled, setEnvMapEnabled] = useState(true);
   const [useDesignerModel, setUseDesignerModel] = useState(false);
 
   const designerObjects = useCadStore((s) => s.objects);
@@ -385,6 +386,10 @@ export default function RendererPage() {
                   <label className="flex items-center gap-2 text-slate-300 cursor-pointer">
                     <input type="checkbox" checked={ssaoEnabled} onChange={e => setSsaoEnabled(e.target.checked)} className="accent-[#00D4FF]" />
                     SSAO (Ambient Occlusion)
+                  </label>
+                  <label className="flex items-center gap-2 text-slate-300 cursor-pointer">
+                    <input type="checkbox" checked={envMapEnabled} onChange={e => setEnvMapEnabled(e.target.checked)} className="accent-[#00D4FF]" />
+                    Environment Map
                   </label>
                 </div>
 

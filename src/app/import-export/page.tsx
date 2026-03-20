@@ -117,6 +117,39 @@ export default function ImportExportPage() {
     setShowExport(false);
   }, [exportOpts]);
 
+  const handleDxfExport = useCallback(() => {
+    // Generate a basic DXF file with LINE and CIRCLE entities from sample scene objects
+    const sceneObjects = [
+      { type: "LINE", x1: 0, y1: 0, x2: 100, y2: 0 },
+      { type: "LINE", x1: 100, y1: 0, x2: 100, y2: 50 },
+      { type: "LINE", x1: 100, y1: 50, x2: 0, y2: 50 },
+      { type: "LINE", x1: 0, y1: 50, x2: 0, y2: 0 },
+      { type: "CIRCLE", cx: 50, cy: 25, r: 15 },
+    ];
+
+    let dxf = "0\nSECTION\n2\nHEADER\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n";
+
+    for (const obj of sceneObjects) {
+      if (obj.type === "LINE") {
+        const o = obj as { type: string; x1: number; y1: number; x2: number; y2: number };
+        dxf += `0\nLINE\n8\n0\n10\n${o.x1}\n20\n${o.y1}\n30\n0\n11\n${o.x2}\n21\n${o.y2}\n31\n0\n`;
+      } else if (obj.type === "CIRCLE") {
+        const o = obj as { type: string; cx: number; cy: number; r: number };
+        dxf += `0\nCIRCLE\n8\n0\n10\n${o.cx}\n20\n${o.cy}\n30\n0\n40\n${o.r}\n`;
+      }
+    }
+
+    dxf += "0\nENDSEC\n0\nEOF\n";
+
+    const blob = new Blob([dxf], { type: "application/dxf" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "shilpasutra_export.dxf";
+    a.click();
+    URL.revokeObjectURL(url);
+  }, []);
+
   return (
     <div className="flex flex-col h-full bg-[#0a0a0f] text-white">
       {/* Header */}
@@ -125,12 +158,20 @@ export default function ImportExportPage() {
           <span className="text-[#00D4FF] font-bold text-sm">I/O</span>
           <span className="text-slate-400 text-xs">Import / Export File Hub</span>
         </div>
-        <button
-          onClick={() => setShowExport(true)}
-          className="px-3 py-1.5 bg-[#00D4FF]/10 text-[#00D4FF] text-xs rounded hover:bg-[#00D4FF]/20 transition-colors border border-[#00D4FF]/20"
-        >
-          Export Model
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleDxfExport}
+            className="px-3 py-1.5 bg-yellow-500/10 text-yellow-400 text-xs rounded hover:bg-yellow-500/20 transition-colors border border-yellow-500/20"
+          >
+            Export DXF
+          </button>
+          <button
+            onClick={() => setShowExport(true)}
+            className="px-3 py-1.5 bg-[#00D4FF]/10 text-[#00D4FF] text-xs rounded hover:bg-[#00D4FF]/20 transition-colors border border-[#00D4FF]/20"
+          >
+            Export Model
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-auto p-6">
