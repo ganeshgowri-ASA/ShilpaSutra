@@ -8,7 +8,9 @@ import {
   GizmoHelper,
   GizmoViewport,
 } from "@react-three/drei";
+import { EffectComposer, SSAO } from "@react-three/postprocessing";
 import * as THREE from "three";
+import type { CadObject } from "@/stores/cad-store";
 
 interface PBRMaterial {
   color: string;
@@ -51,6 +53,8 @@ interface RendererViewportProps {
   fov?: number;
   cameraPreset?: CameraPreset | null;
   antialias?: boolean;
+  ssaoEnabled?: boolean;
+  designerObjects?: CadObject[];
 }
 
 function CameraController({ preset, fov }: { preset?: CameraPreset | null; fov?: number }) {
@@ -111,6 +115,44 @@ function RenderGeometry({
         opacity={material.opacity}
         transparent={material.transparent}
         side={material.transparent ? THREE.DoubleSide : THREE.FrontSide}
+        envMapIntensity={1}
+      />
+    </mesh>
+  );
+}
+
+function DesignerObjectMesh({ obj, material }: { obj: CadObject; material: PBRMaterial }) {
+  const geo = (() => {
+    switch (obj.type) {
+      case "box":
+        return <boxGeometry args={[obj.dimensions.width, obj.dimensions.height, obj.dimensions.depth]} />;
+      case "cylinder":
+        return <cylinderGeometry args={[obj.dimensions.width / 2, obj.dimensions.width / 2, obj.dimensions.height, 64]} />;
+      case "sphere":
+        return <sphereGeometry args={[obj.dimensions.width / 2, 64, 64]} />;
+      case "cone":
+        return <coneGeometry args={[obj.dimensions.width / 2, obj.dimensions.height, 64]} />;
+      default:
+        return <boxGeometry args={[obj.dimensions.width || 1, obj.dimensions.height || 1, obj.dimensions.depth || 1]} />;
+    }
+  })();
+
+  return (
+    <mesh
+      position={obj.position}
+      rotation={obj.rotation as unknown as [number, number, number]}
+      castShadow
+      receiveShadow
+    >
+      {geo}
+      <meshStandardMaterial
+        color={obj.color}
+        metalness={material.metalness}
+        roughness={material.roughness}
+        emissive={material.emissive}
+        emissiveIntensity={material.emissiveIntensity}
+        opacity={obj.opacity}
+        transparent={obj.opacity < 1}
         envMapIntensity={1}
       />
     </mesh>
@@ -204,7 +246,11 @@ export default function RendererViewport({
   fov = 45,
   cameraPreset = null,
   antialias = true,
+  ssaoEnabled = false,
+  designerObjects,
 }: RendererViewportProps) {
+  const hasDesignerObjects = designerObjects && designerObjects.length > 0;
+
   return (
     <div className="w-full h-full">
       <Canvas
@@ -222,7 +268,15 @@ export default function RendererViewport({
         <CameraController preset={cameraPreset} fov={fov} />
         <SceneLights lights={lights} />
 
-        <RenderGeometry geometry={geometry} material={material} />
+        {hasDesignerObjects ? (
+          designerObjects!
+            .filter(o => o.visible && ["box", "cylinder", "sphere", "cone"].includes(o.type))
+            .map(obj => (
+              <DesignerObjectMesh key={obj.id} obj={obj} material={material} />
+            ))
+        ) : (
+          <RenderGeometry geometry={geometry} material={material} />
+        )}
 
         {showGround && <GroundPlane color={groundColor} receiveShadow={showShadows} />}
 
@@ -234,6 +288,17 @@ export default function RendererViewport({
             blur={2.5}
             far={4}
           />
+        )}
+
+        {ssaoEnabled && (
+          <EffectComposer>
+            <SSAO
+              radius={0.1}
+              intensity={30}
+              luminanceInfluence={0.6}
+              color={new THREE.Color("black")}
+            />
+          </EffectComposer>
         )}
 
         <OrbitControls

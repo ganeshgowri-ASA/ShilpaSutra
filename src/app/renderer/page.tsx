@@ -1,6 +1,7 @@
 "use client";
 import { useState, useCallback } from "react";
 import dynamic from "next/dynamic";
+import { useCadStore } from "@/stores/cad-store";
 import {
   Camera,
   Sun,
@@ -12,6 +13,7 @@ import {
   Circle,
   Square,
   MonitorPlay,
+  Layers,
 } from "lucide-react";
 
 const RendererViewport = dynamic(() => import("@/components/RendererViewport"), {
@@ -118,6 +120,10 @@ export default function RendererPage() {
   const [splitView, setSplitView] = useState(false);
   const [activeCameraPreset, setActiveCameraPreset] = useState<CameraPreset | null>(null);
   const [antialiasing, setAntialiasing] = useState(true);
+  const [ssaoEnabled, setSsaoEnabled] = useState(false);
+  const [useDesignerModel, setUseDesignerModel] = useState(false);
+
+  const designerObjects = useCadStore((s) => s.objects);
 
   const applyPreset = (name: string) => {
     const preset = materialPresets[name];
@@ -203,6 +209,12 @@ export default function RendererPage() {
         <button onClick={() => setAutoRotate(!autoRotate)}
           className={`text-[10px] px-2 py-1 rounded flex items-center gap-1 ${autoRotate ? "bg-amber-500 text-black" : "bg-[#21262d] text-slate-400"}`}>
           <RotateCw size={11} /> Turntable
+        </button>
+
+        <button onClick={() => setUseDesignerModel(!useDesignerModel)}
+          className={`text-[10px] px-2 py-1 rounded flex items-center gap-1 ${useDesignerModel ? "bg-[#00D4FF] text-black font-bold" : "bg-[#21262d] text-slate-400"}`}
+          title="Render current model from Designer">
+          <Layers size={11} /> {useDesignerModel ? `Model (${designerObjects.filter(o=>o.visible).length})` : "Designer Model"}
         </button>
 
         <div className="h-5 w-px bg-[#21262d]" />
@@ -370,6 +382,10 @@ export default function RendererPage() {
                     <input type="checkbox" checked={antialiasing} onChange={e => setAntialiasing(e.target.checked)} className="accent-[#00D4FF]" />
                     Anti-Aliasing
                   </label>
+                  <label className="flex items-center gap-2 text-slate-300 cursor-pointer">
+                    <input type="checkbox" checked={ssaoEnabled} onChange={e => setSsaoEnabled(e.target.checked)} className="accent-[#00D4FF]" />
+                    SSAO (Ambient Occlusion)
+                  </label>
                 </div>
 
                 <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-2">Scene</h3>
@@ -457,7 +473,9 @@ export default function RendererPage() {
                   <div className="text-slate-500">Quality: <span className="text-white capitalize">{renderQuality}</span></div>
                   <div className="text-slate-500">Shadows: <span className="text-white">{showShadows ? "On" : "Off"}</span></div>
                   <div className="text-slate-500">Anti-Aliasing: <span className="text-white">{antialiasing ? "On" : "Off"}</span></div>
+                  <div className="text-slate-500">SSAO: <span className="text-white">{ssaoEnabled ? "On" : "Off"}</span></div>
                   <div className="text-slate-500">Auto-Rotate: <span className="text-white">{autoRotate ? "On" : "Off"}</span></div>
+                  <div className="text-slate-500">Source: <span className="text-white">{useDesignerModel ? `Designer (${designerObjects.length} obj)` : "Primitive"}</span></div>
                 </div>
               </>
             )}
@@ -481,6 +499,8 @@ export default function RendererPage() {
             fov={fov}
             cameraPreset={activeCameraPreset}
             antialias={antialiasing}
+            ssaoEnabled={ssaoEnabled}
+            designerObjects={useDesignerModel ? designerObjects : undefined}
           />
 
           {/* Viewport info */}
