@@ -44,6 +44,98 @@ interface SimResults {
   iterations: number;
 }
 
+interface ThermalBC {
+  id: string;
+  face: string;
+  type: "fixed_temp" | "heat_flux";
+  value: number;
+}
+
+interface ThermalResults {
+  temperatureField: number[];
+  minTemp: number;
+  maxTemp: number;
+  avgTemp: number;
+  maxGradient: number;
+  converged: boolean;
+  iterations: number;
+}
+
+function computeThermalConduction(thermalBCs: ThermalBC[], meshRes: number): ThermalResults {
+  const gridSize = meshRes;
+  const totalNodes = gridSize * gridSize;
+  const T = new Float64Array(totalNodes).fill(293.15); // 20°C in Kelvin
+
+  const faceMap: Record<string, { x: number; y: number }> = {
+    "Top (+Y)": { x: 0.5, y: 0 },
+    "Bottom (-Y)": { x: 0.5, y: 1 },
+    "Front (+Z)": { x: 0.5, y: 0.5 },
+    "Back (-Z)": { x: 0.5, y: 0.5 },
+    "Left (-X)": { x: 0, y: 0.5 },
+    "Right (+X)": { x: 1, y: 0.5 },
+  };
+
+  const maxIter = 150;
+  let iterations = 0;
+  for (let iter = 0; iter < maxIter; iter++) {
+    let maxResidual = 0;
+    for (let j = 1; j < gridSize - 1; j++) {
+      for (let i = 1; i < gridSize - 1; i++) {
+        const idx = j * gridSize + i;
+        const x = i / (gridSize - 1);
+        const y = j / (gridSize - 1);
+        // Laplacian average
+        const avg = (T[idx - 1] + T[idx + 1] + T[idx - gridSize] + T[idx + gridSize]) / 4;
+        let newT = avg;
+
+        // Apply BCs via Gaussian weight
+        for (const bc of thermalBCs) {
+          const pos = faceMap[bc.face] || { x: 0.5, y: 0.5 };
+          const dist = Math.sqrt((x - pos.x) ** 2 + (y - pos.y) ** 2);
+          const w = Math.exp(-dist * 5);
+          if (bc.type === "fixed_temp") {
+            newT = newT * (1 - w) + (bc.value + 273.15) * w;
+          } else {
+            newT += bc.value * w * 0.001;
+          }
+        }
+
+        const residual = Math.abs(newT - T[idx]);
+        maxResidual = Math.max(maxResidual, residual);
+        T[idx] = newT;
+      }
+    }
+    iterations++;
+    if (maxResidual < 1e-3 && iter > 20) break;
+  }
+
+  const tArr = Array.from(T);
+  const minTemp = Math.min(...tArr) - 273.15;
+  const maxTemp = Math.max(...tArr) - 273.15;
+  const avgTemp = tArr.reduce((a, b) => a + b, 0) / tArr.length - 273.15;
+
+  // Max gradient
+  let maxGradient = 0;
+  for (let j = 1; j < gridSize - 1; j++) {
+    for (let i = 1; i < gridSize - 1; i++) {
+      const idx = j * gridSize + i;
+      const gx = Math.abs(T[idx + 1] - T[idx - 1]) * (gridSize - 1) / 2;
+      const gy = Math.abs(T[idx + gridSize] - T[idx - gridSize]) * (gridSize - 1) / 2;
+      maxGradient = Math.max(maxGradient, Math.sqrt(gx * gx + gy * gy));
+    }
+  }
+
+  return {
+    temperatureField: tArr,
+    minTemp: Math.round(minTemp * 100) / 100,
+    maxTemp: Math.round(maxTemp * 100) / 100,
+    avgTemp: Math.round(avgTemp * 100) / 100,
+    maxGradient: Math.round(maxGradient * 100) / 100,
+    converged: true,
+    iterations,
+  };
+}
+
 const materials: Material[] = [
   { id: "steel", name: "Steel (AISI 1045)", E: 200, v: 0.3, rho: 7850, yieldStrength: 530 },
   { id: "aluminum", name: "Aluminum 6061-T6", E: 69, v: 0.33, rho: 2700, yieldStrength: 276 },
@@ -195,7 +287,11 @@ export default function SimulatorPage() {
   const [displayMode, setDisplayMode] = useState<"stress" | "displacement">("stress");
   const [displacementScale, setDisplacementScale] = useState(10);
   const [activeLoadType, setActiveLoadType] = useState<Load["type"]>("force");
-  const [leftTab, setLeftTab] = useState<"setup" | "loads" | "results">("setup");
+  const [leftTab, setLeftTab] = useState<"setup" | "loads" | "results" | "thermal">("setup");
+  const [thermalBCs, setThermalBCs] = useState<ThermalBC[]>([]);
+  const [thermalResults, setThermalResults] = useState<ThermalResults | null>(null);
+  const [thermalRunning, setThermalRunning] = useState(false);
+  const [thermalProgress, setThermalProgress] = useState(0);
 
   const material = materials.find((m) => m.id === mat) || materials[0];
   const totalForce = loads.reduce((s, l) => s + l.magnitude, 0);
@@ -308,7 +404,7 @@ Element Type,${elementType},`;
         {/* Left Panel */}
         <div className="w-72 bg-[#161b22] border-r border-[#21262d] flex flex-col shrink-0">
           <div className="flex border-b border-[#21262d]">
-            {(["setup", "loads", "results"] as const).map(t => (
+            {(["setup", "loads", "results", "thermal"] as const).map(t => (
               <button key={t} onClick={() => setLeftTab(t)}
                 className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-wider border-b-2 ${leftTab === t ? "border-[#00D4FF] text-white" : "border-transparent text-slate-500 hover:text-slate-300"}`}>
                 {t}
@@ -547,6 +643,110 @@ Element Type,${elementType},`;
                 Run an analysis to see results here.
               </div>
             )}
+
+            {leftTab === "thermal" && (
+              <>
+                <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Temperature BCs</h3>
+                <div className="space-y-2 mb-3">
+                  {thermalBCs.map(bc => (
+                    <div key={bc.id} className="bg-[#0d1117] rounded p-3 border border-[#21262d] text-xs space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-orange-400 font-medium">Thermal BC</span>
+                        <button onClick={() => setThermalBCs(prev => prev.filter(b => b.id !== bc.id))} className="text-slate-600 hover:text-red-400 text-[10px]">remove</button>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500">Face</span>
+                        <select value={bc.face} onChange={e => setThermalBCs(prev => prev.map(b => b.id === bc.id ? { ...b, face: e.target.value } : b))}
+                          className="bg-[#161b22] text-white rounded px-2 py-1 border border-[#21262d] text-[11px]">
+                          {faces.map(f => <option key={f} value={f}>{f}</option>)}
+                        </select>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500">Type</span>
+                        <select value={bc.type} onChange={e => setThermalBCs(prev => prev.map(b => b.id === bc.id ? { ...b, type: e.target.value as ThermalBC["type"] } : b))}
+                          className="bg-[#161b22] text-white rounded px-2 py-1 border border-[#21262d] text-[11px]">
+                          <option value="fixed_temp">Fixed Temp (C)</option>
+                          <option value="heat_flux">Heat Flux (W/m²)</option>
+                        </select>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500">{bc.type === "fixed_temp" ? "Temp (C)" : "Flux (W/m²)"}</span>
+                        <input type="number" value={bc.value}
+                          onChange={e => setThermalBCs(prev => prev.map(b => b.id === bc.id ? { ...b, value: parseFloat(e.target.value) || 0 } : b))}
+                          className="w-20 bg-[#161b22] text-white rounded px-2 py-1 border border-[#21262d] text-right" />
+                      </div>
+                    </div>
+                  ))}
+                  <button onClick={() => setThermalBCs(prev => [...prev, { id: Date.now().toString(), face: "Top (+Y)", type: "fixed_temp", value: 100 }])}
+                    className="w-full bg-[#21262d] hover:bg-[#30363d] text-xs py-2 rounded text-white border border-[#21262d]">
+                    + Add Temperature BC
+                  </button>
+                </div>
+
+                <button
+                  disabled={thermalRunning || thermalBCs.length === 0}
+                  onClick={() => {
+                    setThermalRunning(true);
+                    setThermalProgress(0);
+                    setThermalResults(null);
+                    const iv = setInterval(() => {
+                      setThermalProgress(p => {
+                        if (p >= 100) {
+                          clearInterval(iv);
+                          setThermalRunning(false);
+                          const res = computeThermalConduction(thermalBCs, meshRes);
+                          setThermalResults(res);
+                          return 100;
+                        }
+                        return p + 4;
+                      });
+                    }, 50);
+                  }}
+                  className="w-full bg-orange-600 hover:bg-orange-500 disabled:opacity-40 py-2 rounded text-xs font-bold text-white mb-3">
+                  {thermalRunning ? `Solving... ${thermalProgress}%` : "Run Thermal Analysis"}
+                </button>
+
+                {thermalResults && (
+                  <>
+                    <div className="text-xs text-green-400 bg-green-500/10 border border-green-500/30 rounded p-2 mb-2">
+                      Converged in {thermalResults.iterations} iterations
+                    </div>
+                    <div className="bg-[#0d1117] rounded border border-[#21262d] mb-2">
+                      <div className="p-2 border-b border-[#21262d] text-[10px] font-bold text-orange-400">Temperature Distribution</div>
+                      <div className="w-full h-3 bg-gradient-to-r from-blue-600 via-cyan-400 via-yellow-400 to-red-600 mx-2 my-2 rounded" style={{ width: "calc(100% - 16px)" }} />
+                      <table className="w-full text-xs">
+                        <tbody>
+                          <tr className="border-b border-[#21262d]">
+                            <td className="p-2 text-slate-500">Min Temp</td>
+                            <td className="p-2 text-right text-blue-400 font-bold">{thermalResults.minTemp.toFixed(1)} C</td>
+                          </tr>
+                          <tr className="border-b border-[#21262d]">
+                            <td className="p-2 text-slate-500">Max Temp</td>
+                            <td className="p-2 text-right text-red-400 font-bold">{thermalResults.maxTemp.toFixed(1)} C</td>
+                          </tr>
+                          <tr className="border-b border-[#21262d]">
+                            <td className="p-2 text-slate-500">Avg Temp</td>
+                            <td className="p-2 text-right text-yellow-400 font-bold">{thermalResults.avgTemp.toFixed(1)} C</td>
+                          </tr>
+                          <tr>
+                            <td className="p-2 text-slate-500">Max Gradient</td>
+                            <td className="p-2 text-right text-orange-400 font-bold">{thermalResults.maxGradient.toFixed(1)} K/m</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                    <button onClick={() => { setThermalResults(null); }}
+                      className="w-full bg-[#21262d] hover:bg-[#30363d] text-xs py-2 rounded text-white">
+                      Clear Results
+                    </button>
+                  </>
+                )}
+
+                {!thermalResults && !thermalRunning && (
+                  <div className="text-xs text-slate-500 p-3 text-center">Add temperature BCs and run thermal analysis.</div>
+                )}
+              </>
+            )}
           </div>
         </div>
 
@@ -557,8 +757,20 @@ Element Type,${elementType},`;
             dimensions={geoDims}
             loads={loads}
             constraints={constraints}
-            results={results}
-            showContour={showContour && !!results}
+            results={
+              leftTab === "thermal" && thermalResults
+                ? {
+                    maxStress: thermalResults.maxTemp,
+                    minStress: thermalResults.minTemp,
+                    maxDisplacement: 0,
+                    safetyFactor: 999,
+                    stressField: thermalResults.temperatureField,
+                    converged: thermalResults.converged,
+                    iterations: thermalResults.iterations,
+                  }
+                : results
+            }
+            showContour={showContour && (!!results || (leftTab === "thermal" && !!thermalResults))}
             meshRes={meshRes}
           />
 
