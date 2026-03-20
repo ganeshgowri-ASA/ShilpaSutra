@@ -7,12 +7,9 @@ import {
   Palette,
   Download,
   RotateCw,
-  Eye,
-  Box,
-  Circle,
-  Square,
   MonitorPlay,
 } from "lucide-react";
+import { MATERIALS, MATERIAL_CATEGORIES, EngineeringMaterial } from "@/lib/materials";
 
 const RendererViewport = dynamic(() => import("@/components/RendererViewport"), {
   ssr: false,
@@ -109,6 +106,8 @@ export default function RendererPage() {
     { id: "rim", type: "point", color: "#ff8844", intensity: 0.6, position: [0, 3, -4], castShadow: false },
   ]);
   const [tab, setTab] = useState<"material" | "lighting" | "camera" | "export">("material");
+  const [matCategory, setMatCategory] = useState<string>("All");
+  const [selectedEngMatId, setSelectedEngMatId] = useState<string | null>(null);
   const [fov, setFov] = useState(50);
   const [dofEnabled, setDofEnabled] = useState(false);
   const [autoRotate, setAutoRotate] = useState(false);
@@ -123,6 +122,23 @@ export default function RendererPage() {
     const preset = materialPresets[name];
     if (preset) setMaterial({ ...preset });
   };
+
+  const applyEngineeringMaterial = (engMat: EngineeringMaterial) => {
+    setSelectedEngMatId(engMat.id);
+    setMaterial({
+      color: engMat.color,
+      metalness: engMat.metalness,
+      roughness: engMat.roughness,
+      emissive: "#000000",
+      emissiveIntensity: 0,
+      opacity: 1,
+      transparent: false,
+    });
+  };
+
+  const engMatList = matCategory === "All"
+    ? MATERIALS
+    : MATERIALS.filter((m) => m.category === matCategory);
 
   const updateLight = (id: string, updates: Partial<LightConfig>) => {
     setLights(prev => prev.map(l => l.id === id ? { ...l, ...updates } : l));
@@ -231,7 +247,8 @@ export default function RendererPage() {
           <div className="flex-1 overflow-y-auto p-3 space-y-3">
             {tab === "material" && (
               <>
-                <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Presets</h3>
+                {/* ── Quick PBR presets ── */}
+                <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Quick Presets</h3>
                 <div className="grid grid-cols-2 gap-1">
                   {Object.keys(materialPresets).map(name => (
                     <button key={name} onClick={() => applyPreset(name)}
@@ -240,6 +257,66 @@ export default function RendererPage() {
                     </button>
                   ))}
                 </div>
+
+                {/* ── Engineering Material Library ── */}
+                <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-3">
+                  Engineering Materials
+                </h3>
+
+                {/* Category filter */}
+                <div className="flex flex-wrap gap-1">
+                  {["All", ...MATERIAL_CATEGORIES].map((cat) => (
+                    <button
+                      key={cat}
+                      onClick={() => setMatCategory(cat)}
+                      className={`px-1.5 py-0.5 rounded text-[9px] font-medium border transition-colors ${
+                        matCategory === cat
+                          ? "bg-[#00D4FF]/20 border-[#00D4FF]/60 text-[#00D4FF]"
+                          : "bg-[#0d1117] border-[#21262d] text-slate-500 hover:text-white"
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="space-y-0.5 max-h-40 overflow-y-auto pr-0.5">
+                  {engMatList.map((m) => (
+                    <button
+                      key={m.id}
+                      onClick={() => applyEngineeringMaterial(m)}
+                      className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-left transition-colors ${
+                        selectedEngMatId === m.id
+                          ? "bg-[#00D4FF]/10 border border-[#00D4FF]/40"
+                          : "bg-[#0d1117] border border-transparent hover:border-[#21262d] hover:bg-[#161b22]"
+                      }`}
+                    >
+                      <span
+                        className="w-3 h-3 rounded-sm shrink-0 border border-black/20"
+                        style={{ backgroundColor: m.color }}
+                      />
+                      <span className="flex-1 truncate text-[10px] text-slate-300">{m.name}</span>
+                      <span className="text-[9px] text-slate-600 shrink-0">{m.density} kg/m³</span>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Selected engineering material info */}
+                {selectedEngMatId && (() => {
+                  const em = MATERIALS.find(m => m.id === selectedEngMatId);
+                  if (!em) return null;
+                  return (
+                    <div className="bg-[#0d1117] rounded p-2 border border-[#21262d] text-[9px] space-y-0.5">
+                      <div className="text-slate-300 font-medium mb-1">{em.name}</div>
+                      <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[9px]">
+                        <span className="text-slate-500">E-Modulus <span className="text-slate-300 font-mono">{em.youngsModulus} GPa</span></span>
+                        <span className="text-slate-500">Yield <span className="text-slate-300 font-mono">{em.yieldStrength} MPa</span></span>
+                        <span className="text-slate-500">Density <span className="text-slate-300 font-mono">{em.density} kg/m³</span></span>
+                        <span className="text-slate-500">CTE <span className="text-slate-300 font-mono">{em.cte} µm/m·°C</span></span>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-3">PBR Properties</h3>
                 <div className="bg-[#0d1117] rounded p-3 border border-[#21262d] text-xs space-y-3">
