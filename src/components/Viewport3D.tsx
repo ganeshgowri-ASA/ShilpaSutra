@@ -20,8 +20,10 @@ import {
 } from "@/stores/cad-store";
 import DimensionOverlay from "@/components/cad/DimensionOverlay";
 import MeasurementTool from "@/components/cad/MeasurementTool";
+import ConstraintIndicators from "@/components/cad/ConstraintIndicators";
+import SmartDimensions from "@/components/cad/SmartDimensions";
 
-const SKETCH_TOOLS: ToolId[] = ["line", "arc", "circle", "rectangle"];
+const SKETCH_TOOLS: ToolId[] = ["line", "arc", "circle", "rectangle", "polygon", "spline", "ellipse", "construction_line"];
 const SKETCH_Y = 0.02;
 
 /* ── Snap helper ── */
@@ -909,7 +911,9 @@ export default function Viewport3D({ mode }: Viewport3DProps) {
 
         <SelectedTransform />
         <DimensionOverlay />
+        <SmartDimensions />
         <MeasurementTool />
+        <ConstraintIndicators />
 
         <ContactShadows position={[0, -0.01, 0]} opacity={0.4} blur={2} />
 

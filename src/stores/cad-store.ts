@@ -13,6 +13,8 @@ export type ToolId =
   | "rectangle"
   | "polygon"
   | "spline"
+  | "ellipse"
+  | "construction_line"
   | "delete"
   | "measure"
   | "measure_angle"
@@ -33,8 +35,13 @@ export type ToolId =
   | "rotate_tool"
   | "linear_pattern"
   | "circular_pattern"
+  | "path_pattern"
   | "section_view"
   | "mass_properties"
+  | "trim"
+  | "extend"
+  | "offset"
+  | "mirror_sketch"
   | "ai_text_to_cad"
   | "ai_suggest"
   | "ai_optimize"
@@ -42,7 +49,7 @@ export type ToolId =
 
 export type TransformMode = "translate" | "rotate" | "scale";
 
-export type RibbonTab = "sketch" | "solid" | "modify" | "inspect" | "view" | "ai";
+export type RibbonTab = "sketch" | "solid" | "modify" | "inspect" | "view" | "ai" | "constraints";
 
 export type ViewMode = "wireframe" | "shaded" | "realistic";
 
@@ -169,6 +176,16 @@ interface CadState {
   // Camera target view
   cameraView: string | null;
 
+  // Sketch mode
+  sketchPlane: "xy" | "xz" | "yz";
+  autoConstraints: boolean;
+
+  // Active operation dialogs
+  activeOperation: "fillet" | "chamfer" | "shell" | "draft" | "linear_pattern" | "circular_pattern" | "mirror" | "path_pattern" | null;
+
+  // History timeline
+  showHistoryTimeline: boolean;
+
   // Actions
   setActiveTool: (tool: ToolId) => void;
   setTransformMode: (mode: TransformMode) => void;
@@ -184,6 +201,10 @@ interface CadState {
   setFeatureTreeCollapsed: (v: boolean) => void;
   setPropertyPanelCollapsed: (v: boolean) => void;
   setCameraView: (view: string | null) => void;
+  setSketchPlane: (plane: "xy" | "xz" | "yz") => void;
+  setAutoConstraints: (v: boolean) => void;
+  setActiveOperation: (op: CadState["activeOperation"]) => void;
+  setShowHistoryTimeline: (v: boolean) => void;
 
   addObject: (type: CadObject["type"]) => string;
   addLine: (points: [number, number, number][]) => string;
@@ -268,6 +289,16 @@ export const useCadStore = create<CadState>((set, get) => ({
   // Camera
   cameraView: null,
 
+  // Sketch mode
+  sketchPlane: "xz",
+  autoConstraints: true,
+
+  // Active operation
+  activeOperation: null,
+
+  // History timeline
+  showHistoryTimeline: false,
+
   // Setters
   setActiveTool: (tool) => set({ activeTool: tool, measurePoints: [], measureResult: null }),
   setTransformMode: (mode) => set({ transformMode: mode }),
@@ -283,6 +314,10 @@ export const useCadStore = create<CadState>((set, get) => ({
   setFeatureTreeCollapsed: (v) => set({ featureTreeCollapsed: v }),
   setPropertyPanelCollapsed: (v) => set({ propertyPanelCollapsed: v }),
   setCameraView: (view) => set({ cameraView: view }),
+  setSketchPlane: (plane) => set({ sketchPlane: plane }),
+  setAutoConstraints: (v) => set({ autoConstraints: v }),
+  setActiveOperation: (op) => set({ activeOperation: op }),
+  setShowHistoryTimeline: (v) => set({ showHistoryTimeline: v }),
 
   snapToGrid: (value: number) => {
     const { snapGrid, gridSize } = get();

@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { useCadStore } from "@/stores/cad-store";
 
@@ -41,32 +41,67 @@ const AIChatAssistantEnhanced = dynamic(
   { ssr: false }
 );
 
+const EdgeSelector = dynamic(
+  () => import("@/components/cad/EdgeSelector"),
+  { ssr: false }
+);
+
+const ShellDraftPanel = dynamic(
+  () => import("@/components/cad/ShellDraftPanel"),
+  { ssr: false }
+);
+
+const PatternDialog = dynamic(
+  () => import("@/components/cad/PatternDialog"),
+  { ssr: false }
+);
+
+const HistoryTimeline = dynamic(
+  () => import("@/components/cad/HistoryTimeline"),
+  { ssr: false }
+);
+
+const SketchToolbar = dynamic(
+  () => import("@/components/cad/SketchToolbar"),
+  { ssr: false }
+);
+
 export default function DesignerPage() {
   const activeTool = useCadStore((s) => s.activeTool);
   const selectedId = useCadStore((s) => s.selectedId);
   const measureResult = useCadStore((s) => s.measureResult);
   const clearMeasure = useCadStore((s) => s.clearMeasure);
   const unit = useCadStore((s) => s.unit);
+  const activeOperation = useCadStore((s) => s.activeOperation);
+  const setActiveOperation = useCadStore((s) => s.setActiveOperation);
+  const sketchPlane = useCadStore((s) => s.sketchPlane);
 
   const [aiOpen, setAiOpen] = useState(false);
   const [aiMode, setAiMode] = useState<"basic" | "zookeeper">("zookeeper");
 
-  const sketchTools = ["line", "arc", "circle", "rectangle"];
+  const sketchTools = ["line", "arc", "circle", "rectangle", "polygon", "spline", "ellipse", "construction_line"];
   const isSketchMode = sketchTools.includes(activeTool);
+
+  const handleCloseOperation = useCallback(() => {
+    setActiveOperation(null);
+  }, [setActiveOperation]);
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-[#0d1117]">
-      {/* Part 1: Ribbon Toolbar (top) */}
+      {/* Ribbon Toolbar (top) */}
       <RibbonToolbar />
 
       {/* Main workspace area */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Part 2: Feature Tree (left 240px) */}
+        {/* Feature Tree (left 240px) */}
         <FeatureTree />
 
         {/* Center: Viewport */}
         <div className="flex-1 relative min-w-0">
           <Viewport3D />
+
+          {/* Sketch Toolbar (floating, top center) */}
+          <SketchToolbar visible={isSketchMode} />
 
           {/* Status overlay - top left */}
           <div className="absolute top-2 left-2 flex items-center gap-2 pointer-events-none z-10">
@@ -86,7 +121,7 @@ export default function DesignerPage() {
             )}
             {isSketchMode && (
               <span className="text-[10px] bg-[#1a1a2e]/90 border border-[#00D4FF]/30 rounded px-2 py-0.5 text-[#00D4FF]/80 backdrop-blur-sm">
-                Sketch Mode - XZ Plane
+                Sketch Mode - {sketchPlane.toUpperCase()} Plane
               </span>
             )}
           </div>
@@ -137,9 +172,38 @@ export default function DesignerPage() {
               </button>
             </div>
           )}
+
+          {/* Operation dialogs (floating over viewport) */}
+          {(activeOperation === "fillet" || activeOperation === "chamfer") && (
+            <EdgeSelector
+              mode={activeOperation}
+              onClose={handleCloseOperation}
+            />
+          )}
+
+          {(activeOperation === "shell" || activeOperation === "draft") && (
+            <ShellDraftPanel
+              mode={activeOperation}
+              onClose={handleCloseOperation}
+            />
+          )}
+
+          {(activeOperation === "linear_pattern" || activeOperation === "circular_pattern" || activeOperation === "mirror" || activeOperation === "path_pattern") && (
+            <PatternDialog
+              initialMode={
+                activeOperation === "linear_pattern" ? "linear" :
+                activeOperation === "circular_pattern" ? "circular" :
+                activeOperation === "path_pattern" ? "path" : "mirror"
+              }
+              onClose={handleCloseOperation}
+            />
+          )}
+
+          {/* History Timeline (floating, bottom right) */}
+          <HistoryTimeline />
         </div>
 
-        {/* Part 3: Property Panel (right 280px) */}
+        {/* Property Panel (right 280px) */}
         <PropertyPanel />
 
         {/* AI Chat Sidebar */}
@@ -147,7 +211,7 @@ export default function DesignerPage() {
         {aiOpen && aiMode === "zookeeper" && <AIChatAssistantEnhanced onClose={() => setAiOpen(false)} />}
       </div>
 
-      {/* Part 7: Command Bar (bottom 40px) */}
+      {/* Command Bar (bottom 40px) */}
       <DesignerCommandBar />
     </div>
   );

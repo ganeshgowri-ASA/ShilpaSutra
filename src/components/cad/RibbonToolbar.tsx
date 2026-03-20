@@ -65,6 +65,8 @@ const modifyTools: ToolButton[] = [
   { id: "rotate_tool", icon: <RotateIcon size={ICON_SIZE} />, label: "Rotate", shortcut: "R" },
 ];
 
+const OPERATION_TOOLS = ["fillet", "chamfer", "shell", "draft", "mirror", "linear_pattern", "circular_pattern"];
+
 const inspectTools: ToolButton[] = [
   { id: "measure", icon: <RulerIcon size={ICON_SIZE} />, label: "Distance", shortcut: "M" },
   { id: "measure_angle", icon: <Crosshair size={ICON_SIZE} />, label: "Angle" },
@@ -130,15 +132,22 @@ export default function RibbonToolbar() {
   const perspectiveMode = useCadStore((s) => s.perspectiveMode);
   const setPerspectiveMode = useCadStore((s) => s.setPerspectiveMode);
 
+  const setActiveOperation = useCadStore((s) => s.setActiveOperation);
+
   const handleToolClick = useCallback(
     (id: string) => {
       if (id === "delete") {
         useCadStore.getState().deleteSelected();
         return;
       }
+      // Open operation dialogs for fillet/chamfer/shell/draft/mirror/patterns
+      if (OPERATION_TOOLS.includes(id)) {
+        setActiveOperation(id as "fillet" | "chamfer" | "shell" | "draft" | "mirror" | "linear_pattern" | "circular_pattern");
+        return;
+      }
       setActiveTool(id as ToolId);
     },
-    [setActiveTool]
+    [setActiveTool, setActiveOperation]
   );
 
   const handleTabDoubleClick = useCallback(() => {
