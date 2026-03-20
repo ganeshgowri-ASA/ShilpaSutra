@@ -21,6 +21,7 @@ import {
   Download,
   Cpu,
   X,
+  Wand2,
 } from "lucide-react";
 
 const stats = [
@@ -191,6 +192,13 @@ export default function DashboardPage() {
               <FileText size={14} />
               Generate Report
             </button>
+            <Link
+              href="/wizard"
+              className="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all shadow-lg shadow-purple-500/20 flex items-center gap-1.5"
+            >
+              <Wand2 size={14} />
+              Design Wizard
+            </Link>
             <Link
               href="/text-to-cad"
               className="bg-[#00D4FF] hover:bg-[#00b8d9] text-black px-4 py-2 rounded-lg text-sm font-semibold transition-colors shadow-lg shadow-[#00D4FF]/20 flex items-center gap-1.5"
