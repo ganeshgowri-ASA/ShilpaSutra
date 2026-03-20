@@ -66,6 +66,7 @@ const modifyTools: ToolButton[] = [
 ];
 
 const OPERATION_TOOLS = ["fillet", "chamfer", "shell", "draft", "mirror", "linear_pattern", "circular_pattern"];
+const BOOLEAN_TOOLS = ["boolean_union", "boolean_subtract", "boolean_intersect"];
 
 const inspectTools: ToolButton[] = [
   { id: "measure", icon: <RulerIcon size={ICON_SIZE} />, label: "Distance", shortcut: "M" },
@@ -111,7 +112,12 @@ const cameraViews = [
   { label: "Iso", shortcut: "0" },
 ];
 
-export default function RibbonToolbar() {
+interface RibbonToolbarProps {
+  onExtrude?: () => void;
+  onRevolve?: () => void;
+}
+
+export default function RibbonToolbar({ onExtrude, onRevolve }: RibbonToolbarProps) {
   const activeTab = useCadStore((s) => s.activeRibbonTab);
   const setActiveTab = useCadStore((s) => s.setActiveRibbonTab);
   const collapsed = useCadStore((s) => s.ribbonCollapsed);
@@ -133,11 +139,44 @@ export default function RibbonToolbar() {
   const setPerspectiveMode = useCadStore((s) => s.setPerspectiveMode);
 
   const setActiveOperation = useCadStore((s) => s.setActiveOperation);
+  const booleanUnion = useCadStore((s) => s.booleanUnion);
+  const booleanSubtract = useCadStore((s) => s.booleanSubtract);
+  const booleanIntersect = useCadStore((s) => s.booleanIntersect);
+  const selectedId = useCadStore((s) => s.selectedId);
+  const selectedIds = useCadStore((s) => s.selectedIds);
 
   const handleToolClick = useCallback(
     (id: string) => {
       if (id === "delete") {
         useCadStore.getState().deleteSelected();
+        return;
+      }
+      // Extrude/Revolve: open dialog
+      if (id === "extrude") {
+        onExtrude?.();
+        return;
+      }
+      if (id === "revolve") {
+        onRevolve?.();
+        return;
+      }
+      // Boolean CSG operations
+      if (id === "boolean_union") {
+        const ids = selectedIds.length >= 2 ? selectedIds : selectedId ? [selectedId] : [];
+        if (ids.length >= 2) { booleanUnion(ids); }
+        else { alert("Select 2 or more objects for Union"); }
+        return;
+      }
+      if (id === "boolean_subtract") {
+        const ids = selectedIds.length >= 2 ? selectedIds : selectedId ? [selectedId] : [];
+        if (ids.length >= 2) { booleanSubtract(ids[0], ids[1]); }
+        else { alert("Select 2 objects: target then tool (Ctrl+click)"); }
+        return;
+      }
+      if (id === "boolean_intersect") {
+        const ids = selectedIds.length >= 2 ? selectedIds : selectedId ? [selectedId] : [];
+        if (ids.length >= 2) { booleanIntersect(ids); }
+        else { alert("Select 2 or more objects for Intersect"); }
         return;
       }
       // Open operation dialogs for fillet/chamfer/shell/draft/mirror/patterns
@@ -147,7 +186,7 @@ export default function RibbonToolbar() {
       }
       setActiveTool(id as ToolId);
     },
-    [setActiveTool, setActiveOperation]
+    [setActiveTool, setActiveOperation, booleanUnion, booleanSubtract, booleanIntersect, selectedId, selectedIds, onExtrude, onRevolve]
   );
 
   const handleTabDoubleClick = useCallback(() => {

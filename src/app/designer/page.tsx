@@ -66,6 +66,16 @@ const SketchToolbar = dynamic(
   { ssr: false }
 );
 
+const ExtrudeDialog = dynamic(
+  () => import("@/components/cad/ExtrudeDialog"),
+  { ssr: false }
+);
+
+const RevolveDialog = dynamic(
+  () => import("@/components/cad/RevolveDialog"),
+  { ssr: false }
+);
+
 export default function DesignerPage() {
   const activeTool = useCadStore((s) => s.activeTool);
   const selectedId = useCadStore((s) => s.selectedId);
@@ -80,18 +90,39 @@ export default function DesignerPage() {
 
   const [aiOpen, setAiOpen] = useState(false);
   const [aiMode, setAiMode] = useState<"basic" | "zookeeper">("zookeeper");
+  const [showExtrudeDialog, setShowExtrudeDialog] = useState(false);
+  const [showRevolveDialog, setShowRevolveDialog] = useState(false);
 
   const sketchTools = ["line", "arc", "circle", "rectangle", "polygon", "spline", "ellipse", "construction_line"];
   const isSketchMode = sketchTools.includes(activeTool) || !!sketchPlane;
+
+  // Listen for extrude/revolve tool activation
+  const handleToolActivated = useCallback((tool: string) => {
+    if (tool === "extrude") { setShowExtrudeDialog(true); }
+    if (tool === "revolve") { setShowRevolveDialog(true); }
+  }, []);
+
+  // Watch activeTool and open dialog when extrude/revolve selected
+  const prevToolRef = useCallback((tool: string) => {
+    if (tool === "extrude") setShowExtrudeDialog(true);
+    if (tool === "revolve") setShowRevolveDialog(true);
+  }, []);
 
   const handleCloseOperation = useCallback(() => {
     setActiveOperation(null);
   }, [setActiveOperation]);
 
+  // Open extrude/revolve dialog when tool is activated
+  const handleExtrude = useCallback(() => setShowExtrudeDialog(true), []);
+  const handleRevolve = useCallback(() => setShowRevolveDialog(true), []);
+
+  void handleToolActivated;
+  void prevToolRef;
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-[#0d1117]">
       {/* Ribbon Toolbar (top) */}
-      <RibbonToolbar />
+      <RibbonToolbar onExtrude={handleExtrude} onRevolve={handleRevolve} />
 
       {/* Main workspace area */}
       <div className="flex-1 flex overflow-hidden">
@@ -224,6 +255,16 @@ export default function DesignerPage() {
               }
               onClose={handleCloseOperation}
             />
+          )}
+
+          {/* Extrude Dialog */}
+          {showExtrudeDialog && (
+            <ExtrudeDialog onClose={() => { setShowExtrudeDialog(false); }} />
+          )}
+
+          {/* Revolve Dialog */}
+          {showRevolveDialog && (
+            <RevolveDialog onClose={() => { setShowRevolveDialog(false); }} />
           )}
 
           {/* History Timeline (floating, bottom right) */}
