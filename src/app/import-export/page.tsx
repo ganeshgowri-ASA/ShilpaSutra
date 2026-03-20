@@ -1,6 +1,6 @@
 "use client";
 import { useState, useCallback, useRef } from "react";
-import { useCadStore } from "@/stores/cad-store";
+import { useCadStore, type CadObject } from "@/stores/cad-store";
 
 /* ── Types ── */
 type FileFormat = "STEP" | "STL" | "OBJ" | "IGES" | "glTF" | "FBX" | "PLY" | "Unknown";
@@ -53,43 +53,84 @@ const formatColors: Record<FileFormat, string> = {
 
 const exportFormats: FileFormat[] = ["STEP", "STL", "OBJ", "IGES", "glTF", "FBX", "PLY"];
 
-/* ── DXF generation ── */
-function generateDxf(objects: import("@/stores/cad-store").CadObject[]): string {
-  const sketchTypes = ["line", "arc", "circle", "rectangle"];
-  const entities = objects.filter((o) => sketchTypes.includes(o.type));
+/* ── DXF Generation ── */
+function generateDxf(objects: CadObject[]): string {
+  let entities = "";
 
-  const lines: string[] = [];
+  for (const obj of objects) {
+    if (obj.visible === false) continue;
 
-  // DXF header
-  lines.push("0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n0\nENDSEC");
-
-  // ENTITIES section
-  lines.push("0\nSECTION\n2\nENTITIES");
-
-  for (const obj of entities) {
     if (obj.type === "line" && obj.linePoints && obj.linePoints.length >= 2) {
-      const [x1, , z1] = obj.linePoints[0];
-      const [x2, , z2] = obj.linePoints[1];
-      lines.push(`0\nLINE\n8\n0\n10\n${x1}\n20\n${z1}\n30\n0.0\n11\n${x2}\n21\n${z2}\n31\n0.0`);
+      for (let i = 0; i < obj.linePoints.length - 1; i++) {
+        const p1 = obj.linePoints[i];
+        const p2 = obj.linePoints[i + 1];
+        entities +=
+          `0\nLINE\n8\n0\n` +
+          `10\n${p1[0].toFixed(4)}\n20\n${p1[2].toFixed(4)}\n30\n0.0\n` +
+          `11\n${p2[0].toFixed(4)}\n21\n${p2[2].toFixed(4)}\n31\n0.0\n`;
+      }
     } else if (obj.type === "circle" && obj.circleCenter && obj.circleRadius) {
-      const [cx, , cz] = obj.circleCenter;
-      lines.push(`0\nCIRCLE\n8\n0\n10\n${cx}\n20\n${cz}\n30\n0.0\n40\n${obj.circleRadius}`);
+      entities +=
+        `0\nCIRCLE\n8\n0\n` +
+        `10\n${obj.circleCenter[0].toFixed(4)}\n20\n${obj.circleCenter[2].toFixed(4)}\n30\n0.0\n` +
+        `40\n${obj.circleRadius.toFixed(4)}\n`;
     } else if (obj.type === "arc" && obj.arcPoints && obj.arcPoints.length >= 3) {
-      const [cx, , cz] = obj.arcPoints[0];
-      const r = obj.arcRadius || 1;
-      lines.push(`0\nARC\n8\n0\n10\n${cx}\n20\n${cz}\n30\n0.0\n40\n${r}\n50\n0.0\n51\n180.0`);
+      // Compute arc center/radius from 3 points
+      const [p1, , p3] = obj.arcPoints;
+      const cx = (p1[0] + p3[0]) / 2;
+      const cz = (p1[2] + p3[2]) / 2;
+      const radius = Math.sqrt(Math.pow(p3[0] - p1[0], 2) + Math.pow(p3[2] - p1[2], 2)) / 2;
+      const startAngle = (Math.atan2(p1[2] - cz, p1[0] - cx) * 180) / Math.PI;
+      const endAngle = (Math.atan2(p3[2] - cz, p3[0] - cx) * 180) / Math.PI;
+      entities +=
+        `0\nARC\n8\n0\n` +
+        `10\n${cx.toFixed(4)}\n20\n${cz.toFixed(4)}\n30\n0.0\n` +
+        `40\n${radius.toFixed(4)}\n` +
+        `50\n${startAngle.toFixed(4)}\n51\n${endAngle.toFixed(4)}\n`;
     } else if (obj.type === "rectangle" && obj.rectCorners) {
-      const [[x1, , z1], [x2, , z2]] = obj.rectCorners;
-      // Rectangle as 4 lines
-      lines.push(`0\nLINE\n8\n0\n10\n${x1}\n20\n${z1}\n30\n0.0\n11\n${x2}\n21\n${z1}\n31\n0.0`);
-      lines.push(`0\nLINE\n8\n0\n10\n${x2}\n20\n${z1}\n30\n0.0\n11\n${x2}\n21\n${z2}\n31\n0.0`);
-      lines.push(`0\nLINE\n8\n0\n10\n${x2}\n20\n${z2}\n30\n0.0\n11\n${x1}\n21\n${z2}\n31\n0.0`);
-      lines.push(`0\nLINE\n8\n0\n10\n${x1}\n20\n${z2}\n30\n0.0\n11\n${x1}\n21\n${z1}\n31\n0.0`);
+      const [c1, c2] = obj.rectCorners;
+      const corners: [number, number][] = [
+        [c1[0], c1[2]],
+        [c2[0], c1[2]],
+        [c2[0], c2[2]],
+        [c1[0], c2[2]],
+      ];
+      for (let i = 0; i < 4; i++) {
+        const from = corners[i];
+        const to = corners[(i + 1) % 4];
+        entities +=
+          `0\nLINE\n8\n0\n` +
+          `10\n${from[0].toFixed(4)}\n20\n${from[1].toFixed(4)}\n30\n0.0\n` +
+          `11\n${to[0].toFixed(4)}\n21\n${to[1].toFixed(4)}\n31\n0.0\n`;
+      }
+    } else if (obj.type === "box") {
+      const { width, depth } = obj.dimensions;
+      const [px, , pz] = obj.position;
+      const hw = width / 2, hd = depth / 2;
+      const corners: [number, number][] = [
+        [px - hw, pz - hd],
+        [px + hw, pz - hd],
+        [px + hw, pz + hd],
+        [px - hw, pz + hd],
+      ];
+      for (let i = 0; i < 4; i++) {
+        const from = corners[i];
+        const to = corners[(i + 1) % 4];
+        entities +=
+          `0\nLINE\n8\n0\n` +
+          `10\n${from[0].toFixed(4)}\n20\n${from[1].toFixed(4)}\n30\n0.0\n` +
+          `11\n${to[0].toFixed(4)}\n21\n${to[1].toFixed(4)}\n31\n0.0\n`;
+      }
+    } else if (obj.type === "cylinder" || obj.type === "cone" || obj.type === "sphere") {
+      const radius = obj.dimensions.width;
+      entities +=
+        `0\nCIRCLE\n8\n0\n` +
+        `10\n${obj.position[0].toFixed(4)}\n20\n${obj.position[2].toFixed(4)}\n30\n0.0\n` +
+        `40\n${radius.toFixed(4)}\n`;
     }
   }
 
-  lines.push("0\nENDSEC\n0\nEOF");
-  return lines.join("\n");
+  return `0\nSECTION\n2\nENTITIES\n${entities}0\nENDSEC\n0\nEOF\n`;
 }
 const unitSystems: UnitSystem[] = ["mm", "cm", "m", "in"];
 
@@ -164,7 +205,7 @@ export default function ImportExportPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `sketch_export_${Date.now()}.dxf`;
+    a.download = "shilpasutra_export.dxf";
     a.click();
     URL.revokeObjectURL(url);
   }, [cadObjects]);
@@ -180,8 +221,8 @@ export default function ImportExportPage() {
         <div className="flex items-center gap-2">
           <button
             onClick={handleDxfExport}
-            className="px-3 py-1.5 bg-yellow-500/10 text-yellow-400 text-xs rounded hover:bg-yellow-500/20 transition-colors border border-yellow-500/20"
-            title="Export 2D sketch entities (lines, circles, arcs, rectangles) as DXF"
+            className="px-3 py-1.5 bg-orange-500/10 text-orange-400 text-xs rounded hover:bg-orange-500/20 transition-colors border border-orange-500/20"
+            title="Export current CAD objects as DXF (LINE, CIRCLE, ARC primitives)"
           >
             Export DXF
           </button>
