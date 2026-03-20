@@ -1,163 +1,244 @@
 "use client";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
+import { useState } from "react";
+import {
+  LayoutDashboard,
+  Pen,
+  FileText,
+  Activity,
+  Flame,
+  Wind,
+  Tornado,
+  Boxes,
+  Box,
+  Library,
+  Import,
+  Sparkles,
+  Bot,
+  ClipboardList,
+  FileBarChart,
+  Settings,
+  ChevronRight,
+  ChevronLeft,
+  PanelLeftClose,
+  PanelLeft,
+  User,
+} from "lucide-react";
 
 interface NavItem {
   href: string;
   label: string;
-  abbr: string;
-  icon: string;
-  tooltip: string;
-  section: "main" | "ai" | "bottom";
+  icon: React.ReactNode;
 }
 
-const navItems: NavItem[] = [
-  { href: "/", label: "Dashboard", abbr: "Home", icon: "H", tooltip: "Dashboard - Home", section: "main" },
-  { href: "/designer", label: "CAD Designer", abbr: "CAD", icon: "D", tooltip: "3D CAD Designer", section: "main" },
-  { href: "/simulator", label: "FEA Simulator", abbr: "FEA", icon: "F", tooltip: "FEA Stress Simulator", section: "main" },
-  { href: "/cfd", label: "CFD Analysis", abbr: "CFD", icon: "T", tooltip: "CFD Thermal Analysis", section: "main" },
-  { href: "/assembly", label: "Assembly", abbr: "Asm", icon: "A", tooltip: "Assembly Workspace", section: "main" },
-  { href: "/renderer", label: "Renderer", abbr: "Rnd", icon: "R", tooltip: "Photo Rendering (PBR)", section: "main" },
-  { href: "/drawings", label: "2D Drawings", abbr: "2D", icon: "2", tooltip: "2D Drawings & GD&T", section: "main" },
-  { href: "/reports", label: "Reports", abbr: "Rep", icon: "P", tooltip: "Engineering Reports", section: "main" },
-  { href: "/library", label: "Parts Library", abbr: "Lib", icon: "L", tooltip: "Parts & Components Library", section: "main" },
-  { href: "/fea-advanced", label: "FEA Advanced", abbr: "FE+", icon: "FE", tooltip: "Advanced FEA: Modal, Thermal, Fatigue", section: "main" },
-  { href: "/cfd-advanced", label: "CFD Advanced", abbr: "CF+", icon: "CF", tooltip: "Advanced CFD: Turbulence, Streamlines, Probes", section: "main" },
-  { href: "/assembly-advanced", label: "Assembly+", abbr: "As+", icon: "As", tooltip: "Advanced Assembly with Constraints & BOM", section: "main" },
-  { href: "/import-export", label: "Import/Export", abbr: "I/O", icon: "IO", tooltip: "File Import & Export Hub", section: "main" },
-  { href: "/reports-advanced", label: "Reports+", abbr: "Rp+", icon: "Rp", tooltip: "Advanced Report Generator", section: "main" },
-  { href: "/text-to-cad", label: "Text to CAD", abbr: "AI", icon: "AI", tooltip: "AI Text / Multimodal to CAD", section: "ai" },
-  { href: "/settings", label: "Settings", abbr: "Set", icon: "S", tooltip: "Settings & Preferences", section: "bottom" },
+interface NavSection {
+  id: string;
+  label: string;
+  items: NavItem[];
+}
+
+const iconSize = 16;
+
+const navSections: NavSection[] = [
+  {
+    id: "design",
+    label: "DESIGN",
+    items: [
+      { href: "/", label: "Dashboard", icon: <LayoutDashboard size={iconSize} /> },
+      { href: "/designer", label: "CAD Designer", icon: <Pen size={iconSize} /> },
+      { href: "/drawings", label: "2D Drawings", icon: <FileText size={iconSize} /> },
+    ],
+  },
+  {
+    id: "simulate",
+    label: "SIMULATE",
+    items: [
+      { href: "/simulator", label: "FEA Basic", icon: <Activity size={iconSize} /> },
+      { href: "/fea-advanced", label: "FEA Advanced", icon: <Flame size={iconSize} /> },
+      { href: "/cfd", label: "CFD Basic", icon: <Wind size={iconSize} /> },
+      { href: "/cfd-advanced", label: "CFD Advanced", icon: <Tornado size={iconSize} /> },
+    ],
+  },
+  {
+    id: "tools",
+    label: "TOOLS",
+    items: [
+      { href: "/assembly", label: "Assembly", icon: <Boxes size={iconSize} /> },
+      { href: "/assembly-advanced", label: "Assembly Advanced", icon: <Box size={iconSize} /> },
+      { href: "/library", label: "Parts Library", icon: <Library size={iconSize} /> },
+      { href: "/import-export", label: "Import / Export", icon: <Import size={iconSize} /> },
+    ],
+  },
+  {
+    id: "ai",
+    label: "AI",
+    items: [
+      { href: "/text-to-cad", label: "Text to CAD", icon: <Sparkles size={iconSize} /> },
+      { href: "/renderer", label: "AI Renderer", icon: <Bot size={iconSize} /> },
+    ],
+  },
+  {
+    id: "reports",
+    label: "REPORTS",
+    items: [
+      { href: "/reports", label: "Reports", icon: <ClipboardList size={iconSize} /> },
+      { href: "/reports-advanced", label: "Reports Advanced", icon: <FileBarChart size={iconSize} /> },
+    ],
+  },
+  {
+    id: "configure",
+    label: "CONFIGURE",
+    items: [
+      { href: "/settings", label: "Settings", icon: <Settings size={iconSize} /> },
+    ],
+  },
 ];
 
 export default function SidebarNav() {
   const pathname = usePathname();
+  const [collapsed, setCollapsed] = useState(false);
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>(() => {
+    const initial: Record<string, boolean> = {};
+    navSections.forEach((s) => (initial[s.id] = true));
+    return initial;
+  });
 
   const isActive = (href: string) => {
     if (href === "/") return pathname === "/";
     return pathname.startsWith(href);
   };
 
+  const toggleSection = (id: string) => {
+    setExpandedSections((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
   return (
-    <aside className="w-[60px] bg-[#161b22] border-r border-[#21262d] flex flex-col items-center py-2 gap-0.5 z-50 shrink-0 max-md:w-[48px]">
-      {/* Logo */}
-      <Link
-        href="/"
-        className="w-9 h-9 max-md:w-7 max-md:h-7 rounded-lg bg-gradient-to-br from-[#00D4FF] to-[#0090b8] flex items-center justify-center text-white font-black text-xs mb-2 shadow-lg shadow-[#00D4FF]/20 hover:scale-105 transition-transform"
-        title="ShilpaSutra"
-      >
-        SS
-      </Link>
+    <aside
+      className={`${
+        collapsed ? "w-[56px]" : "w-[220px]"
+      } bg-[#161b22] border-r border-[#21262d] flex flex-col py-2 z-50 shrink-0 transition-all duration-200 overflow-hidden`}
+    >
+      {/* Logo + Collapse toggle */}
+      <div className={`flex items-center ${collapsed ? "justify-center" : "justify-between px-3"} mb-2`}>
+        <Link
+          href="/"
+          className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#00D4FF] to-[#0090b8] flex items-center justify-center text-white font-black text-[10px] shadow-lg shadow-[#00D4FF]/20 hover:scale-105 transition-transform shrink-0"
+          title="ShilpaSutra"
+        >
+          SS
+        </Link>
+        {!collapsed && (
+          <span className="text-[11px] font-bold text-white tracking-wide ml-2 flex-1 truncate">
+            ShilpaSutra
+          </span>
+        )}
+        <button
+          onClick={() => setCollapsed(!collapsed)}
+          className="w-6 h-6 rounded flex items-center justify-center text-slate-500 hover:text-white hover:bg-[#21262d] transition-colors shrink-0"
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          {collapsed ? <PanelLeft size={14} /> : <PanelLeftClose size={14} />}
+        </button>
+      </div>
 
-      <div className="w-7 h-px bg-[#21262d] mb-1" />
+      <div className="w-full h-px bg-[#21262d] mb-1" />
 
-      {/* Main Nav */}
-      {navItems
-        .filter((i) => i.section === "main")
-        .map((item) => {
-          const active = isActive(item.href);
+      {/* Nav Sections */}
+      <div className="flex-1 overflow-y-auto overflow-x-hidden px-1.5 space-y-0.5">
+        {navSections.map((section) => {
+          const isExpanded = expandedSections[section.id];
           return (
-            <Link
-              key={item.href}
-              href={item.href}
-              title={item.tooltip}
-              className={`group relative w-10 h-10 max-md:w-8 max-md:h-8 rounded-lg flex flex-col items-center justify-center gap-0.5 transition-all duration-150 ${
-                active
-                  ? "text-[#00D4FF] bg-[#00D4FF]/10"
-                  : "text-slate-500 hover:text-[#00D4FF] hover:bg-[#00D4FF]/5"
-              }`}
-            >
-              {active && (
-                <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 bg-[#00D4FF] rounded-r-full" />
+            <div key={section.id}>
+              {/* Section header */}
+              {!collapsed ? (
+                <button
+                  onClick={() => toggleSection(section.id)}
+                  className="w-full flex items-center justify-between px-2 py-1.5 text-[9px] font-bold text-slate-500 uppercase tracking-widest hover:text-slate-300 transition-colors"
+                >
+                  <span>{section.label}</span>
+                  <ChevronRight
+                    size={10}
+                    className={`transition-transform duration-200 ${isExpanded ? "rotate-90" : ""}`}
+                  />
+                </button>
+              ) : (
+                <div className="w-full flex justify-center py-1">
+                  <div className="w-5 h-px bg-[#21262d]" />
+                </div>
               )}
-              <span className="text-[11px] font-bold leading-none max-md:text-[9px]">{item.icon}</span>
-              <span className="text-[7px] font-medium text-center leading-none opacity-60 group-hover:opacity-100 max-md:hidden">
-                {item.abbr}
-              </span>
-              {/* Tooltip */}
-              <span className="absolute left-[calc(100%+8px)] top-1/2 -translate-y-1/2 bg-[#1f2937] text-white text-[10px] rounded px-2 py-1 whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity shadow-lg border border-[#374151] z-50">
-                {item.tooltip}
-              </span>
-            </Link>
+
+              {/* Section items */}
+              {(collapsed || isExpanded) && (
+                <div className="space-y-0.5">
+                  {section.items.map((item) => {
+                    const active = isActive(item.href);
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        title={item.label}
+                        className={`group relative flex items-center gap-2.5 rounded-md transition-all duration-150 ${
+                          collapsed ? "justify-center mx-auto w-9 h-9" : "px-2.5 py-1.5"
+                        } ${
+                          active
+                            ? "text-[#00D4FF] bg-[#00D4FF]/10"
+                            : "text-slate-400 hover:text-white hover:bg-[#21262d]/70"
+                        }`}
+                      >
+                        {active && (
+                          <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-4 bg-[#00D4FF] rounded-r-full" />
+                        )}
+                        <span className="shrink-0">{item.icon}</span>
+                        {!collapsed && (
+                          <span className="text-[11px] font-medium truncate">{item.label}</span>
+                        )}
+                        {/* Tooltip for collapsed mode */}
+                        {collapsed && (
+                          <span className="absolute left-[calc(100%+8px)] top-1/2 -translate-y-1/2 bg-[#1f2937] text-white text-[10px] rounded px-2 py-1 whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity shadow-lg border border-[#374151] z-[60]">
+                            {item.label}
+                          </span>
+                        )}
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           );
         })}
-
-      <div className="w-7 h-px bg-[#21262d] my-1" />
-
-      {/* AI Section */}
-      <span className="text-[6px] text-slate-600 font-bold tracking-widest uppercase">AI</span>
-      {navItems
-        .filter((i) => i.section === "ai")
-        .map((item) => {
-          const active = isActive(item.href);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              title={item.tooltip}
-              className={`group relative w-10 h-10 max-md:w-8 max-md:h-8 rounded-lg flex flex-col items-center justify-center gap-0.5 transition-all duration-150 ${
-                active
-                  ? "text-[#00D4FF] bg-[#00D4FF]/15"
-                  : "text-[#00D4FF]/60 hover:text-[#00D4FF] hover:bg-[#00D4FF]/10"
-              }`}
-            >
-              {active && (
-                <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 bg-[#00D4FF] rounded-r-full" />
-              )}
-              <span className="text-[11px] font-bold leading-none max-md:text-[9px]">{item.icon}</span>
-              <span className="text-[7px] font-medium text-center leading-none opacity-60 group-hover:opacity-100 max-md:hidden">
-                {item.abbr}
-              </span>
-              <span className="absolute left-[calc(100%+8px)] top-1/2 -translate-y-1/2 bg-[#1f2937] text-white text-[10px] rounded px-2 py-1 whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity shadow-lg border border-[#374151] z-50">
-                {item.tooltip}
-              </span>
-            </Link>
-          );
-        })}
-
-      <div className="flex-1" />
-
-      {/* Ctrl+K hint */}
-      <div className="w-9 h-7 rounded flex items-center justify-center max-md:hidden" title="Press Ctrl+K for command bar">
-        <span className="text-[7px] text-slate-600 font-mono leading-tight text-center">Ctrl+K</span>
       </div>
 
       {/* Bottom section */}
-      {navItems
-        .filter((i) => i.section === "bottom")
-        .map((item) => {
-          const active = isActive(item.href);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              title={item.tooltip}
-              className={`group relative w-10 h-10 max-md:w-8 max-md:h-8 rounded-lg flex flex-col items-center justify-center gap-0.5 transition-all duration-150 ${
-                active
-                  ? "text-[#00D4FF] bg-[#00D4FF]/10"
-                  : "text-slate-500 hover:text-white hover:bg-[#21262d]"
-              }`}
-            >
-              {active && (
-                <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 bg-[#00D4FF] rounded-r-full" />
-              )}
-              <span className="text-[11px] font-bold leading-none max-md:text-[9px]">{item.icon}</span>
-              <span className="text-[7px] font-medium text-center leading-none opacity-60 group-hover:opacity-100 max-md:hidden">
-                {item.abbr}
-              </span>
-              <span className="absolute left-[calc(100%+8px)] top-1/2 -translate-y-1/2 bg-[#1f2937] text-white text-[10px] rounded px-2 py-1 whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity shadow-lg border border-[#374151] z-50">
-                {item.tooltip}
-              </span>
-            </Link>
-          );
-        })}
+      <div className="mt-auto px-1.5 space-y-1">
+        <div className="w-full h-px bg-[#21262d] mb-1" />
 
-      {/* User Avatar */}
-      <div
-        className="w-8 h-8 max-md:w-6 max-md:h-6 rounded-full bg-gradient-to-br from-[#00D4FF] to-[#0090b8] flex items-center justify-center text-[10px] font-bold mt-1 cursor-pointer hover:scale-105 transition-transform shadow-lg"
-        title="User Profile"
-      >
-        U
+        {/* Ctrl+K hint */}
+        {!collapsed && (
+          <div className="flex items-center justify-center py-1" title="Press Ctrl+K for command palette">
+            <span className="text-[9px] text-slate-600 font-mono bg-[#0d1117] px-2 py-0.5 rounded border border-[#21262d]">
+              Ctrl+K
+            </span>
+          </div>
+        )}
+
+        {/* User avatar */}
+        <div
+          className={`flex items-center gap-2 ${
+            collapsed ? "justify-center" : "px-2"
+          } py-1.5 cursor-pointer hover:bg-[#21262d]/50 rounded-md transition-colors`}
+          title="User Profile"
+        >
+          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-[#00D4FF] to-[#0090b8] flex items-center justify-center shrink-0 shadow-lg">
+            <User size={13} className="text-white" />
+          </div>
+          {!collapsed && (
+            <div className="truncate">
+              <div className="text-[10px] font-semibold text-white leading-tight">Engineer</div>
+              <div className="text-[8px] text-slate-500 leading-tight">Pro Plan</div>
+            </div>
+          )}
+        </div>
       </div>
     </aside>
   );
