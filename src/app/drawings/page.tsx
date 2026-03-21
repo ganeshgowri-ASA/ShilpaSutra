@@ -578,7 +578,15 @@ export default function DrawingsPage() {
   const captureCanvas = async (): Promise<HTMLCanvasElement> => {
     const svgEl = drawingRef.current?.querySelector("svg");
     if (!svgEl) throw new Error("SVG element not found");
-    const svgData = new XMLSerializer().serializeToString(svgEl);
+    // Use layout width/height; fall back to A3 landscape proportions if 0
+    const width = svgEl.clientWidth || 1100;
+    const height = svgEl.clientHeight || Math.round(1100 * 594 / 841);
+    // Clone and set explicit pixel dimensions so browsers size the image correctly
+    const svgClone = svgEl.cloneNode(true) as SVGSVGElement;
+    svgClone.setAttribute("width", String(width));
+    svgClone.setAttribute("height", String(height));
+    svgClone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    const svgData = new XMLSerializer().serializeToString(svgClone);
     const svgBlob = new Blob([svgData], { type: "image/svg+xml;charset=utf-8" });
     const url = URL.createObjectURL(svgBlob);
     return new Promise((resolve, reject) => {
@@ -586,13 +594,13 @@ export default function DrawingsPage() {
       img.onload = () => {
         const scale = 3;
         const cvs = document.createElement("canvas");
-        cvs.width = svgEl.clientWidth * scale;
-        cvs.height = svgEl.clientHeight * scale;
+        cvs.width = width * scale;
+        cvs.height = height * scale;
         const ctx = cvs.getContext("2d")!;
         ctx.fillStyle = "#ffffff";
         ctx.fillRect(0, 0, cvs.width, cvs.height);
         ctx.scale(scale, scale);
-        ctx.drawImage(img, 0, 0, svgEl.clientWidth, svgEl.clientHeight);
+        ctx.drawImage(img, 0, 0, width, height);
         URL.revokeObjectURL(url);
         resolve(cvs);
       };
@@ -882,11 +890,17 @@ export default function DrawingsPage() {
               onClick={() => {
                 const svg = drawingRef.current?.querySelector("svg");
                 if (!svg) return;
-                const blob = new Blob([svg.outerHTML], { type: "image/svg+xml" });
+                const clone = svg.cloneNode(true) as SVGSVGElement;
+                clone.setAttribute("width", String(svg.clientWidth || 1100));
+                clone.setAttribute("height", String(svg.clientHeight || Math.round(1100 * 594 / 841)));
+                clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+                const svgData = new XMLSerializer().serializeToString(clone);
+                const blob = new Blob([svgData], { type: "image/svg+xml" });
                 const a = document.createElement("a");
                 a.download = getFilename("svg");
                 a.href = URL.createObjectURL(blob);
                 a.click();
+                URL.revokeObjectURL(a.href);
               }}
               disabled={!!exporting}
               className="bg-[#21262d] hover:bg-[#2d333b] disabled:opacity-40 text-white text-[10px] font-semibold py-1.5 px-1 rounded border border-[#30363d] flex flex-col items-center justify-center gap-0.5 transition-colors"
