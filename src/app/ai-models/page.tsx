@@ -287,7 +287,7 @@ export default function AIModelsPage() {
                         Example Prompts
                       </p>
                       <ul className="space-y-1.5">
-                        {card.examplePrompts.map((p) => (
+                        {(card.examplePrompts ?? []).map((p) => (
                           <li
                             key={p}
                             className="text-xs bg-[#0d1117] rounded-md px-3 py-2 font-mono text-gray-400 leading-relaxed"
@@ -305,7 +305,7 @@ export default function AIModelsPage() {
                         Supported Formats
                       </p>
                       <div className="flex flex-wrap gap-1.5">
-                        {card.supportedFormats.map((fmt) => (
+                        {(card.supportedFormats ?? []).map((fmt) => (
                           <span
                             key={fmt}
                             className="text-xs bg-[#0d1117] border border-[#21262d] rounded px-2 py-0.5 text-gray-300"
