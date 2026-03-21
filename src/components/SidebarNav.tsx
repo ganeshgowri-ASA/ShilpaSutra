@@ -17,6 +17,8 @@ import {
   Import,
   Sparkles,
   Bot,
+  Ruler,
+  Cpu,
   ClipboardList,
   FileBarChart,
   Settings,
@@ -78,6 +80,8 @@ const navSections: NavSection[] = [
       { href: "/text-to-cad", label: "Text to CAD", icon: <Sparkles size={iconSize} /> },
       { href: "/pdf-to-cad", label: "PDF to CAD", icon: <FileUp size={iconSize} /> },
       { href: "/renderer", label: "AI Renderer", icon: <Bot size={iconSize} /> },
+      { href: "/measure", label: "Measure Tool", icon: <Ruler size={iconSize} /> },
+      { href: "/simscape", label: "SimScape", icon: <Cpu size={iconSize} /> },
     ],
   },
   {
