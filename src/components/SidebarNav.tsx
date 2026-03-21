@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   Pen,
   FileText,
+  FileUp,
   Activity,
   Flame,
   Wind,
@@ -75,7 +76,7 @@ const navSections: NavSection[] = [
     label: "AI",
     items: [
       { href: "/text-to-cad", label: "Text to CAD", icon: <Sparkles size={iconSize} /> },
-      { href: "/pdf-to-cad", label: "PDF to CAD", icon: <FileText size={iconSize} /> },
+      { href: "/pdf-to-cad", label: "PDF to CAD", icon: <FileUp size={iconSize} /> },
       { href: "/renderer", label: "AI Renderer", icon: <Bot size={iconSize} /> },
     ],
   },
