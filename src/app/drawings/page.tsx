@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useRef } from "react";
 
 // ─── GD&T SVG Symbols ──────────────────────────────────────────────────────
 
@@ -566,6 +566,147 @@ export default function DrawingsPage() {
   const removeDatumLabel = (id: string) =>
     setDatumLabels(prev => prev.filter(d => d.id !== id));
 
+  const [exporting, setExporting] = useState<string | null>(null);
+  const drawingRef = useRef<HTMLDivElement>(null);
+
+  const getFilename = (ext: string) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const safeName = title.partName.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "");
+    return `ShilpaSutra_Drawing_${safeName}_${today}.${ext}`;
+  };
+
+  const captureCanvas = async (): Promise<HTMLCanvasElement> => {
+    const svgEl = drawingRef.current?.querySelector("svg");
+    if (!svgEl) throw new Error("SVG element not found");
+    const svgData = new XMLSerializer().serializeToString(svgEl);
+    const svgBlob = new Blob([svgData], { type: "image/svg+xml;charset=utf-8" });
+    const url = URL.createObjectURL(svgBlob);
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const scale = 3;
+        const cvs = document.createElement("canvas");
+        cvs.width = svgEl.clientWidth * scale;
+        cvs.height = svgEl.clientHeight * scale;
+        const ctx = cvs.getContext("2d")!;
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, cvs.width, cvs.height);
+        ctx.scale(scale, scale);
+        ctx.drawImage(img, 0, 0, svgEl.clientWidth, svgEl.clientHeight);
+        URL.revokeObjectURL(url);
+        resolve(cvs);
+      };
+      img.onerror = reject;
+      img.src = url;
+    });
+  };
+
+  const exportPDF = async () => {
+    if (!drawingRef.current) return;
+    setExporting("pdf");
+    try {
+      const { jsPDF } = await import("jspdf");
+      const canvas = await captureCanvas();
+      const imgData = canvas.toDataURL("image/jpeg", 0.95);
+      const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a3" });
+      const pw = pdf.internal.pageSize.getWidth();
+      const ph = pdf.internal.pageSize.getHeight();
+      const ratio = canvas.height / canvas.width;
+      const imgH = pw * ratio;
+      const yOff = imgH < ph ? (ph - imgH) / 2 : 0;
+      pdf.addImage(imgData, "JPEG", 0, yOff, pw, Math.min(imgH, ph));
+      pdf.save(getFilename("pdf"));
+    } catch (err) {
+      console.error("PDF export failed:", err);
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  const exportDOCX = async () => {
+    if (!drawingRef.current) return;
+    setExporting("docx");
+    try {
+      const { Document, Paragraph, TextRun, ImageRun, Packer } = await import("docx");
+      const { saveAs } = await import("file-saver");
+      const canvas = await captureCanvas();
+      const imgData = canvas.toDataURL("image/png");
+      const base64 = imgData.replace(/^data:image\/png;base64,/, "");
+      const binaryStr = atob(base64);
+      const bytes = new Uint8Array(binaryStr.length);
+      for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+
+      const titleRows = [
+        ["Part Name", title.partName],
+        ["Part No", title.partNo],
+        ["Material", title.material],
+        ["Scale", scale],
+        ["Revision", title.revision],
+        ["Drawn By", title.drawnBy],
+        ["Date", title.date],
+        ["Checked By", title.checkedBy],
+        ["Approved By", title.approvedBy],
+        ["Sheet", title.sheet],
+        ["Project", title.project],
+        ["Company", title.company],
+      ];
+
+      const generalNotes = [
+        "1. ALL DIMENSIONS IN MILLIMETERS UNLESS OTHERWISE STATED.",
+        "2. TOLERANCES: LINEAR ±0.10mm  ANGULAR ±0.5°",
+        "3. SURFACE FINISH: Ra 1.6µm ON ALL MATING SURFACES",
+        "4. BREAK ALL SHARP EDGES 0.5 × 45° UNLESS NOTED",
+        "5. DO NOT SCALE DRAWING",
+      ];
+
+      const doc = new Document({
+        sections: [{
+          properties: {},
+          children: [
+            new Paragraph({ children: [new TextRun({ text: "ShilpaSutra Engineering Drawing", bold: true, size: 32 })] }),
+            new Paragraph({ children: [new TextRun({ text: `${title.partName}  |  ${title.partNo}  |  Rev ${title.revision}`, size: 22 })] }),
+            new Paragraph({ children: [] }),
+            new Paragraph({
+              children: [new ImageRun({ data: bytes, transformation: { width: 600, height: Math.round(600 * canvas.height / canvas.width) }, type: "png" })],
+            }),
+            new Paragraph({ children: [] }),
+            new Paragraph({ children: [new TextRun({ text: "TITLE BLOCK INFORMATION", bold: true, size: 24 })] }),
+            ...titleRows.map(([k, v]) => new Paragraph({
+              children: [new TextRun({ text: `${k}: `, bold: true }), new TextRun({ text: v })],
+            })),
+            new Paragraph({ children: [] }),
+            new Paragraph({ children: [new TextRun({ text: "REVISION HISTORY", bold: true, size: 24 })] }),
+            ...revisions.map(r => new Paragraph({
+              children: [
+                new TextRun({ text: `Rev ${r.rev} (${r.date}): `, bold: true }),
+                new TextRun({ text: r.description || "—" }),
+                ...(r.by ? [new TextRun({ text: `  — ${r.by}` })] : []),
+              ],
+            })),
+            new Paragraph({ children: [] }),
+            new Paragraph({ children: [new TextRun({ text: "GD&T ANNOTATIONS", bold: true, size: 24 })] }),
+            ...gdtAnnotations.map(a => {
+              const sym = gdtToolbar.find(t => t.id === a.symbol);
+              return new Paragraph({
+                children: [new TextRun({ text: `${sym?.symbol || a.symbol}  ${a.label}:  ⌀${a.tolerance}${a.datum ? `  | Datum ${a.datum}` : ""}` })],
+              });
+            }),
+            new Paragraph({ children: [] }),
+            new Paragraph({ children: [new TextRun({ text: "GENERAL NOTES", bold: true, size: 24 })] }),
+            ...generalNotes.map(note => new Paragraph({ children: [new TextRun({ text: note })] })),
+          ],
+        }],
+      });
+
+      const blob = await Packer.toBlob(doc);
+      saveAs(blob, getFilename("docx"));
+    } catch (err) {
+      console.error("DOCX export failed:", err);
+    } finally {
+      setExporting(null);
+    }
+  };
+
   return (
     <div className="flex h-screen bg-[#0d1117] text-white overflow-hidden">
       {/* ── Left sidebar ── */}
@@ -735,26 +876,61 @@ export default function DrawingsPage() {
 
         {/* Export */}
         <div className="px-3 py-2">
-          <button
-            onClick={() => {
-              const svg = document.querySelector("svg");
-              if (!svg) return;
-              const blob = new Blob([svg.outerHTML], { type: "image/svg+xml" });
-              const a = document.createElement("a");
-              a.download = `${title.partNo}_drawing.svg`;
-              a.href = URL.createObjectURL(blob);
-              a.click();
-            }}
-            className="w-full bg-green-600 hover:bg-green-500 text-white text-xs font-bold py-1.5 rounded"
-          >
-            Export SVG
-          </button>
+          <div className="text-[10px] text-slate-400 uppercase mb-2 font-bold tracking-wider">Export</div>
+          <div className="space-y-1.5">
+            <button
+              onClick={() => {
+                const svg = drawingRef.current?.querySelector("svg");
+                if (!svg) return;
+                const blob = new Blob([svg.outerHTML], { type: "image/svg+xml" });
+                const a = document.createElement("a");
+                a.download = getFilename("svg");
+                a.href = URL.createObjectURL(blob);
+                a.click();
+              }}
+              disabled={!!exporting}
+              className="w-full bg-[#21262d] hover:bg-[#2d333b] disabled:opacity-40 text-white text-[11px] font-semibold py-1.5 rounded border border-[#30363d] flex items-center justify-center gap-1.5 transition-colors"
+            >
+              <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" className="text-slate-400">
+                <path d="M2 2h12v12H2V2zm1 1v10h10V3H3z M7 5v4.5l-2-2-.7.7 3 3 3-3-.7-.7-2 2V5H7z"/>
+              </svg>
+              Export SVG
+            </button>
+            <button
+              onClick={exportPDF}
+              disabled={!!exporting}
+              className="w-full bg-[#21262d] hover:bg-[#2d333b] disabled:opacity-40 text-white text-[11px] font-semibold py-1.5 rounded border border-[#30363d] flex items-center justify-center gap-1.5 transition-colors"
+            >
+              {exporting === "pdf" ? (
+                <span className="inline-block w-3 h-3 border-2 border-[#00D4FF] border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" className="text-red-400">
+                  <path d="M1 2.5A1.5 1.5 0 0 1 2.5 1h8.586a1.5 1.5 0 0 1 1.06.44l1.415 1.414A1.5 1.5 0 0 1 14 3.914V13.5A1.5 1.5 0 0 1 12.5 15h-10A1.5 1.5 0 0 1 1 13.5v-11zM5 7.5a.5.5 0 0 0 0 1h4.5a.5.5 0 0 0 0-1H5zm0 2a.5.5 0 0 0 0 1h2.5a.5.5 0 0 0 0-1H5zM5 5a.5.5 0 0 0 0 1h2a.5.5 0 0 0 0-1H5z"/>
+                </svg>
+              )}
+              Export PDF
+            </button>
+            <button
+              onClick={exportDOCX}
+              disabled={!!exporting}
+              className="w-full bg-[#21262d] hover:bg-[#2d333b] disabled:opacity-40 text-white text-[11px] font-semibold py-1.5 rounded border border-[#30363d] flex items-center justify-center gap-1.5 transition-colors"
+            >
+              {exporting === "docx" ? (
+                <span className="inline-block w-3 h-3 border-2 border-[#00D4FF] border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" className="text-blue-400">
+                  <path d="M1 2.5A1.5 1.5 0 0 1 2.5 1h8.586a1.5 1.5 0 0 1 1.06.44l1.415 1.414A1.5 1.5 0 0 1 14 3.914V13.5A1.5 1.5 0 0 1 12.5 15h-10A1.5 1.5 0 0 1 1 13.5v-11zM5 7.5a.5.5 0 0 0 0 1h6a.5.5 0 0 0 0-1H5zm0 2a.5.5 0 0 0 0 1h3.5a.5.5 0 0 0 0-1H5zM5 5a.5.5 0 0 0 0 1h2a.5.5 0 0 0 0-1H5z"/>
+                </svg>
+              )}
+              Export DOCX
+            </button>
+          </div>
         </div>
       </div>
 
       {/* ── Drawing canvas ── */}
       <div className="flex-1 bg-[#1a1f2e] flex items-center justify-center overflow-auto p-6">
-        <div className="shadow-2xl" style={{ width: "min(100%, 1100px)", aspectRatio: "841/594" }}>
+        <div ref={drawingRef} className="shadow-2xl" style={{ width: "min(100%, 1100px)", aspectRatio: "841/594" }}>
           <EngineeringSheet
             title={title}
             revisions={revisions}
@@ -764,6 +940,16 @@ export default function DrawingsPage() {
           />
         </div>
       </div>
+
+      {/* ── Export loading toast ── */}
+      {exporting && (
+        <div className="fixed bottom-6 right-6 z-50 bg-[#161b22] border border-[#00D4FF]/60 rounded-lg px-4 py-3 flex items-center gap-3 shadow-2xl">
+          <span className="inline-block w-4 h-4 border-2 border-[#00D4FF] border-t-transparent rounded-full animate-spin" />
+          <span className="text-xs text-white font-medium">
+            Generating {exporting.toUpperCase()}…
+          </span>
+        </div>
+      )}
     </div>
   );
 }
