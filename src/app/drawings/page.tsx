@@ -877,7 +877,7 @@ export default function DrawingsPage() {
         {/* Export */}
         <div className="px-3 py-2">
           <div className="text-[10px] text-slate-400 uppercase mb-2 font-bold tracking-wider">Export</div>
-          <div className="space-y-1.5">
+          <div className="grid grid-cols-3 gap-1">
             <button
               onClick={() => {
                 const svg = drawingRef.current?.querySelector("svg");
@@ -889,40 +889,43 @@ export default function DrawingsPage() {
                 a.click();
               }}
               disabled={!!exporting}
-              className="w-full bg-[#21262d] hover:bg-[#2d333b] disabled:opacity-40 text-white text-[11px] font-semibold py-1.5 rounded border border-[#30363d] flex items-center justify-center gap-1.5 transition-colors"
+              className="bg-[#21262d] hover:bg-[#2d333b] disabled:opacity-40 text-white text-[10px] font-semibold py-1.5 px-1 rounded border border-[#30363d] flex flex-col items-center justify-center gap-0.5 transition-colors"
+              title="Export SVG"
             >
-              <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" className="text-slate-400">
+              <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" className="text-slate-400 shrink-0">
                 <path d="M2 2h12v12H2V2zm1 1v10h10V3H3z M7 5v4.5l-2-2-.7.7 3 3 3-3-.7-.7-2 2V5H7z"/>
               </svg>
-              Export SVG
+              SVG
             </button>
             <button
               onClick={exportPDF}
               disabled={!!exporting}
-              className="w-full bg-[#21262d] hover:bg-[#2d333b] disabled:opacity-40 text-white text-[11px] font-semibold py-1.5 rounded border border-[#30363d] flex items-center justify-center gap-1.5 transition-colors"
+              className="bg-[#21262d] hover:bg-[#2d333b] disabled:opacity-40 text-white text-[10px] font-semibold py-1.5 px-1 rounded border border-[#30363d] flex flex-col items-center justify-center gap-0.5 transition-colors"
+              title="Export PDF"
             >
               {exporting === "pdf" ? (
                 <span className="inline-block w-3 h-3 border-2 border-[#00D4FF] border-t-transparent rounded-full animate-spin" />
               ) : (
-                <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" className="text-red-400">
+                <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" className="text-red-400 shrink-0">
                   <path d="M1 2.5A1.5 1.5 0 0 1 2.5 1h8.586a1.5 1.5 0 0 1 1.06.44l1.415 1.414A1.5 1.5 0 0 1 14 3.914V13.5A1.5 1.5 0 0 1 12.5 15h-10A1.5 1.5 0 0 1 1 13.5v-11zM5 7.5a.5.5 0 0 0 0 1h4.5a.5.5 0 0 0 0-1H5zm0 2a.5.5 0 0 0 0 1h2.5a.5.5 0 0 0 0-1H5zM5 5a.5.5 0 0 0 0 1h2a.5.5 0 0 0 0-1H5z"/>
                 </svg>
               )}
-              Export PDF
+              PDF
             </button>
             <button
               onClick={exportDOCX}
               disabled={!!exporting}
-              className="w-full bg-[#21262d] hover:bg-[#2d333b] disabled:opacity-40 text-white text-[11px] font-semibold py-1.5 rounded border border-[#30363d] flex items-center justify-center gap-1.5 transition-colors"
+              className="bg-[#21262d] hover:bg-[#2d333b] disabled:opacity-40 text-white text-[10px] font-semibold py-1.5 px-1 rounded border border-[#30363d] flex flex-col items-center justify-center gap-0.5 transition-colors"
+              title="Export DOCX"
             >
               {exporting === "docx" ? (
                 <span className="inline-block w-3 h-3 border-2 border-[#00D4FF] border-t-transparent rounded-full animate-spin" />
               ) : (
-                <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" className="text-blue-400">
+                <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" className="text-blue-400 shrink-0">
                   <path d="M1 2.5A1.5 1.5 0 0 1 2.5 1h8.586a1.5 1.5 0 0 1 1.06.44l1.415 1.414A1.5 1.5 0 0 1 14 3.914V13.5A1.5 1.5 0 0 1 12.5 15h-10A1.5 1.5 0 0 1 1 13.5v-11zM5 7.5a.5.5 0 0 0 0 1h6a.5.5 0 0 0 0-1H5zm0 2a.5.5 0 0 0 0 1h3.5a.5.5 0 0 0 0-1H5zM5 5a.5.5 0 0 0 0 1h2a.5.5 0 0 0 0-1H5z"/>
                 </svg>
               )}
-              Export DOCX
+              DOCX
             </button>
           </div>
         </div>
