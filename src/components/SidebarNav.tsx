@@ -21,10 +21,12 @@ import {
   FileBarChart,
   Settings,
   ChevronRight,
-  ChevronLeft,
   PanelLeftClose,
   PanelLeft,
   User,
+  Brain,
+  FileSearch,
+  Wand2,
 } from "lucide-react";
 
 interface NavItem {
@@ -77,7 +79,9 @@ const navSections: NavSection[] = [
     items: [
       { href: "/text-to-cad", label: "Text to CAD", icon: <Sparkles size={iconSize} /> },
       { href: "/pdf-to-cad", label: "PDF to CAD", icon: <FileUp size={iconSize} /> },
+      { href: "/cad-analyzer", label: "CAD Analyzer", icon: <FileSearch size={iconSize} /> },
       { href: "/renderer", label: "AI Renderer", icon: <Bot size={iconSize} /> },
+      { href: "/ai-models", label: "AI Models", icon: <Brain size={iconSize} /> },
     ],
   },
   {
