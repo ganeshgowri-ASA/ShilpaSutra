@@ -4,6 +4,9 @@ import dynamic from "next/dynamic";
 import { useCadStore } from "@/stores/cad-store";
 import { Save, FolderOpen, FilePlus, Package } from "lucide-react";
 
+const ParametricPanel = dynamic(() => import("@/components/cad/ParametricPanel"), { ssr: false });
+const AnimationTimeline = dynamic(() => import("@/components/cad/AnimationTimeline"), { ssr: false });
+
 const Viewport3D = dynamic(() => import("@/components/Viewport3D"), {
   ssr: false,
   loading: () => (
@@ -104,10 +107,8 @@ export default function DesignerPage() {
 
   const [aiOpen, setAiOpen] = useState(false);
   const [aiMode, setAiMode] = useState<"basic" | "zookeeper">("zookeeper");
-  const [showExtrudeDialog, setShowExtrudeDialog] = useState(false);
-  const [showRevolveDialog, setShowRevolveDialog] = useState(false);
-  const [rightTab, setRightTab] = useState<"properties" | "components">("properties");
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saved" | "loaded">("idle");
+  const [parametricOpen, setParametricOpen] = useState(false);
+  const [timelineOpen, setTimelineOpen] = useState(false);
 
   const sketchTools = ["line", "arc", "circle", "rectangle", "polygon", "spline", "ellipse", "construction_line"];
   const isSketchMode = sketchTools.includes(activeTool) || !!sketchPlane;
@@ -209,13 +210,101 @@ export default function DesignerPage() {
             {/* Sketch Toolbar (floating, top center) */}
             <SketchToolbar visible={isSketchMode} />
 
-            {/* Status overlay - top left */}
-            <div className="absolute top-2 left-2 flex items-center gap-2 pointer-events-none z-10">
-              <span
-                className={`text-[10px] bg-[#1a1a2e]/90 border rounded px-2 py-0.5 backdrop-blur-sm ${
-                  isSketchMode
-                    ? "border-[#00D4FF]/40 text-[#00D4FF]"
-                    : "border-[#16213e] text-slate-400"
+          {/* Status overlay - top left */}
+          <div className="absolute top-2 left-2 flex items-center gap-2 pointer-events-none z-10">
+            <span
+              className={`text-[10px] bg-[#1a1a2e]/90 border rounded px-2 py-0.5 backdrop-blur-sm ${
+                isSketchMode
+                  ? "border-[#00D4FF]/40 text-[#00D4FF]"
+                  : "border-[#16213e] text-slate-400"
+              }`}
+            >
+              {activeTool === "select" ? "Select" : activeTool.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+            </span>
+            {selectedId && (
+              <span className="text-[10px] bg-[#1a1a2e]/90 border border-[#00D4FF]/30 rounded px-2 py-0.5 text-[#00D4FF] backdrop-blur-sm">
+                Selected
+              </span>
+            )}
+            {sketchPlane && (
+              <span className="text-[10px] bg-[#1a1a2e]/90 border border-[#00D4FF]/30 rounded px-2 py-0.5 text-[#00D4FF]/80 backdrop-blur-sm">
+                Sketch Mode - {sketchPlane.toUpperCase()} Plane
+              </span>
+            )}
+          </div>
+
+          {/* Sketch plane selector - bottom left */}
+          <div className="absolute bottom-2 left-2 flex items-center gap-1 z-10 pointer-events-auto">
+            {!sketchPlane ? (
+              <>
+                <span className="text-[10px] text-slate-500 mr-1">Sketch:</span>
+                {(["xy", "xz", "yz"] as const).map((plane) => (
+                  <button
+                    key={plane}
+                    onClick={() => enterSketchMode(plane)}
+                    className="text-[10px] px-2 py-0.5 rounded border border-[#16213e] text-slate-400 bg-[#1a1a2e]/80 hover:border-[#00D4FF]/40 hover:text-[#00D4FF] transition-colors backdrop-blur-sm"
+                  >
+                    {plane.toUpperCase()}
+                  </button>
+                ))}
+              </>
+            ) : (
+              <button
+                onClick={exitSketchMode}
+                className="text-[10px] px-3 py-1 rounded border border-red-500/40 text-red-400 bg-red-500/10 hover:bg-red-500/20 transition-colors backdrop-blur-sm"
+              >
+                Exit Sketch
+              </button>
+            )}
+          </div>
+
+          {/* Measurement overlay - top right */}
+          {measureResult && (
+            <div className="absolute top-2 right-2 bg-[#1a1a2e]/95 border border-yellow-500/40 rounded-lg p-3 pointer-events-auto z-10 backdrop-blur-sm">
+              <div className="text-[10px] text-yellow-400 font-bold mb-1">Measurement</div>
+              <div className="text-xs text-white font-mono">
+                Distance: <span className="text-yellow-300">{measureResult.distance} {unit}</span>
+              </div>
+              <div className="text-[10px] text-slate-400 font-mono mt-1">
+                dX: {measureResult.dx} | dY: {measureResult.dy} | dZ: {measureResult.dz}
+              </div>
+              <button
+                onClick={clearMeasure}
+                className="mt-2 text-[10px] text-slate-500 hover:text-white transition-colors"
+              >
+                Clear
+              </button>
+            </div>
+          )}
+
+          {/* Parametric Panel */}
+          {parametricOpen && <ParametricPanel onClose={() => setParametricOpen(false)} />}
+
+          {/* AI toggle button */}
+          {!measureResult && (
+            <div className="absolute top-2 right-2 flex items-center gap-1 z-10 pointer-events-auto">
+              <button onClick={() => setParametricOpen(!parametricOpen)}
+                className={`px-2 py-1 rounded text-xs font-medium transition-all ${parametricOpen ? "bg-green-600 text-white" : "text-slate-400 hover:text-white bg-[#1a1a2e]/80 hover:bg-[#0f3460] border border-[#16213e] backdrop-blur-sm"}`}>
+                Param
+              </button>
+              {aiOpen && (
+                <button
+                  onClick={() => setAiMode(aiMode === "basic" ? "zookeeper" : "basic")}
+                  className={`text-[10px] px-2 py-1 rounded border transition-colors backdrop-blur-sm ${
+                    aiMode === "zookeeper"
+                      ? "border-purple-500/40 text-purple-400 bg-purple-500/10"
+                      : "border-[#16213e] text-slate-500 bg-[#1a1a2e]/80"
+                  }`}
+                >
+                  {aiMode === "zookeeper" ? "Zookeeper" : "Basic"}
+                </button>
+              )}
+              <button
+                onClick={() => setAiOpen(!aiOpen)}
+                className={`px-3 py-1 rounded text-xs font-medium transition-all ${
+                  aiOpen
+                    ? "bg-purple-600 text-white"
+                    : "text-slate-400 hover:text-white bg-[#1a1a2e]/80 hover:bg-[#0f3460] border border-[#16213e] backdrop-blur-sm"
                 }`}
               >
                 {activeTool === "select" ? "Select" : activeTool.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
@@ -377,6 +466,17 @@ export default function DesignerPage() {
         {/* AI Chat Sidebar */}
         {aiOpen && aiMode === "basic" && <AIChatSidebar onClose={() => setAiOpen(false)} />}
         {aiOpen && aiMode === "zookeeper" && <AIChatAssistantEnhanced onClose={() => setAiOpen(false)} />}
+      </div>
+
+      {/* Animation Timeline (bottom) */}
+      {timelineOpen && <AnimationTimeline onClose={() => setTimelineOpen(false)} />}
+
+      {/* Timeline toggle in command bar area */}
+      <div className="flex items-center gap-2 px-3 py-0.5 bg-[#0d1117] border-t border-[#16213e]">
+        <button onClick={() => setTimelineOpen(!timelineOpen)}
+          className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${timelineOpen ? "border-[#00D4FF]/40 text-[#00D4FF] bg-[#00D4FF]/10" : "border-[#16213e] text-slate-500 hover:text-slate-300"}`}>
+          Timeline
+        </button>
       </div>
 
       {/* Command Bar (bottom 40px) */}

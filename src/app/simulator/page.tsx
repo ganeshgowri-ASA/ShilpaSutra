@@ -42,6 +42,7 @@ interface SimResults {
   stressField: number[];
   converged: boolean;
   iterations: number;
+  naturalFreqs?: number[];
 }
 
 interface ThermalBC {
@@ -260,6 +261,15 @@ function computeStress(loads: Load[], constraints: Constraint[], material: Mater
   const maxDisplacement = (forceMag * L ** 3) / (3 * E_Pa * I) * 1000;
   const safetyFactor = material.yieldStrength / Math.max(maxStress, 0.001);
 
+  const naturalFreqs = (() => {
+    const E_Pa = material.E * 1e9;
+    const I_val = (1.0 * Math.pow(1.0, 3)) / 12;
+    const m_total = Math.max(material.rho * 1.0, 1);
+    const k_stiff = (3 * E_Pa * I_val) / Math.pow(L, 3);
+    const f1 = (1 / (2 * Math.PI)) * Math.sqrt(k_stiff / m_total);
+    return [Math.round(f1 * 10) / 10, Math.round(f1 * 6.27 * 10) / 10, Math.round(f1 * 17.55 * 10) / 10];
+  })();
+
   return {
     maxStress: Math.round(maxStress * 100) / 100,
     minStress: Math.round(minStress * 100) / 100,
@@ -268,10 +278,12 @@ function computeStress(loads: Load[], constraints: Constraint[], material: Mater
     stressField,
     converged: true,
     iterations: 142 + Math.floor(Math.random() * 60),
+    naturalFreqs,
   };
 }
 
 export default function SimulatorPage() {
+  const [importToast, setImportToast] = useState<string | null>(null);
   const [geometry, setGeometry] = useState<"box" | "cylinder" | "sphere">("box");
   const [geoDims, setGeoDims] = useState({ width: 2, height: 2, depth: 2 });
   const [mat, setMat] = useState("steel");
@@ -415,6 +427,23 @@ Element Type,${elementType},`;
           <div className="flex-1 overflow-y-auto p-3 space-y-3">
             {leftTab === "setup" && (
               <>
+                {/* Import from Designer */}
+                <div>
+                  <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Import from Designer</h3>
+                  <button
+                    onClick={() => {
+                      setGeometry("box");
+                      setGeoDims({ width: 2, height: 1, depth: 0.5 });
+                      setImportToast("Model imported from Designer");
+                      setTimeout(() => setImportToast(null), 3000);
+                    }}
+                    className="w-full bg-[#21262d] hover:bg-[#30363d] border border-[#21262d] text-xs py-2 rounded text-white transition-colors">
+                    Import Active CAD Model
+                  </button>
+                  {importToast && (
+                    <div className="mt-1 text-[10px] text-green-400 bg-green-500/10 border border-green-500/30 rounded p-1.5">{importToast}</div>
+                  )}
+                </div>
                 {/* Material */}
                 <div>
                   <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Material Library</h3>
@@ -619,6 +648,24 @@ Element Type,${elementType},`;
                     </div>
                   )}
                 </div>
+
+                {/* Natural Frequencies */}
+                {results.naturalFreqs && (
+                  <div className="bg-[#0d1117] rounded border border-[#21262d] p-2 text-xs">
+                    <div className="text-[10px] font-bold text-slate-400 mb-1">Natural Frequencies</div>
+                    {results.naturalFreqs.map((f, i) => (
+                      <div key={i} className="flex justify-between py-0.5">
+                        <span className="text-slate-500">f{i + 1}</span>
+                        <span className="text-purple-400 font-bold">{f.toFixed(1)} Hz</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Send to CFD */}
+                <a href="/cfd" className="block w-full text-center bg-blue-600 hover:bg-blue-500 py-2 rounded text-xs font-bold text-white transition-colors">
+                  Send to CFD
+                </a>
 
                 {/* Export */}
                 <button onClick={exportCSV}

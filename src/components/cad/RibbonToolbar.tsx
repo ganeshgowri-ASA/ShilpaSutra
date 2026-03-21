@@ -1,5 +1,6 @@
 "use client";
 import { useCallback } from "react";
+import { useRouter } from "next/navigation";
 import {
   useCadStore,
   type RibbonTab,
@@ -116,13 +117,50 @@ const cameraViews = [
   { label: "Iso", shortcut: "0" },
 ];
 
-interface RibbonToolbarProps {
-  onExtrude?: () => void;
-  onRevolve?: () => void;
-}
-
-export default function RibbonToolbar({ onExtrude, onRevolve }: RibbonToolbarProps) {
+export default function RibbonToolbar() {
   const router = useRouter();
+  const saveProject = useCallback(() => {
+    const state = useCadStore.getState();
+    const data = {
+      version: "1.0",
+      app: "ShilpaSutra",
+      created: Date.now(),
+      objects: state.objects,
+      sketches: [],
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    const d = new Date();
+    a.download = `project-${d.getFullYear()}${String(d.getMonth()+1).padStart(2,"0")}${String(d.getDate()).padStart(2,"0")}.shilpa`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }, []);
+
+  const loadProject = useCallback(() => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".shilpa,.json";
+    input.onchange = (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        try {
+          const data = JSON.parse(ev.target?.result as string);
+          if (data.objects) {
+            useCadStore.setState({ objects: data.objects });
+          }
+          alert(`Project loaded: ${(data.objects ?? []).length} objects`);
+        } catch {
+          alert("Invalid project file");
+        }
+      };
+      reader.readAsText(file);
+    };
+    input.click();
+  }, []);
+
   const activeTab = useCadStore((s) => s.activeRibbonTab);
   const setActiveTab = useCadStore((s) => s.setActiveRibbonTab);
   const collapsed = useCadStore((s) => s.ribbonCollapsed);
@@ -251,6 +289,29 @@ export default function RibbonToolbar({ onExtrude, onRevolve }: RibbonToolbarPro
         ))}
 
         <div className="flex-1" />
+
+        {/* Analysis + Project buttons */}
+        <div className="flex items-center gap-1 mr-2">
+          <button onClick={() => router.push("/simulator")}
+            title="Send current model to FEA simulator"
+            className="px-2 py-1 rounded text-[10px] font-semibold bg-green-700/30 hover:bg-green-700/60 text-green-400 border border-green-700/40 transition-colors">
+            FEA
+          </button>
+          <button onClick={() => router.push("/cfd")}
+            title="Send current model to CFD solver"
+            className="px-2 py-1 rounded text-[10px] font-semibold bg-blue-700/30 hover:bg-blue-700/60 text-blue-400 border border-blue-700/40 transition-colors">
+            CFD
+          </button>
+          <div className="w-px h-4 bg-[#21262d] mx-0.5" />
+          <button onClick={saveProject} title="Save project as .shilpa file"
+            className="px-2 py-1 rounded text-[10px] bg-[#21262d] hover:bg-[#30363d] text-slate-300 border border-[#30363d] transition-colors">
+            Save
+          </button>
+          <button onClick={loadProject} title="Load .shilpa project file"
+            className="px-2 py-1 rounded text-[10px] bg-[#21262d] hover:bg-[#30363d] text-slate-300 border border-[#30363d] transition-colors">
+            Load
+          </button>
+        </div>
 
         <button
           onClick={() => setCollapsed(!collapsed)}
