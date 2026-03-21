@@ -1110,7 +1110,7 @@ export default function Viewport3D({ mode }: Viewport3DProps) {
           enablePan={!sketchPlane}
         />
 
-        <GizmoHelper alignment="bottom-left" margin={[60, 60]}>
+        <GizmoHelper alignment="top-right" margin={[80, 80]}>
           <GizmoViewport
             labelColor="white"
             axisHeadScale={0.8}

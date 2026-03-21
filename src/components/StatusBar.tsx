@@ -26,6 +26,7 @@ const contextHelp: Record<string, string> = {
 function DesignerStatusInfo() {
   const activeTool = useCadStore((s) => s.activeTool);
   const snapGrid = useCadStore((s) => s.snapGrid);
+  const unit = useCadStore((s) => s.unit);
   const objects = useCadStore((s) => s.objects);
   const selectedIds = useCadStore((s) => s.selectedIds);
   const selectedId = useCadStore((s) => s.selectedId);
@@ -36,45 +37,29 @@ function DesignerStatusInfo() {
     .replace(/_/g, " ")
     .replace(/\b\w/g, (c) => c.toUpperCase());
 
-  const fmt = (n: number) => n.toFixed(2);
+  const fmt = (n: number) => n.toFixed(1);
 
   return (
-    <>
-      {/* Active tool */}
-      <div className="flex items-center gap-1 px-2 border-r border-[#21262d]">
-        <MousePointer2 size={9} className="text-slate-500" />
-        <span className="text-[9px] text-[#4a9eff] font-mono font-semibold">{toolLabel}</span>
-      </div>
-
-      {/* Cursor XYZ */}
-      <div className="flex items-center gap-1 px-2 border-r border-[#21262d]">
-        <span className="text-[9px] text-slate-500 font-mono">
-          {cursorPosition
-            ? `X ${fmt(cursorPosition[0])}  Y ${fmt(cursorPosition[1])}  Z ${fmt(cursorPosition[2])}`
-            : "X —  Y —  Z —"}
-        </span>
-      </div>
-
-      {/* Grid snap */}
-      <div className="flex items-center gap-1 px-2 border-r border-[#21262d]">
-        <Grid3X3 size={9} className={snapGrid ? "text-green-400" : "text-slate-600"} />
-        <span className={`text-[9px] font-mono ${snapGrid ? "text-green-400" : "text-slate-600"}`}>
-          Snap {snapGrid ? "ON" : "OFF"}
-        </span>
-      </div>
-
-      {/* Object / selection count */}
-      <div className="flex items-center gap-1 px-2 border-r border-[#21262d]">
-        <span className="text-[9px] text-slate-500 font-mono">
-          {objects.length} obj{objects.length !== 1 ? "s" : ""}
-        </span>
-        {selCount > 0 && (
-          <span className="text-[9px] text-[#4a9eff] font-mono ml-1">
-            ({selCount} sel)
-          </span>
-        )}
-      </div>
-    </>
+    <span className="text-[9px] font-mono flex items-center gap-0">
+      <MousePointer2 size={9} className="text-slate-500 mr-1" />
+      <span className="text-[#4a9eff] font-semibold mr-2">{toolLabel}</span>
+      <span className="text-slate-600 mr-2">|</span>
+      <span className="text-slate-500">
+        {cursorPosition
+          ? `X:${fmt(cursorPosition[0])} Y:${fmt(cursorPosition[1])} Z:${fmt(cursorPosition[2])}`
+          : "X:— Y:— Z:—"}
+      </span>
+      <span className="text-slate-600 mx-2">|</span>
+      <Grid3X3 size={9} className={`mr-0.5 ${snapGrid ? "text-green-400" : "text-slate-600"}`} />
+      <span className={snapGrid ? "text-green-400" : "text-slate-600"}>
+        {snapGrid ? "SNAP" : "snap"}
+      </span>
+      <span className="text-slate-600 mx-2">|</span>
+      <span className="text-slate-400 uppercase">{unit}</span>
+      <span className="text-slate-600 mx-2">|</span>
+      <span className="text-slate-500">{objects.length} objs</span>
+      {selCount > 0 && <span className="text-[#4a9eff] ml-1">({selCount} sel)</span>}
+    </span>
   );
 }
 

@@ -97,7 +97,7 @@ const navSections: NavSection[] = [
 
 export default function SidebarNav() {
   const pathname = usePathname();
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>(() => {
     const initial: Record<string, boolean> = {};
     navSections.forEach((s) => (initial[s.id] = true));
@@ -115,8 +115,10 @@ export default function SidebarNav() {
 
   return (
     <aside
+      onMouseEnter={() => { if (collapsed) setCollapsed(false); }}
+      onMouseLeave={() => { setCollapsed(true); }}
       className={`${
-        collapsed ? "w-[56px]" : "w-[220px]"
+        collapsed ? "w-[56px]" : "w-[200px]"
       } bg-[#161b22] border-r border-[#21262d] flex flex-col py-2 z-50 shrink-0 transition-all duration-200 overflow-hidden`}
     >
       {/* Logo + Collapse toggle */}
