@@ -178,6 +178,53 @@ function computeThermalCFD(
   };
 }
 
+// ── Prompt-to-CFD parser ──────────────────────────────────────────────────
+interface CFDPromptResult {
+  inletVelocity: number;
+  geometry: "box" | "cylinder" | "sphere";
+  geoDims: { width: number; height: number; depth: number };
+  fluidMat: string;
+  description: string;
+}
+
+function parseCFDPrompt(text: string): CFDPromptResult | null {
+  const t = text.toLowerCase();
+  let inletVelocity = 1.0;
+  let geometry: "box" | "cylinder" | "sphere" = "box";
+  let geoDims = { width: 2, height: 1, depth: 2 };
+  let fluidMat = "air";
+
+  // Extract velocity: "50 km/h" → m/s, "10 m/s"
+  const kmhM = text.match(/(\d+(?:\.\d+)?)\s*km\/h/i);
+  const msM  = text.match(/(\d+(?:\.\d+)?)\s*m\/s/i);
+  if (kmhM)  inletVelocity = parseFloat(kmhM[1]) / 3.6;
+  else if (msM) inletVelocity = parseFloat(msM[1]);
+
+  // Detect fluid
+  if (t.includes("water") || t.includes("pipe")) fluidMat = "water";
+  else if (t.includes("oil")) fluidMat = "oil";
+
+  // Detect geometry
+  if (t.includes("building") || t.includes("structure") || t.includes("box") || t.includes("enclosure")) {
+    geometry = "box";
+    const hM = text.match(/(\d+)\s*m\s*tall/i) || text.match(/(\d+)\s*m\s*high/i);
+    const h = hM ? parseFloat(hM[1]) : 10;
+    geoDims = { width: h * 0.5, height: h, depth: h * 0.5 };
+  } else if (t.includes("pipe") || t.includes("tube") || t.includes("cylinder")) {
+    geometry = "cylinder";
+    const dM = text.match(/(\d+)\s*mm\s*pipe/i) || text.match(/(\d+)\s*mm\s*dia/i);
+    const d = dM ? parseFloat(dM[1]) / 1000 : 0.05;
+    geoDims = { width: d, height: 1, depth: d };
+  } else if (t.includes("sphere") || t.includes("ball") || t.includes("vessel")) {
+    geometry = "sphere";
+    const rM = text.match(/(\d+(?:\.\d+)?)\s*m/i);
+    const r = rM ? parseFloat(rM[1]) : 1;
+    geoDims = { width: r * 2, height: r * 2, depth: r * 2 };
+  }
+
+  return { inletVelocity: Math.round(inletVelocity * 100) / 100, geometry, geoDims, fluidMat, description: text };
+}
+
 export default function CFDPage() {
   const [viewMode, setViewMode] = useState<"cfd" | "block-diagram">("cfd");
   const [geometry, setGeometry] = useState<"box" | "cylinder" | "sphere">("box");
@@ -189,6 +236,9 @@ export default function CFDPage() {
   const [flowModel, setFlowModel] = useState<FlowModel>("laminar");
   const [solverMode, setSolverMode] = useState<"steady" | "transient">("steady");
   const [inletVelocity, setInletVelocity] = useState(1.0);
+  // Prompt-to-CFD state
+  const [cfdPrompt, setCfdPrompt] = useState("");
+  const [promptApplied, setPromptApplied] = useState("");
   const [outletPressure, setOutletPressure] = useState(101325);
   const [wallType, setWallType] = useState<WallType>("no-slip");
   const [ambientTemp, setAmbientTemp] = useState(22);
@@ -239,8 +289,39 @@ export default function CFDPage() {
 
   const maxResidualBarHeight = results ? Math.max(...results.convergenceHistory) : 1;
 
+  const applyPrompt = () => {
+    if (!cfdPrompt.trim()) return;
+    const parsed = parseCFDPrompt(cfdPrompt);
+    if (!parsed) return;
+    setGeometry(parsed.geometry);
+    setGeoDims(parsed.geoDims);
+    setInletVelocity(parsed.inletVelocity);
+    setFluidMat(parsed.fluidMat);
+    // Auto-add inlet BC
+    setBoundaries([{ id: Date.now().toString(), face: "Left (-X)", type: "temperature", value: 20 }]);
+    setPromptApplied(`Applied: v=${parsed.inletVelocity} m/s, ${parsed.geometry}, ${parsed.fluidMat}`);
+    setCfdPrompt("");
+  };
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-[#0d1117]">
+      {/* Prompt-to-CFD bar */}
+      <div className="bg-[#0d1117] border-b border-[#21262d] px-4 py-2 flex items-center gap-2 shrink-0">
+        <span className="text-[10px] text-slate-500 whitespace-nowrap">Describe flow:</span>
+        <input
+          value={cfdPrompt}
+          onChange={e => { setCfdPrompt(e.target.value); setPromptApplied(""); }}
+          onKeyDown={e => e.key === "Enter" && applyPrompt()}
+          placeholder='e.g. "Wind load on a 10m tall building at 50 km/h"  or  "Water flow through 50mm pipe at 2 m/s"'
+          className="flex-1 bg-[#161b22] border border-[#21262d] rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-[#00D4FF] placeholder-slate-600"
+        />
+        <button onClick={applyPrompt} disabled={!cfdPrompt.trim()}
+          className="bg-[#00D4FF] hover:bg-[#00b8d9] disabled:opacity-40 text-black text-xs px-3 py-1.5 rounded font-semibold whitespace-nowrap">
+          Auto-Configure
+        </button>
+        {promptApplied && <span className="text-[10px] text-green-400 whitespace-nowrap">{promptApplied}</span>}
+      </div>
+
       {/* Header */}
       <div className="bg-[#161b22] border-b border-[#21262d] px-4 py-2 flex items-center gap-2 shrink-0">
         <span className="text-xs font-bold text-[#00D4FF]">CFD Thermal Analysis</span>

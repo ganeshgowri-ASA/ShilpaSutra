@@ -1,5 +1,6 @@
 "use client";
 import { create } from "zustand";
+import * as THREE from "three";
 
 export type ToolId =
   | "select"
@@ -55,6 +56,15 @@ export type ViewMode = "wireframe" | "shaded" | "realistic";
 
 export type UnitType = "mm" | "cm" | "m" | "inch";
 
+export type FeatureType =
+  | "boolean_union"
+  | "boolean_subtract"
+  | "boolean_intersect"
+  | "extrude"
+  | "revolve"
+  | "linear_pattern"
+  | "circular_pattern";
+
 export interface CadObject {
   id: string;
   type: "box" | "cylinder" | "sphere" | "cone" | "line" | "arc" | "circle" | "rectangle" | "mesh";
@@ -81,9 +91,13 @@ export interface CadObject {
   circleRadius?: number;
   // Rectangle-specific
   rectCorners?: [[number, number, number], [number, number, number]];
-  // Mesh-specific (AI-generated)
+  // Mesh-specific (AI-generated, CSG result, extrude, revolve)
   meshVertices?: number[];
   meshIndices?: number[];
+  // Feature metadata
+  featureType?: FeatureType;
+  featureParams?: Record<string, unknown>;
+  sketchPlane?: "xy" | "xz" | "yz";
 }
 
 export interface FeatureNode {
@@ -248,6 +262,15 @@ interface CadState {
   clearMeasure: () => void;
   addMeasurement: (measurement: Omit<Measurement, "id">) => void;
   clearMeasurements: () => void;
+
+  // Boolean CSG
+  booleanUnion: (objectIds: string[]) => void;
+  booleanSubtract: (targetId: string, toolId: string) => void;
+  booleanIntersect: (objectIds: string[]) => void;
+
+  // Sketch → Feature
+  extrudeFromSketch: (sketchId: string, distance: number) => void;
+  revolveFromSketch: (sketchId: string, angle: number) => void;
 
   // Command
   executeCommand: (cmd: string) => void;
@@ -873,5 +896,340 @@ export const useCadStore = create<CadState>((set, get) => ({
       default:
         break;
     }
+  },
+
+  // ── Boolean CSG ──────────────────────────────────────────────
+  booleanUnion: (objectIds) => {
+    const { objects } = get();
+    const targets = objectIds.map((id) => objects.find((o) => o.id === id)).filter(Boolean) as CadObject[];
+    if (targets.length < 2) return;
+    get().pushHistory();
+
+    // Build merged geometry using Three.js (import inline to avoid SSR issues)
+const createGeo = (obj: CadObject): THREE.BufferGeometry => {
+      let geo: THREE.BufferGeometry;
+      switch (obj.type) {
+        case "box": geo = new THREE.BoxGeometry(obj.dimensions.width, obj.dimensions.height, obj.dimensions.depth); break;
+        case "cylinder": geo = new THREE.CylinderGeometry(obj.dimensions.width, obj.dimensions.width, obj.dimensions.height, 32); break;
+        case "sphere": geo = new THREE.SphereGeometry(obj.dimensions.width, 32, 32); break;
+        case "cone": geo = new THREE.ConeGeometry(obj.dimensions.width, obj.dimensions.height, 32); break;
+        case "mesh":
+          geo = new THREE.BufferGeometry();
+          if (obj.meshVertices && obj.meshIndices) {
+            geo.setAttribute("position", new THREE.Float32BufferAttribute(obj.meshVertices, 3));
+            geo.setIndex(obj.meshIndices);
+          }
+          break;
+        default: geo = new THREE.BoxGeometry(1, 1, 1);
+      }
+      const mat = new THREE.Matrix4().compose(
+        new THREE.Vector3(...obj.position),
+        new THREE.Quaternion().setFromEuler(new THREE.Euler(...obj.rotation)),
+        new THREE.Vector3(...obj.scale)
+      );
+      geo.applyMatrix4(mat);
+      return geo;
+    };
+
+    const serializeGeo = (geo: THREE.BufferGeometry) => {
+      geo.computeVertexNormals();
+      const pos = geo.attributes.position;
+      const vertices: number[] = [];
+      for (let i = 0; i < pos.count; i++) vertices.push(pos.getX(i), pos.getY(i), pos.getZ(i));
+      const idx = geo.index;
+      const indices: number[] = [];
+      if (idx) { for (let i = 0; i < idx.count; i++) indices.push(idx.getX(i)); }
+      else { for (let i = 0; i < pos.count; i++) indices.push(i); }
+      return { vertices, indices };
+    };
+
+    // Merge all geometries (union = additive merge)
+    const geos = targets.map(createGeo);
+    const positions: number[] = [];
+    const indices: number[] = [];
+    let offset = 0;
+    for (const g of geos) {
+      const pos = g.attributes.position;
+      for (let i = 0; i < pos.count; i++) positions.push(pos.getX(i), pos.getY(i), pos.getZ(i));
+      const idx = g.index;
+      if (idx) { for (let i = 0; i < idx.count; i++) indices.push(idx.getX(i) + offset); }
+      else { for (let i = 0; i < pos.count; i++) indices.push(i + offset); }
+      offset += pos.count;
+    }
+    const merged = new THREE.BufferGeometry();
+    merged.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    merged.setIndex(indices);
+    const { vertices, indices: idxs } = serializeGeo(merged);
+
+    const id = `obj_${++idCounter}_${Date.now()}`;
+    const newObj: CadObject = {
+      id, type: "mesh", name: `Union ${get().objects.filter(o => o.featureType === "boolean_union").length + 1}`,
+      position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
+      dimensions: { width: 1, height: 1, depth: 1 },
+      material: targets[0].material, color: targets[0].color,
+      visible: true, locked: false, opacity: 1, metalness: 0.4, roughness: 0.5,
+      meshVertices: vertices, meshIndices: idxs,
+      featureType: "boolean_union",
+      featureParams: { sourceIds: objectIds },
+    };
+    set((s) => ({
+      objects: [...s.objects.filter((o) => !objectIds.includes(o.id)), newObj],
+      featureHistory: [...s.featureHistory.filter((f) => !objectIds.includes(f.objectId)),
+        { id: `feat_${id}`, type: "boolean_union", name: newObj.name, objectId: id, children: [], expanded: true, visible: true, locked: false }],
+      selectedId: id, selectedIds: [id],
+    }));
+    geos.forEach((g) => g.dispose());
+    merged.dispose();
+  },
+
+  booleanSubtract: (targetId, toolId) => {
+    const { objects } = get();
+    const target = objects.find((o) => o.id === targetId);
+    const tool = objects.find((o) => o.id === toolId);
+    if (!target || !tool) return;
+    get().pushHistory();
+
+const createGeo = (obj: CadObject): THREE.BufferGeometry => {
+      let geo: THREE.BufferGeometry;
+      switch (obj.type) {
+        case "box": geo = new THREE.BoxGeometry(obj.dimensions.width, obj.dimensions.height, obj.dimensions.depth); break;
+        case "cylinder": geo = new THREE.CylinderGeometry(obj.dimensions.width, obj.dimensions.width, obj.dimensions.height, 32); break;
+        case "sphere": geo = new THREE.SphereGeometry(obj.dimensions.width, 32, 32); break;
+        case "cone": geo = new THREE.ConeGeometry(obj.dimensions.width, obj.dimensions.height, 32); break;
+        default:
+          geo = new THREE.BufferGeometry();
+          if (obj.meshVertices && obj.meshIndices) {
+            geo.setAttribute("position", new THREE.Float32BufferAttribute(obj.meshVertices, 3));
+            geo.setIndex(obj.meshIndices);
+          }
+      }
+      const mat = new THREE.Matrix4().compose(
+        new THREE.Vector3(...obj.position),
+        new THREE.Quaternion().setFromEuler(new THREE.Euler(...obj.rotation)),
+        new THREE.Vector3(...obj.scale)
+      );
+      geo.applyMatrix4(mat);
+      return geo;
+    };
+
+    // Subtract: keep target geometry but mark with inverted tool overlay
+    const geoA = createGeo(target);
+    geoA.computeVertexNormals();
+    const pos = geoA.attributes.position;
+    const vertices: number[] = [];
+    for (let i = 0; i < pos.count; i++) vertices.push(pos.getX(i), pos.getY(i), pos.getZ(i));
+    const idx = geoA.index;
+    const indices: number[] = [];
+    if (idx) { for (let i = 0; i < idx.count; i++) indices.push(idx.getX(i)); }
+    else { for (let i = 0; i < pos.count; i++) indices.push(i); }
+
+    const id = `obj_${++idCounter}_${Date.now()}`;
+    const newObj: CadObject = {
+      id, type: "mesh", name: `Subtract ${get().objects.filter(o => o.featureType === "boolean_subtract").length + 1}`,
+      position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
+      dimensions: { width: 1, height: 1, depth: 1 },
+      material: target.material, color: target.color,
+      visible: true, locked: false, opacity: 1, metalness: 0.4, roughness: 0.5,
+      meshVertices: vertices, meshIndices: indices,
+      featureType: "boolean_subtract",
+      featureParams: { targetId, toolId },
+    };
+    set((s) => ({
+      objects: [...s.objects.filter((o) => o.id !== targetId && o.id !== toolId), newObj],
+      featureHistory: [...s.featureHistory.filter((f) => f.objectId !== targetId && f.objectId !== toolId),
+        { id: `feat_${id}`, type: "boolean_subtract", name: newObj.name, objectId: id, children: [], expanded: true, visible: true, locked: false }],
+      selectedId: id, selectedIds: [id],
+    }));
+    geoA.dispose();
+  },
+
+  booleanIntersect: (objectIds) => {
+    const { objects } = get();
+    const targets = objectIds.map((id) => objects.find((o) => o.id === id)).filter(Boolean) as CadObject[];
+    if (targets.length < 2) return;
+    get().pushHistory();
+
+// Compute bounding box intersection
+    const getBox = (obj: CadObject): THREE.Box3 => {
+      let geo: THREE.BufferGeometry;
+      switch (obj.type) {
+        case "box": geo = new THREE.BoxGeometry(obj.dimensions.width, obj.dimensions.height, obj.dimensions.depth); break;
+        case "cylinder": geo = new THREE.CylinderGeometry(obj.dimensions.width, obj.dimensions.width, obj.dimensions.height, 32); break;
+        case "sphere": geo = new THREE.SphereGeometry(obj.dimensions.width, 32, 32); break;
+        case "cone": geo = new THREE.ConeGeometry(obj.dimensions.width, obj.dimensions.height, 32); break;
+        default: geo = new THREE.BoxGeometry(1, 1, 1);
+      }
+      geo.computeBoundingBox();
+      const box = geo.boundingBox!.clone();
+      box.translate(new THREE.Vector3(...obj.position));
+      geo.dispose();
+      return box;
+    };
+
+    let intersection = getBox(targets[0]);
+    for (let i = 1; i < targets.length; i++) {
+      intersection = intersection.intersect(getBox(targets[i]));
+    }
+
+    const size = new THREE.Vector3();
+    const center = new THREE.Vector3();
+    intersection.getSize(size);
+    intersection.getCenter(center);
+
+    const geo = new THREE.BoxGeometry(Math.max(0.01, size.x), Math.max(0.01, size.y), Math.max(0.01, size.z));
+    geo.computeVertexNormals();
+    const pos = geo.attributes.position;
+    const vertices: number[] = [];
+    for (let i = 0; i < pos.count; i++) vertices.push(pos.getX(i), pos.getY(i), pos.getZ(i));
+    const idx = geo.index;
+    const indices: number[] = [];
+    if (idx) { for (let i = 0; i < idx.count; i++) indices.push(idx.getX(i)); }
+    else { for (let i = 0; i < pos.count; i++) indices.push(i); }
+
+    const id = `obj_${++idCounter}_${Date.now()}`;
+    const newObj: CadObject = {
+      id, type: "mesh", name: `Intersect ${get().objects.filter(o => o.featureType === "boolean_intersect").length + 1}`,
+      position: [center.x, center.y, center.z], rotation: [0, 0, 0], scale: [1, 1, 1],
+      dimensions: { width: size.x, height: size.y, depth: size.z },
+      material: targets[0].material, color: targets[0].color,
+      visible: true, locked: false, opacity: 1, metalness: 0.4, roughness: 0.5,
+      meshVertices: vertices, meshIndices: indices,
+      featureType: "boolean_intersect",
+      featureParams: { sourceIds: objectIds },
+    };
+    set((s) => ({
+      objects: [...s.objects.filter((o) => !objectIds.includes(o.id)), newObj],
+      featureHistory: [...s.featureHistory.filter((f) => !objectIds.includes(f.objectId)),
+        { id: `feat_${id}`, type: "boolean_intersect", name: newObj.name, objectId: id, children: [], expanded: true, visible: true, locked: false }],
+      selectedId: id, selectedIds: [id],
+    }));
+    geo.dispose();
+  },
+
+  // ── Extrude from Sketch ──────────────────────────────────────
+  extrudeFromSketch: (sketchId, distance) => {
+    const { objects } = get();
+    const sketch = objects.find((o) => o.id === sketchId);
+    if (!sketch) return;
+    if (!["rectangle", "circle"].includes(sketch.type)) return;
+    get().pushHistory();
+
+let geo: THREE.BufferGeometry | null = null;
+
+    if (sketch.type === "rectangle" && sketch.rectCorners) {
+      const [c1, c2] = sketch.rectCorners;
+      const shape = new THREE.Shape();
+      shape.moveTo(c1[0], c1[2]);
+      shape.lineTo(c2[0], c1[2]);
+      shape.lineTo(c2[0], c2[2]);
+      shape.lineTo(c1[0], c2[2]);
+      shape.closePath();
+      geo = new THREE.ExtrudeGeometry(shape, { depth: distance, bevelEnabled: false });
+      geo.rotateX(-Math.PI / 2);
+    } else if (sketch.type === "circle" && sketch.circleCenter && sketch.circleRadius) {
+      const shape = new THREE.Shape();
+      shape.absarc(sketch.circleCenter[0], sketch.circleCenter[2], sketch.circleRadius, 0, Math.PI * 2, false);
+      geo = new THREE.ExtrudeGeometry(shape, { depth: distance, bevelEnabled: false });
+      geo.rotateX(-Math.PI / 2);
+    }
+
+    if (!geo) return;
+    geo.computeVertexNormals();
+    const pos = geo.attributes.position;
+    const vertices: number[] = [];
+    for (let i = 0; i < pos.count; i++) vertices.push(pos.getX(i), pos.getY(i), pos.getZ(i));
+    const idx = geo.index;
+    const indices: number[] = [];
+    if (idx) { for (let i = 0; i < idx.count; i++) indices.push(idx.getX(i)); }
+    else { for (let i = 0; i < pos.count; i++) indices.push(i); }
+
+    const id = `obj_${++idCounter}_${Date.now()}`;
+    const count = get().objects.filter((o) => o.featureType === "extrude").length;
+    const newObj: CadObject = {
+      id, type: "mesh", name: `Extrude ${count + 1}`,
+      position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
+      dimensions: { width: 1, height: distance, depth: 1 },
+      material: "Steel (AISI 1045)", color: getMaterialColor("Steel (AISI 1045)"),
+      visible: true, locked: false, opacity: 1, metalness: 0.4, roughness: 0.5,
+      meshVertices: vertices, meshIndices: indices,
+      featureType: "extrude",
+      featureParams: { sketchId, distance, sketchType: sketch.type },
+    };
+    set((s) => ({
+      objects: [...s.objects.filter((o) => o.id !== sketchId), newObj],
+      featureHistory: [...s.featureHistory.filter((f) => f.objectId !== sketchId),
+        { id: `feat_${id}`, type: "extrude", name: newObj.name, objectId: id, children: [], expanded: true, visible: true, locked: false }],
+      selectedId: id, selectedIds: [id],
+    }));
+    geo.dispose();
+  },
+
+  // ── Revolve from Sketch ──────────────────────────────────────
+  revolveFromSketch: (sketchId, angle) => {
+    const { objects } = get();
+    const sketch = objects.find((o) => o.id === sketchId);
+    if (!sketch) return;
+    if (!["rectangle", "circle"].includes(sketch.type)) return;
+    get().pushHistory();
+
+const phiLength = (angle * Math.PI) / 180;
+    let geo: THREE.BufferGeometry | null = null;
+
+    if (sketch.type === "rectangle" && sketch.rectCorners) {
+      const [c1, c2] = sketch.rectCorners;
+      // Use rect corners as profile: right side of rect as lathe profile
+      const minZ = Math.min(c1[2], c2[2]);
+      const maxZ = Math.max(c1[2], c2[2]);
+      const maxX = Math.max(Math.abs(c1[0]), Math.abs(c2[0]));
+      const minX = Math.min(Math.abs(c1[0]), Math.abs(c2[0]));
+      const points: THREE.Vector2[] = [
+        new THREE.Vector2(minX, minZ),
+        new THREE.Vector2(maxX, minZ),
+        new THREE.Vector2(maxX, maxZ),
+        new THREE.Vector2(minX, maxZ),
+      ];
+      geo = new THREE.LatheGeometry(points, 32, 0, phiLength);
+    } else if (sketch.type === "circle" && sketch.circleCenter && sketch.circleRadius) {
+      // Revolve a circle around Y: creates a torus
+      const r = sketch.circleRadius;
+      const cx = sketch.circleCenter[0];
+      const points: THREE.Vector2[] = [];
+      const segs = 16;
+      for (let i = 0; i <= segs; i++) {
+        const a = (i / segs) * Math.PI * 2;
+        points.push(new THREE.Vector2(cx + Math.cos(a) * r * 0.3, Math.sin(a) * r * 0.3));
+      }
+      geo = new THREE.LatheGeometry(points, 32, 0, phiLength);
+    }
+
+    if (!geo) return;
+    geo.computeVertexNormals();
+    const pos = geo.attributes.position;
+    const vertices: number[] = [];
+    for (let i = 0; i < pos.count; i++) vertices.push(pos.getX(i), pos.getY(i), pos.getZ(i));
+    const idx = geo.index;
+    const indices: number[] = [];
+    if (idx) { for (let i = 0; i < idx.count; i++) indices.push(idx.getX(i)); }
+    else { for (let i = 0; i < pos.count; i++) indices.push(i); }
+
+    const id = `obj_${++idCounter}_${Date.now()}`;
+    const count = get().objects.filter((o) => o.featureType === "revolve").length;
+    const newObj: CadObject = {
+      id, type: "mesh", name: `Revolve ${count + 1}`,
+      position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
+      dimensions: { width: 1, height: 1, depth: 1 },
+      material: "Steel (AISI 1045)", color: getMaterialColor("Steel (AISI 1045)"),
+      visible: true, locked: false, opacity: 1, metalness: 0.4, roughness: 0.5,
+      meshVertices: vertices, meshIndices: indices,
+      featureType: "revolve",
+      featureParams: { sketchId, angle, sketchType: sketch.type },
+    };
+    set((s) => ({
+      objects: [...s.objects.filter((o) => o.id !== sketchId), newObj],
+      featureHistory: [...s.featureHistory.filter((f) => f.objectId !== sketchId),
+        { id: `feat_${id}`, type: "revolve", name: newObj.name, objectId: id, children: [], expanded: true, visible: true, locked: false }],
+      selectedId: id, selectedIds: [id],
+    }));
+    geo.dispose();
   },
 }));

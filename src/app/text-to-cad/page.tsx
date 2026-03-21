@@ -1,7 +1,8 @@
 "use client";
 import { useState, useCallback, Suspense } from "react";
 import { Canvas } from "@react-three/fiber";
-import { OrbitControls } from "@react-three/drei";
+import { OrbitControls, Grid } from "@react-three/drei";
+import Link from "next/link";
 
 // --- Types ---
 interface ParsedShape {
