@@ -27,7 +27,7 @@ interface ToolButton {
   action?: () => void;
 }
 
-const ICON_SIZE = 18;
+const ICON_SIZE = 16;
 
 const sketchTools: ToolButton[] = [
   { id: "select", icon: <MousePointer2 size={ICON_SIZE} />, label: "Select", shortcut: "Esc" },
@@ -187,10 +187,28 @@ export default function RibbonToolbar({ onExtrude, onRevolve }: { onExtrude?: ()
   const selectedId = useCadStore((s) => s.selectedId);
   const selectedIds = useCadStore((s) => s.selectedIds);
 
+  const addObject = useCadStore((s) => s.addObject);
+
   const handleToolClick = useCallback(
     (id: string) => {
       if (id === "delete") {
         useCadStore.getState().deleteSelected();
+        return;
+      }
+      // Primitive shapes: create immediately at origin and select
+      const primitiveTypes: Record<string, "box" | "cylinder" | "sphere" | "cone"> = {
+        box: "box", cylinder: "cylinder", sphere: "sphere", cone: "cone",
+      };
+      if (primitiveTypes[id]) {
+        const newId = addObject(primitiveTypes[id]);
+        const store = useCadStore.getState();
+        const obj = store.objects.find((o) => o.id === newId);
+        if (obj) {
+          store.updateObject(newId, {
+            position: [0, obj.dimensions.height / 2, 0],
+          });
+        }
+        store.selectObject(newId);
         return;
       }
       // Extrude/Revolve: open dialog
@@ -236,7 +254,7 @@ export default function RibbonToolbar({ onExtrude, onRevolve }: { onExtrude?: ()
       }
       setActiveTool(id as ToolId);
     },
-    [setActiveTool, setActiveOperation, booleanUnion, booleanSubtract, booleanIntersect, selectedId, selectedIds, onExtrude, onRevolve]
+    [setActiveTool, setActiveOperation, addObject, booleanUnion, booleanSubtract, booleanIntersect, selectedId, selectedIds, onExtrude, onRevolve, router]
   );
 
   const handleTabDoubleClick = useCallback(() => {
@@ -321,112 +339,63 @@ export default function RibbonToolbar({ onExtrude, onRevolve }: { onExtrude?: ()
         </button>
       </div>
 
-      {/* Tool buttons */}
+      {/* Tool buttons - compact icon-only with tooltips */}
       {!collapsed && (
-        <div className="px-3 py-2 flex items-start gap-1 min-h-[64px]">
+        <div className="px-2 py-1 flex items-center gap-0.5 min-h-[36px]">
           {activeTab === "view" ? (
-            /* View tab - special layout */
-            <div className="flex items-start gap-4">
-              {/* Camera views */}
-              <div className="flex flex-col gap-1">
-                <span className="text-[9px] text-slate-500 uppercase tracking-wider mb-0.5">Camera</span>
-                <div className="flex items-center gap-0.5">
-                  {cameraViews.map((view) => (
-                    <button
-                      key={view.label}
-                      onClick={() => setCameraView(view.label.toLowerCase())}
-                      title={view.shortcut ? `${view.label} (${view.shortcut})` : view.label}
-                      className="flex flex-col items-center justify-center w-[44px] h-[44px] rounded hover:bg-[#0f3460] transition-colors group"
-                    >
-                      <MonitorSmartphone size={16} className="text-slate-400 group-hover:text-white" />
-                      <span className="text-[8px] text-slate-500 group-hover:text-slate-300 mt-0.5">{view.label}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="w-px h-12 bg-[#1a1a2e]" />
-
-              {/* Display modes */}
-              <div className="flex flex-col gap-1">
-                <span className="text-[9px] text-slate-500 uppercase tracking-wider mb-0.5">Display</span>
-                <div className="flex items-center gap-0.5">
-                  {(["wireframe", "shaded", "realistic"] as const).map((mode) => (
-                    <button
-                      key={mode}
-                      onClick={() => setViewMode(mode)}
-                      title={`${mode.charAt(0).toUpperCase() + mode.slice(1)} display mode`}
-                      className={`flex flex-col items-center justify-center w-[52px] h-[44px] rounded transition-colors ${
-                        viewMode === mode
-                          ? "bg-[#00D4FF]/20 text-[#00D4FF]"
-                          : "hover:bg-[#0f3460] text-slate-400"
-                      }`}
-                    >
-                      {mode === "wireframe" ? <Grid2X2 size={16} /> : mode === "shaded" ? <Sun size={16} /> : <Moon size={16} />}
-                      <span className="text-[8px] mt-0.5 capitalize">{mode}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="w-px h-12 bg-[#1a1a2e]" />
-
-              {/* Toggles */}
-              <div className="flex flex-col gap-1">
-                <span className="text-[9px] text-slate-500 uppercase tracking-wider mb-0.5">Toggles</span>
-                <div className="flex items-center gap-0.5">
-                  <button
-                    onClick={() => setShowGrid(!showGrid)}
-                    title="Toggle grid display (G)"
-                    className={`flex flex-col items-center justify-center w-[44px] h-[44px] rounded transition-colors ${
-                      showGrid ? "bg-[#00D4FF]/20 text-[#00D4FF]" : "hover:bg-[#0f3460] text-slate-400"
-                    }`}
-                  >
-                    <Grid3X3 size={16} />
-                    <span className="text-[8px] mt-0.5">Grid</span>
-                  </button>
-                  <button
-                    onClick={() => setShowOrigin(!showOrigin)}
-                    title="Toggle origin axes display"
-                    className={`flex flex-col items-center justify-center w-[44px] h-[44px] rounded transition-colors ${
-                      showOrigin ? "bg-[#00D4FF]/20 text-[#00D4FF]" : "hover:bg-[#0f3460] text-slate-400"
-                    }`}
-                  >
-                    <Axis3D size={16} />
-                    <span className="text-[8px] mt-0.5">Origin</span>
-                  </button>
-                  <button
-                    onClick={() => setPerspectiveMode(!perspectiveMode)}
-                    className={`flex flex-col items-center justify-center w-[52px] h-[44px] rounded transition-colors ${
-                      !perspectiveMode ? "bg-[#00D4FF]/20 text-[#00D4FF]" : "hover:bg-[#0f3460] text-slate-400"
-                    }`}
-                    title="Toggle perspective/ortho (5)"
-                  >
-                    <Maximize2 size={16} />
-                    <span className="text-[8px] mt-0.5">{perspectiveMode ? "Persp" : "Ortho"}</span>
-                  </button>
-                </div>
-              </div>
+            /* View tab */
+            <div className="flex items-center gap-0.5">
+              {cameraViews.map((view) => (
+                <button
+                  key={view.label}
+                  onClick={() => setCameraView(view.label.toLowerCase())}
+                  title={view.shortcut ? `${view.label} (${view.shortcut})` : view.label}
+                  className="w-8 h-8 rounded flex items-center justify-center hover:bg-[#0f3460] transition-colors text-slate-400 hover:text-white"
+                >
+                  <MonitorSmartphone size={16} />
+                </button>
+              ))}
+              <div className="w-px h-5 bg-[#1a1a2e] mx-1" />
+              {(["wireframe", "shaded", "realistic"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  onClick={() => setViewMode(mode)}
+                  title={`${mode.charAt(0).toUpperCase() + mode.slice(1)}`}
+                  className={`w-8 h-8 rounded flex items-center justify-center transition-colors ${
+                    viewMode === mode ? "bg-[#00D4FF]/20 text-[#00D4FF]" : "hover:bg-[#0f3460] text-slate-400 hover:text-white"
+                  }`}
+                >
+                  {mode === "wireframe" ? <Grid2X2 size={16} /> : mode === "shaded" ? <Sun size={16} /> : <Moon size={16} />}
+                </button>
+              ))}
+              <div className="w-px h-5 bg-[#1a1a2e] mx-1" />
+              <button onClick={() => setShowGrid(!showGrid)} title="Grid (G)"
+                className={`w-8 h-8 rounded flex items-center justify-center transition-colors ${showGrid ? "bg-[#00D4FF]/20 text-[#00D4FF]" : "hover:bg-[#0f3460] text-slate-400"}`}>
+                <Grid3X3 size={16} />
+              </button>
+              <button onClick={() => setShowOrigin(!showOrigin)} title="Origin Axes"
+                className={`w-8 h-8 rounded flex items-center justify-center transition-colors ${showOrigin ? "bg-[#00D4FF]/20 text-[#00D4FF]" : "hover:bg-[#0f3460] text-slate-400"}`}>
+                <Axis3D size={16} />
+              </button>
+              <button onClick={() => setPerspectiveMode(!perspectiveMode)} title="Perspective/Ortho (5)"
+                className={`w-8 h-8 rounded flex items-center justify-center transition-colors ${!perspectiveMode ? "bg-[#00D4FF]/20 text-[#00D4FF]" : "hover:bg-[#0f3460] text-slate-400"}`}>
+                <Maximize2 size={16} />
+              </button>
             </div>
           ) : (
-            /* Standard tool buttons */
+            /* Standard tool buttons - icon only */
             currentTools.map((tool) => (
               <button
                 key={tool.id}
                 onClick={() => tool.action ? tool.action() : handleToolClick(tool.id)}
                 title={tool.shortcut ? `${tool.label} (${tool.shortcut})` : tool.label}
-                className={`flex flex-col items-center justify-center w-[48px] h-[52px] rounded transition-colors group ${
+                className={`w-8 h-8 rounded flex items-center justify-center transition-colors ${
                   activeTool === tool.id
                     ? "bg-[#00D4FF]/20 text-[#00D4FF]"
                     : "hover:bg-[#0f3460] text-slate-400 hover:text-white"
                 }`}
               >
-                <div className="w-7 h-7 flex items-center justify-center">
-                  {tool.icon}
-                </div>
-                <span className="text-[9px] mt-0.5 leading-none text-center whitespace-nowrap">
-                  {tool.label}
-                </span>
+                {tool.icon}
               </button>
             ))
           )}
