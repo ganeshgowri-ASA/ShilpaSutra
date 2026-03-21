@@ -6,7 +6,6 @@ import {
   type RibbonTab,
   type ToolId,
 } from "@/stores/cad-store";
-import { useRouter } from "next/navigation";
 import {
   MousePointer2, Pencil, Square, Circle, Spline, Triangle,
   Ruler, Lock, Box, Cylinder, RotateCw, Layers,
@@ -117,7 +116,7 @@ const cameraViews = [
   { label: "Iso", shortcut: "0" },
 ];
 
-export default function RibbonToolbar() {
+export default function RibbonToolbar({ onExtrude, onRevolve }: { onExtrude?: () => void; onRevolve?: () => void } = {}) {
   const router = useRouter();
   const saveProject = useCallback(() => {
     const state = useCadStore.getState();

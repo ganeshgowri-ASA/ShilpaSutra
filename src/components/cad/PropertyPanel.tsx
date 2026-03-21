@@ -278,22 +278,8 @@ export default function PropertyPanel() {
   const selected = objects.find((o) => o.id === selectedId);
   const sketchTypes = ["line", "arc", "circle", "rectangle"];
 
-  if (collapsed) {
-    return (
-      <div className="w-10 bg-[#1a1a2e] border-l border-[#16213e] flex flex-col items-center pt-2 shrink-0">
-        <button
-          onClick={() => setCollapsed(false)}
-          className="w-8 h-8 rounded flex items-center justify-center text-slate-500 hover:text-white hover:bg-[#0f3460] transition-colors"
-          title="Expand Properties"
-        >
-          <PanelRight size={16} />
-        </button>
-      </div>
-    );
-  }
-
   return (
-    <div className="w-[280px] bg-[#1a1a2e] border-l border-[#16213e] flex flex-col shrink-0 select-none">
+    <div className="w-full bg-[#1a1a2e] flex flex-col shrink-0 select-none">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-[#16213e]">
         <div className="flex items-center gap-1.5">
