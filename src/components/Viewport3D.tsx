@@ -302,16 +302,31 @@ function CadCircle({ obj }: { obj: CadObject }) {
     if (!obj.circleCenter || !obj.circleRadius) return [];
     const segments = 64;
     const points: [number, number, number][] = [];
+    const cp = obj.sketchPlane || "xz";
     for (let i = 0; i <= segments; i++) {
       const angle = (i / segments) * Math.PI * 2;
-      points.push([
-        obj.circleCenter[0] + Math.cos(angle) * obj.circleRadius,
-        SKETCH_Y,
-        obj.circleCenter[2] + Math.sin(angle) * obj.circleRadius,
-      ]);
+      if (cp === "xy") {
+        points.push([
+          obj.circleCenter[0] + Math.cos(angle) * obj.circleRadius,
+          obj.circleCenter[1] + Math.sin(angle) * obj.circleRadius,
+          obj.circleCenter[2],
+        ]);
+      } else if (cp === "yz") {
+        points.push([
+          obj.circleCenter[0],
+          obj.circleCenter[1] + Math.cos(angle) * obj.circleRadius,
+          obj.circleCenter[2] + Math.sin(angle) * obj.circleRadius,
+        ]);
+      } else {
+        points.push([
+          obj.circleCenter[0] + Math.cos(angle) * obj.circleRadius,
+          SKETCH_Y,
+          obj.circleCenter[2] + Math.sin(angle) * obj.circleRadius,
+        ]);
+      }
     }
     return points;
-  }, [obj.circleCenter, obj.circleRadius]);
+  }, [obj.circleCenter, obj.circleRadius, obj.sketchPlane]);
 
   if (circlePoints.length < 2) return null;
   if (obj.visible === false) return null;
@@ -349,6 +364,26 @@ function CadRectangle({ obj }: { obj: CadObject }) {
   const rectPoints = useMemo(() => {
     if (!obj.rectCorners) return [];
     const [c1, c2] = obj.rectCorners;
+    const rp = obj.sketchPlane || "xz";
+    if (rp === "xy") {
+      return [
+        [c1[0], c1[1], c1[2]] as [number, number, number],
+        [c2[0], c1[1], c1[2]] as [number, number, number],
+        [c2[0], c2[1], c1[2]] as [number, number, number],
+        [c1[0], c2[1], c1[2]] as [number, number, number],
+        [c1[0], c1[1], c1[2]] as [number, number, number],
+      ];
+    }
+    if (rp === "yz") {
+      return [
+        [c1[0], c1[1], c1[2]] as [number, number, number],
+        [c1[0], c1[1], c2[2]] as [number, number, number],
+        [c1[0], c2[1], c2[2]] as [number, number, number],
+        [c1[0], c2[1], c1[2]] as [number, number, number],
+        [c1[0], c1[1], c1[2]] as [number, number, number],
+      ];
+    }
+    // xz (default)
     return [
       [c1[0], SKETCH_Y, c1[2]] as [number, number, number],
       [c2[0], SKETCH_Y, c1[2]] as [number, number, number],
@@ -356,7 +391,7 @@ function CadRectangle({ obj }: { obj: CadObject }) {
       [c1[0], SKETCH_Y, c2[2]] as [number, number, number],
       [c1[0], SKETCH_Y, c1[2]] as [number, number, number],
     ];
-  }, [obj.rectCorners]);
+  }, [obj.rectCorners, obj.sketchPlane]);
 
   if (rectPoints.length < 4) return null;
   if (obj.visible === false) return null;
@@ -689,7 +724,9 @@ function SketchDrawTools() {
       if (clickPoints.length === 0) {
         setClickPoints([p]);
       } else {
-        addLine([clickPoints[0], p]);
+        const id = addLine([clickPoints[0], p]);
+        // Store which plane this line belongs to
+        useCadStore.getState().updateObject(id, { sketchPlane: plane });
         // If construction mode, mark the line differently (via color)
         if (isConstructionMode) {
           const state = useCadStore.getState();
@@ -716,7 +753,8 @@ function SketchDrawTools() {
               Math.pow(arcPts[0][2] - arcPts[Math.floor(arcPts.length / 2)][2], 2)
             ) / 2
           : 1;
-        addArc(newPoints, radius);
+        const id = addArc(newPoints, radius);
+        useCadStore.getState().updateObject(id, { sketchPlane: plane });
         setClickPoints([]);
         setPreviewPoint(null);
       }
@@ -725,11 +763,15 @@ function SketchDrawTools() {
         setClickPoints([p]);
       } else {
         const center = clickPoints[0];
-        const radius = Math.sqrt(
-          Math.pow(p[0] - center[0], 2) + Math.pow(p[2] - center[2], 2)
-        );
+        // Radius must be computed in the 2D axes of the active plane
+        const radius = plane === "xy"
+          ? Math.sqrt(Math.pow(p[0] - center[0], 2) + Math.pow(p[1] - center[1], 2))
+          : plane === "yz"
+          ? Math.sqrt(Math.pow(p[1] - center[1], 2) + Math.pow(p[2] - center[2], 2))
+          : Math.sqrt(Math.pow(p[0] - center[0], 2) + Math.pow(p[2] - center[2], 2));
         if (radius > 0.05) {
-          addCircle(center, radius);
+          const id = addCircle(center, radius);
+          useCadStore.getState().updateObject(id, { sketchPlane: plane });
         }
         setClickPoints([]);
         setPreviewPoint(null);
@@ -738,7 +780,8 @@ function SketchDrawTools() {
       if (clickPoints.length === 0) {
         setClickPoints([p]);
       } else {
-        addRectangle(clickPoints[0], p);
+        const id = addRectangle(clickPoints[0], p);
+        useCadStore.getState().updateObject(id, { sketchPlane: plane });
         setClickPoints([]);
         setPreviewPoint(null);
       }
@@ -808,20 +851,23 @@ function SketchDrawTools() {
 
     if (activeTool === "circle") {
       const center = clickPoints[0];
-      const radius = Math.sqrt(
-        Math.pow(previewPoint[0] - center[0], 2) +
-        Math.pow(previewPoint[2] - center[2], 2)
-      );
+      const radius = plane === "xy"
+        ? Math.sqrt(Math.pow(previewPoint[0] - center[0], 2) + Math.pow(previewPoint[1] - center[1], 2))
+        : plane === "yz"
+        ? Math.sqrt(Math.pow(previewPoint[1] - center[1], 2) + Math.pow(previewPoint[2] - center[2], 2))
+        : Math.sqrt(Math.pow(previewPoint[0] - center[0], 2) + Math.pow(previewPoint[2] - center[2], 2));
       if (radius < 0.05) return null;
       const segments = 64;
       const pts: [number, number, number][] = [];
       for (let i = 0; i <= segments; i++) {
         const angle = (i / segments) * Math.PI * 2;
-        pts.push([
-          center[0] + Math.cos(angle) * radius,
-          SKETCH_Y,
-          center[2] + Math.sin(angle) * radius,
-        ]);
+        if (plane === "xy") {
+          pts.push([center[0] + Math.cos(angle) * radius, center[1] + Math.sin(angle) * radius, center[2]]);
+        } else if (plane === "yz") {
+          pts.push([center[0], center[1] + Math.cos(angle) * radius, center[2] + Math.sin(angle) * radius]);
+        } else {
+          pts.push([center[0] + Math.cos(angle) * radius, SKETCH_Y, center[2] + Math.sin(angle) * radius]);
+        }
       }
       return (
         <>
@@ -900,15 +946,15 @@ function SketchDrawTools() {
 
   return (
     <>
+      {/* Invisible hit-plane: must NOT use visible={false} — R3F filters those from raycasting */}
       <mesh
         rotation={planeRotation}
         position={planeOffset}
         onClick={handleClick}
         onPointerMove={handleMove}
-        visible={false}
       >
         <planeGeometry args={[100, 100]} />
-        <meshBasicMaterial transparent opacity={0} />
+        <meshBasicMaterial transparent opacity={0} side={THREE.DoubleSide} depthWrite={false} />
       </mesh>
       {renderPreview()}
       {/* Click points */}
