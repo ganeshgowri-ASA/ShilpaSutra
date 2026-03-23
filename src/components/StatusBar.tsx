@@ -69,33 +69,39 @@ export default function StatusBar() {
   const isDesigner = pathname === "/designer";
 
   return (
-    <div className="h-6 bg-[#161b22] border-t border-[#21262d] flex items-center px-3 gap-0 shrink-0 z-40">
+    <div className="h-7 bg-[#0d1117] border-t border-[#21262d] flex items-center px-3 gap-0 shrink-0 z-40">
       {isDesigner ? (
         <DesignerStatusInfo />
       ) : (
         <span className="text-[10px] text-slate-500 flex-1 truncate px-0">{helpText}</span>
       )}
 
-      <div className="flex items-center gap-2 ml-auto">
+      <div className="flex items-center gap-2.5 ml-auto">
         {!isDesigner && (
           <span className="text-[9px] text-slate-600 font-mono flex items-center gap-1">
-            <Keyboard size={9} />
+            <Keyboard size={9} className="text-slate-700" />
             Press ? for shortcuts
           </span>
         )}
         {isDesigner && (
           <span className="text-[9px] text-slate-600 font-mono flex items-center gap-1">
-            <Keyboard size={9} />
-            Ctrl+Z Undo · Ctrl+D Dup · Del Remove · F Fit
+            <Keyboard size={9} className="text-slate-700" />
+            <span className="text-slate-500">Ctrl+Z</span> Undo
+            <span className="text-[#21262d] mx-0.5">|</span>
+            <span className="text-slate-500">Ctrl+D</span> Dup
+            <span className="text-[#21262d] mx-0.5">|</span>
+            <span className="text-slate-500">Del</span> Remove
+            <span className="text-[#21262d] mx-0.5">|</span>
+            <span className="text-slate-500">F</span> Fit
           </span>
         )}
-        <div className="w-px h-3 bg-[#21262d]" />
-        <span className="flex items-center gap-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-          <span className="text-[9px] text-slate-500">Online</span>
+        <div className="w-px h-3.5 bg-[#21262d]" />
+        <span className="flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-green-400 pulse-ring" />
+          <span className="text-[9px] text-green-500/80 font-medium">Online</span>
         </span>
-        <div className="w-px h-3 bg-[#21262d]" />
-        <span className="text-[9px] text-slate-600 font-mono">v2.0</span>
+        <div className="w-px h-3.5 bg-[#21262d]" />
+        <span className="text-[9px] text-slate-600 font-mono font-medium">v2.0</span>
         <AboutButton />
       </div>
     </div>

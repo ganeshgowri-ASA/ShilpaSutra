@@ -60,7 +60,7 @@ function NumericInput({
   return (
     <div className="flex items-center gap-2">
       <span
-        className="text-[10px] text-slate-500 w-6 cursor-ew-resize select-none"
+        className="text-[10px] text-slate-500 w-6 cursor-ew-resize select-none font-semibold hover:text-[#00D4FF] transition-colors duration-150"
         onMouseDown={handleMouseDown}
       >
         {label}
@@ -88,9 +88,9 @@ function NumericInput({
               onChange(min !== undefined ? Math.max(min, newVal) : newVal);
             }
           }}
-          className="w-full bg-[#0d1117] text-[11px] text-white rounded px-2 py-1 border border-[#16213e] focus:border-[#00D4FF]/50 outline-none text-right pr-8 font-mono"
+          className="w-full bg-[#0d1117] text-[11px] text-white rounded-md px-2 py-1.5 border border-[#21262d] focus:border-[#00D4FF]/40 outline-none text-right pr-8 font-mono transition-colors duration-150 hover:border-[#30363d]"
         />
-        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] text-slate-600">
+        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[8px] text-slate-600 font-medium">
           {unit}
         </span>
       </div>
@@ -279,43 +279,43 @@ export default function PropertyPanel() {
   const sketchTypes = ["line", "arc", "circle", "rectangle"];
 
   return (
-    <div className="w-full bg-[#1a1a2e] flex flex-col shrink-0 select-none">
+    <div className="w-full bg-[#161b22] flex flex-col shrink-0 select-none">
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-[#16213e]">
-        <div className="flex items-center gap-1.5">
+      <div className="flex items-center justify-between px-3 py-2.5 border-b border-[#21262d]">
+        <div className="flex items-center gap-2">
           <Settings2 size={14} className="text-[#00D4FF]" />
-          <span className="text-xs font-semibold text-slate-300">Properties</span>
+          <span className="text-[11px] font-bold text-slate-200 tracking-wide">Properties</span>
         </div>
         <button
           onClick={() => setCollapsed(true)}
-          className="w-6 h-6 rounded flex items-center justify-center text-slate-500 hover:text-white hover:bg-[#0f3460] transition-colors"
+          className="w-6 h-6 rounded-md flex items-center justify-center text-slate-500 hover:text-white hover:bg-[#21262d] transition-all duration-150"
         >
           <PanelRightClose size={14} />
         </button>
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto px-3 py-2 space-y-3">
+      <div className="flex-1 overflow-y-auto thin-scrollbar px-3 py-3 space-y-3">
         {selected ? (
           <>
             {/* Object Name */}
-            <div className="bg-[#0d1117] rounded-lg p-3 border border-[#16213e]">
+            <div className="bg-[#0d1117]/80 rounded-lg p-3 border border-[#21262d]">
               <div className="text-[10px] text-slate-500 mb-1">Name</div>
               <input
                 type="text"
                 value={selected.name}
                 onChange={(e) => updateObject(selected.id, { name: e.target.value })}
-                className="w-full bg-[#1a1a2e] text-sm font-semibold text-white rounded px-2 py-1 border border-[#16213e] focus:border-[#00D4FF]/50 outline-none"
+                className="w-full bg-[#161b22] text-sm font-semibold text-white rounded-md px-2.5 py-1.5 border border-[#21262d] focus:border-[#00D4FF]/40 outline-none hover:border-[#30363d] transition-colors duration-150"
               />
             </div>
 
             {!sketchTypes.includes(selected.type) && (
               <>
                 {/* Transform */}
-                <div className="bg-[#0d1117] rounded-lg p-3 border border-[#16213e]">
+                <div className="bg-[#0d1117]/80 rounded-lg p-3 border border-[#21262d]">
                   <div className="flex items-center gap-1.5 mb-2">
                     <Move size={12} className="text-[#00D4FF]" />
-                    <span className="text-[10px] text-slate-400 font-medium">Position</span>
+                    <span className="text-[10px] text-slate-400 font-semibold tracking-wide">Position</span>
                   </div>
                   <div className="space-y-1.5">
                     {(["X", "Y", "Z"] as const).map((axis, i) => (
@@ -334,10 +334,10 @@ export default function PropertyPanel() {
                   </div>
                 </div>
 
-                <div className="bg-[#0d1117] rounded-lg p-3 border border-[#16213e]">
+                <div className="bg-[#0d1117]/80 rounded-lg p-3 border border-[#21262d]">
                   <div className="flex items-center gap-1.5 mb-2">
                     <RotateCw size={12} className="text-[#00D4FF]" />
-                    <span className="text-[10px] text-slate-400 font-medium">Rotation</span>
+                    <span className="text-[10px] text-slate-400 font-semibold tracking-wide">Rotation</span>
                   </div>
                   <div className="space-y-1.5">
                     {(["X", "Y", "Z"] as const).map((axis, i) => (
@@ -358,10 +358,10 @@ export default function PropertyPanel() {
                 </div>
 
                 {/* Dimensions */}
-                <div className="bg-[#0d1117] rounded-lg p-3 border border-[#16213e]">
+                <div className="bg-[#0d1117]/80 rounded-lg p-3 border border-[#21262d]">
                   <div className="flex items-center gap-1.5 mb-2">
                     <Ruler size={12} className="text-[#00D4FF]" />
-                    <span className="text-[10px] text-slate-400 font-medium">Dimensions</span>
+                    <span className="text-[10px] text-slate-400 font-semibold tracking-wide">Dimensions</span>
                   </div>
                   <div className="space-y-1.5">
                     {selected.type === "sphere" ? (
@@ -442,10 +442,10 @@ export default function PropertyPanel() {
                 </div>
 
                 {/* Material */}
-                <div className="bg-[#0d1117] rounded-lg p-3 border border-[#16213e]">
+                <div className="bg-[#0d1117]/80 rounded-lg p-3 border border-[#21262d]">
                   <div className="flex items-center gap-1.5 mb-2">
                     <Palette size={12} className="text-[#00D4FF]" />
-                    <span className="text-[10px] text-slate-400 font-medium">Material</span>
+                    <span className="text-[10px] text-slate-400 font-semibold tracking-wide">Material</span>
                   </div>
                   <select
                     value={selected.material}
@@ -455,7 +455,7 @@ export default function PropertyPanel() {
                         color: getMaterialColor(e.target.value),
                       })
                     }
-                    className="w-full bg-[#1a1a2e] text-[11px] text-white rounded px-2 py-1.5 border border-[#16213e] focus:border-[#00D4FF]/50 outline-none mb-2"
+                    className="w-full bg-[#161b22] text-[11px] text-white rounded-md px-2 py-1.5 border border-[#21262d] focus:border-[#00D4FF]/40 outline-none mb-2 hover:border-[#30363d] transition-colors duration-150 cursor-pointer"
                   >
                     {materialList.map((m) => (
                       <option key={m} value={m}>{m}</option>
@@ -492,10 +492,10 @@ export default function PropertyPanel() {
                 </div>
 
                 {/* Info */}
-                <div className="bg-[#0d1117] rounded-lg p-3 border border-[#16213e]">
+                <div className="bg-[#0d1117]/80 rounded-lg p-3 border border-[#21262d]">
                   <div className="flex items-center gap-1.5 mb-2">
                     <Info size={12} className="text-[#00D4FF]" />
-                    <span className="text-[10px] text-slate-400 font-medium">Info</span>
+                    <span className="text-[10px] text-slate-400 font-semibold tracking-wide">Info</span>
                   </div>
                   <div className="space-y-1 text-[10px]">
                     <div className="flex justify-between">
@@ -523,10 +523,10 @@ export default function PropertyPanel() {
 
             {/* Sketch entity info - EDITABLE */}
             {sketchTypes.includes(selected.type) && (
-              <div className="bg-[#0d1117] rounded-lg p-3 border border-[#16213e]">
+              <div className="bg-[#0d1117]/80 rounded-lg p-3 border border-[#21262d]">
                 <div className="flex items-center gap-1.5 mb-2">
                   <Ruler size={12} className="text-[#00D4FF]" />
-                  <span className="text-[10px] text-slate-400 font-medium">Sketch Entity</span>
+                  <span className="text-[10px] text-slate-400 font-semibold tracking-wide">Sketch Entity</span>
                 </div>
                 <div className="text-[10px] text-slate-500 space-y-2">
                   <div>Type: <span className="text-white capitalize">{selected.type}</span></div>
@@ -685,27 +685,27 @@ export default function PropertyPanel() {
             )}
 
             {/* Export & Delete */}
-            <div className="space-y-2">
+            <div className="space-y-2 pt-1">
               <button
                 onClick={exportSceneSTL}
-                className="w-full flex items-center justify-center gap-1.5 text-[11px] py-2 rounded bg-[#0f3460] text-slate-300 hover:bg-[#00D4FF]/20 hover:text-[#00D4FF] border border-[#16213e] transition-colors"
+                className="w-full flex items-center justify-center gap-1.5 text-[11px] font-medium py-2 rounded-lg bg-[#21262d] text-slate-300 hover:bg-[#00D4FF]/15 hover:text-[#00D4FF] border border-[#30363d] hover:border-[#00D4FF]/30 transition-all duration-150"
               >
                 <Download size={12} /> Export STL
               </button>
               <button
                 onClick={() => deleteObject(selected.id)}
-                className="w-full text-[11px] py-2 rounded bg-red-900/20 text-red-400 hover:bg-red-900/40 border border-red-900/30 transition-colors"
+                className="w-full text-[11px] font-medium py-2 rounded-lg bg-red-500/5 text-red-400/80 hover:bg-red-500/15 hover:text-red-400 border border-red-500/15 hover:border-red-500/30 transition-all duration-150"
               >
                 Delete Object
               </button>
             </div>
           </>
         ) : (
-          <div className="bg-[#0d1117] rounded-lg p-4 border border-[#16213e] text-center">
-            <Settings2 size={24} className="text-slate-600 mx-auto mb-2" />
-            <div className="text-[11px] text-slate-500">No Selection</div>
-            <div className="text-[10px] text-slate-600 mt-1">
-              Click an object to see its properties
+          <div className="bg-[#0d1117]/50 rounded-lg p-6 border border-[#21262d] text-center">
+            <Settings2 size={28} className="text-slate-700 mx-auto mb-3" />
+            <div className="text-[11px] text-slate-500 font-medium">No Selection</div>
+            <div className="text-[10px] text-slate-600 mt-1.5 leading-relaxed">
+              Click an object in the viewport<br/>or Feature Tree to inspect
             </div>
           </div>
         )}

@@ -99,28 +99,28 @@ export default function SketchToolbar({ visible, onSelectPlane }: SketchToolbarP
   if (!visible && !isInSketchMode) return null;
 
   return (
-    <div className="absolute top-2 left-1/2 -translate-x-1/2 z-10 pointer-events-auto">
-      <div className="bg-[#1a1a2e]/95 border border-[#16213e] rounded-lg backdrop-blur-sm shadow-xl">
+    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 pointer-events-auto animate-scale-in">
+      <div className="bg-[#161b22]/97 border border-[#30363d] rounded-xl backdrop-blur-md shadow-2xl shadow-black/40">
         {/* Sketch plane selector */}
-        <div className="flex items-center gap-1 px-2 py-1.5 border-b border-[#16213e]">
-          <span className="text-[9px] text-slate-500 uppercase tracking-wider mr-1">Sketch Plane:</span>
+        <div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-[#21262d]">
+          <span className="text-[8px] text-slate-500 uppercase tracking-widest font-semibold mr-1">Plane</span>
           <div className="relative">
             <button
               onClick={() => setShowPlaneSelector(!showPlaneSelector)}
-              className="text-[10px] text-[#00D4FF] bg-[#00D4FF]/10 border border-[#00D4FF]/30 rounded px-2 py-0.5 hover:bg-[#00D4FF]/20 transition-colors"
+              className="text-[10px] text-[#00D4FF] bg-[#00D4FF]/10 border border-[#00D4FF]/25 rounded-md px-2.5 py-0.5 hover:bg-[#00D4FF]/20 hover:border-[#00D4FF]/40 transition-all duration-150 font-semibold"
             >
               {sketchPlane === "face" ? "Face" : sketchPlane.toUpperCase()}
             </button>
             {showPlaneSelector && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setShowPlaneSelector(false)} />
-                <div className="absolute top-full left-0 mt-1 bg-[#1a1a2e] border border-[#16213e] rounded shadow-xl py-1 z-50">
+                <div className="absolute top-full left-0 mt-1.5 bg-[#161b22] border border-[#30363d] rounded-lg shadow-2xl shadow-black/50 py-1 z-50 min-w-[120px] animate-scale-in">
                   {(["xy", "xz", "yz", "face"] as const).map((p) => (
                     <button
                       key={p}
                       onClick={() => handlePlaneChange(p)}
-                      className={`w-full px-3 py-1 text-[10px] text-left hover:bg-[#0f3460] transition-colors ${
-                        sketchPlane === p ? "text-[#00D4FF]" : "text-slate-400"
+                      className={`w-full px-3 py-1.5 text-[10px] text-left hover:bg-[#21262d] transition-all duration-150 ${
+                        sketchPlane === p ? "text-[#00D4FF] bg-[#00D4FF]/5" : "text-slate-400"
                       }`}
                     >
                       {p === "face" ? "Select Face" : `${p.toUpperCase()} Plane`}
@@ -131,97 +131,107 @@ export default function SketchToolbar({ visible, onSelectPlane }: SketchToolbarP
             )}
           </div>
 
-          <div className="w-px h-4 bg-[#16213e] mx-1" />
+          <div className="w-px h-4 bg-[#21262d] mx-1" />
 
           {/* Auto-constraints toggle */}
-          <label className="flex items-center gap-1 cursor-pointer">
+          <label className="flex items-center gap-1.5 cursor-pointer group">
+            <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center transition-all duration-150 ${
+              autoConstraints
+                ? "bg-[#00D4FF]/20 border-[#00D4FF]/50"
+                : "border-[#30363d] group-hover:border-[#484f58]"
+            }`}>
+              {autoConstraints && <span className="text-[#00D4FF] text-[8px] font-bold">&#10003;</span>}
+            </div>
             <input
               type="checkbox"
               checked={autoConstraints}
               onChange={(e) => setAutoConstraints(e.target.checked)}
-              className="w-3 h-3 rounded border-[#16213e]"
+              className="sr-only"
             />
-            <span className="text-[9px] text-slate-400">Auto-Constrain</span>
+            <span className="text-[9px] text-slate-400 group-hover:text-slate-300 transition-colors">Auto-Constrain</span>
           </label>
 
-          <div className="w-px h-4 bg-[#16213e] mx-1" />
+          <div className="w-px h-4 bg-[#21262d] mx-1" />
 
           {/* Exit sketch */}
           <button
             onClick={() => setActiveTool("select")}
-            className="text-[10px] text-slate-400 hover:text-red-400 flex items-center gap-0.5 transition-colors"
+            className="text-[10px] text-slate-400 hover:text-red-400 flex items-center gap-1 transition-all duration-150 px-1.5 py-0.5 rounded-md hover:bg-red-500/10"
           >
             <X size={10} /> Exit
           </button>
         </div>
 
         {/* Tool buttons */}
-        <div className="flex items-center px-1 py-1 gap-0.5">
+        <div className="flex items-center px-1.5 py-1.5 gap-0.5">
           {/* Select */}
           <button
             onClick={() => setActiveTool("select")}
-            className={`flex flex-col items-center justify-center w-[38px] h-[40px] rounded transition-all duration-150 ${
+            className={`flex flex-col items-center justify-center w-[40px] h-[42px] rounded-lg transition-all duration-150 ${
               activeTool === "select"
-                ? "bg-[#00D4FF]/20 text-[#00D4FF] border-b-2 border-[#00D4FF]"
-                : "hover:bg-[#0f3460] text-slate-400 hover:text-white hover:scale-105"
+                ? "bg-[#00D4FF]/15 text-[#00D4FF] shadow-glow-sm"
+                : "hover:bg-[#21262d] text-slate-400 hover:text-white"
             }`}
             title="Select (Esc)"
           >
-            <MousePointer2 size={14} />
-            <span className="text-[8px] mt-0.5">Select</span>
+            <MousePointer2 size={15} />
+            <span className="text-[7px] mt-0.5 font-medium">Select</span>
           </button>
 
-          <div className="w-px h-8 bg-[#16213e]" />
+          <div className="w-px h-8 bg-[#21262d] mx-0.5" />
 
           {/* Sketch entities */}
           {sketchEntities.map((entity) => (
             <button
               key={entity.id}
               onClick={() => handleEntityClick(entity)}
-              className={`flex flex-col items-center justify-center w-[38px] h-[40px] rounded transition-all duration-150 ${
+              className={`group flex flex-col items-center justify-center w-[40px] h-[42px] rounded-lg transition-all duration-150 ${
                 activeTool === entity.toolId
-                  ? "bg-[#00D4FF]/20 text-[#00D4FF] border-b-2 border-[#00D4FF]"
-                  : "hover:bg-[#0f3460] text-slate-400 hover:text-white hover:scale-105"
+                  ? "bg-[#00D4FF]/15 text-[#00D4FF] shadow-glow-sm"
+                  : "hover:bg-[#21262d] text-slate-400 hover:text-white"
               }`}
               title={entity.shortcut ? `${entity.label} (${entity.shortcut})` : entity.label}
             >
               {entity.icon}
-              <span className="text-[8px] mt-0.5">{entity.label}</span>
+              <span className="text-[7px] mt-0.5 font-medium">{entity.label}</span>
+              {entity.shortcut && (
+                <span className="absolute -top-0.5 -right-0.5 text-[7px] text-slate-600 font-mono opacity-0 group-hover:opacity-100 transition-opacity bg-[#0d1117] rounded px-0.5">{entity.shortcut}</span>
+              )}
             </button>
           ))}
 
-          <div className="w-px h-8 bg-[#16213e]" />
+          <div className="w-px h-8 bg-[#21262d] mx-0.5" />
 
           {/* Construction mode toggle */}
           <button
             onClick={() => setIsConstructionMode(!isConstructionMode)}
-            className={`flex flex-col items-center justify-center w-[38px] h-[40px] rounded transition-all duration-150 ${
+            className={`flex flex-col items-center justify-center w-[40px] h-[42px] rounded-lg transition-all duration-150 ${
               isConstructionMode
-                ? "bg-cyan-500/20 text-cyan-400 border-b-2 border-cyan-400"
-                : "hover:bg-[#0f3460] text-slate-400 hover:text-white hover:scale-105"
+                ? "bg-cyan-500/15 text-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.12)]"
+                : "hover:bg-[#21262d] text-slate-400 hover:text-white"
             }`}
             title="Construction Mode (toggle between geometry/construction)"
           >
-            <Construction size={14} />
-            <span className="text-[8px] mt-0.5">Constr.</span>
+            <Construction size={15} />
+            <span className="text-[7px] mt-0.5 font-medium">Constr.</span>
           </button>
 
-          <div className="w-px h-8 bg-[#16213e]" />
+          <div className="w-px h-8 bg-[#21262d] mx-0.5" />
 
           {/* Sketch operations */}
           {sketchOperations.map((op) => (
             <button
               key={op.id}
               onClick={() => handleOpClick(op.id)}
-              className={`flex flex-col items-center justify-center w-[38px] h-[40px] rounded transition-all duration-150 ${
+              className={`flex flex-col items-center justify-center w-[40px] h-[42px] rounded-lg transition-all duration-150 ${
                 activeOp === op.id
-                  ? "bg-orange-500/20 text-orange-400 border-b-2 border-orange-400"
-                  : "hover:bg-[#0f3460] text-slate-400 hover:text-white hover:scale-105"
+                  ? "bg-orange-500/15 text-orange-400 shadow-[0_0_8px_rgba(249,115,22,0.12)]"
+                  : "hover:bg-[#21262d] text-slate-400 hover:text-white"
               }`}
               title={op.label}
             >
               {op.icon}
-              <span className="text-[8px] mt-0.5">{op.label}</span>
+              <span className="text-[7px] mt-0.5 font-medium">{op.label}</span>
             </button>
           ))}
         </div>
