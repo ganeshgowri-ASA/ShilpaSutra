@@ -302,25 +302,7 @@ function SketchOverlayInner({ containerRef }: SketchOverlayProps) {
         </div>
       )}
 
-      {/* ── Constraint symbols on existing geometry ── */}
-      {/* These are rendered via the ConstraintIndicators component in Three.js */}
-      {/* Here we show additional 2D constraint symbols for sketch entities */}
-      {(objects ?? []).map((obj) => {
-        if (!obj?.visible) return null;
-        const symbols: { symbol: string; color: string }[] = [];
-
-        if (obj.type === "line" && obj.linePoints && obj.linePoints.length === 2) {
-          const [p1, p2] = obj.linePoints;
-          const dx = Math.abs(p2[0] - p1[0]);
-          const dz = Math.abs(p2[2] - p1[2]);
-          if (dx < 0.01 && dz > 0.1) symbols.push({ symbol: "V", color: "#4488ff" });
-          if (dz < 0.01 && dx > 0.1) symbols.push({ symbol: "H", color: "#44ff88" });
-        }
-
-        // We can't easily project 3D→2D without camera info here,
-        // so constraint symbols on actual geometry are handled via Three.js Html component
-        return null;
-      })}
+      {/* Constraint symbols on geometry are rendered via ConstraintIndicators in Three.js */}
 
       {/* ── Active sketch plane border highlight ── */}
       {sketchPlane && (
