@@ -1,8 +1,51 @@
 "use client";
-import { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef, Component, type ErrorInfo, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import { useCadStore } from "@/stores/cad-store";
 import { Package } from "lucide-react";
+
+/* ── Error Boundary to prevent full-page crashes ── */
+class ViewportErrorBoundary extends Component<
+  { children: ReactNode; fallback?: ReactNode },
+  { hasError: boolean; error: Error | null }
+> {
+  constructor(props: { children: ReactNode; fallback?: ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error("Designer component error:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        this.props.fallback ?? (
+          <div className="flex-1 flex items-center justify-center bg-[#0a0a1a] text-slate-400">
+            <div className="text-center p-6">
+              <div className="text-red-400 text-sm font-medium mb-2">Component Error</div>
+              <div className="text-xs text-slate-500 mb-3 max-w-sm">
+                {this.state.error?.message || "An unexpected error occurred"}
+              </div>
+              <button
+                onClick={() => this.setState({ hasError: false, error: null })}
+                className="text-xs px-3 py-1.5 rounded bg-[#1a1a2e] border border-[#16213e] text-slate-300 hover:text-white hover:border-[#00D4FF]/40 transition-colors"
+              >
+                Retry
+              </button>
+            </div>
+          </div>
+        )
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const Viewport3D = dynamic(() => import("@/components/Viewport3D"), {
   ssr: false,
@@ -141,10 +184,14 @@ export default function DesignerPage() {
         {/* Center: 3D Viewport - HERO element, takes all remaining space */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
           <div className="flex-1 relative min-w-0" ref={viewportRef}>
-            <Viewport3D />
+            <ViewportErrorBoundary>
+              <Viewport3D />
+            </ViewportErrorBoundary>
 
             {/* Professional sketch overlay (crosshair, dimensions, snap, dynamic input) */}
-            <SketchOverlay containerRef={viewportRef} />
+            <ViewportErrorBoundary fallback={null}>
+              <SketchOverlay containerRef={viewportRef} />
+            </ViewportErrorBoundary>
 
             {/* Sketch Toolbar (floating, top center) */}
             <SketchToolbar visible={isSketchMode} />
@@ -178,13 +225,25 @@ export default function DesignerPage() {
                 <>
                   <span className="text-[10px] text-slate-500 mr-1">Sketch:</span>
                   {(["xy", "xz", "yz"] as const).map((plane) => {
-                    const colors = { xy: "blue", xz: "green", yz: "red" };
-                    const c = colors[plane];
+                    const colors: Record<string, string> = {
+                      xy: "#4444ff",
+                      xz: "#44ff44",
+                      yz: "#ff4444",
+                    };
                     return (
                       <button
                         key={plane}
                         onClick={() => enterSketchMode(plane)}
-                        className={`text-[10px] px-2 py-0.5 rounded border border-[#16213e] text-slate-400 bg-[#1a1a2e]/80 hover:border-${c}-500/40 hover:text-${c}-400 transition-all duration-150 backdrop-blur-sm hover:scale-105`}
+                        className="text-[10px] px-2 py-0.5 rounded border border-[#16213e] text-slate-400 bg-[#1a1a2e]/80 hover:text-white transition-all duration-150 backdrop-blur-sm hover:scale-105"
+                        style={{ borderColor: undefined }}
+                        onMouseEnter={(e) => {
+                          (e.target as HTMLElement).style.borderColor = colors[plane] + "66";
+                          (e.target as HTMLElement).style.color = colors[plane];
+                        }}
+                        onMouseLeave={(e) => {
+                          (e.target as HTMLElement).style.borderColor = "";
+                          (e.target as HTMLElement).style.color = "";
+                        }}
                       >
                         {plane.toUpperCase()}
                       </button>

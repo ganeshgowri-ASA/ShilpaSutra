@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { useCadStore, type ToolId } from "@/stores/cad-store";
 
 const SKETCH_TOOLS: ToolId[] = [
@@ -13,12 +13,12 @@ interface SketchOverlayProps {
 /**
  * Professional CAD sketch overlay providing:
  * 1. Full-viewport crosshair cursor
- * 2. Real-time dimension display while drawing
- * 3. Snap point text labels
+ * 2. Real-time dimension display while drawing (length + angle at cursor)
+ * 3. Snap point text labels (colored dots at endpoints/midpoints/centers)
  * 4. Dynamic input box at cursor
  * 5. Coordinate readout
- * 6. Constraint symbols on geometry
- * 7. Alignment guide indicators
+ * 6. Alignment guide indicators
+ * 7. Active sketch plane border highlight
  */
 export default function SketchOverlay({ containerRef }: SketchOverlayProps) {
   const activeTool = useCadStore((s) => s.activeTool);
@@ -26,38 +26,24 @@ export default function SketchOverlay({ containerRef }: SketchOverlayProps) {
   const cursorPosition = useCadStore((s) => s.cursorPosition);
   const sketchDrawState = useCadStore((s) => s.sketchDrawState);
   const unit = useCadStore((s) => s.unit);
-  const objects = useCadStore((s) => s.objects);
   const dynamicInputValue = useCadStore((s) => s.dynamicInputValue);
-  const dynamicInputActive = useCadStore((s) => s.dynamicInputActive);
   const setDynamicInputValue = useCadStore((s) => s.setDynamicInputValue);
   const setDynamicInputActive = useCadStore((s) => s.setDynamicInputActive);
 
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
-  const [containerBounds, setContainerBounds] = useState({ left: 0, top: 0, width: 0, height: 0 });
   const [isOverCanvas, setIsOverCanvas] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const isSketchMode = SKETCH_TOOLS.includes(activeTool) || !!sketchPlane;
-  const isDrawing = SKETCH_TOOLS.includes(activeTool) && activeTool !== "construction_line" || activeTool === "construction_line";
-  const hasClickPoints = sketchDrawState.clickPoints.length > 0;
+  const isDrawing = SKETCH_TOOLS.includes(activeTool);
 
-  // Track container bounds
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const updateBounds = () => {
-      const rect = el.getBoundingClientRect();
-      setContainerBounds({ left: rect.left, top: rect.top, width: rect.width, height: rect.height });
-    };
-    updateBounds();
-    const observer = new ResizeObserver(updateBounds);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [containerRef]);
+  const clickPoints = sketchDrawState?.clickPoints ?? [];
+  const previewPoint = sketchDrawState?.previewPoint ?? null;
+  const hasClickPoints = clickPoints.length > 0;
 
-  // Track mouse position
+  // Track container bounds & mouse position
   useEffect(() => {
-    const el = containerRef.current;
+    const el = containerRef?.current;
     if (!el) return;
     const handleMove = (e: MouseEvent) => {
       const rect = el.getBoundingClientRect();
@@ -83,11 +69,11 @@ export default function SketchOverlay({ containerRef }: SketchOverlayProps) {
     }
   }, [hasClickPoints, isDrawing]);
 
-  // Compute live dimensions
-  const liveDimensions = useCallback(() => {
-    if (!hasClickPoints || !sketchDrawState.previewPoint) return null;
-    const start = sketchDrawState.clickPoints[0];
-    const end = sketchDrawState.previewPoint;
+  // Compute live dimensions (useMemo, not useCallback)
+  const dims = useMemo(() => {
+    if (!hasClickPoints || !previewPoint || clickPoints.length === 0) return null;
+    const start = clickPoints[0];
+    const end = previewPoint;
 
     if (activeTool === "line" || activeTool === "construction_line") {
       const dx = end[0] - start[0];
@@ -112,9 +98,7 @@ export default function SketchOverlay({ containerRef }: SketchOverlayProps) {
     }
 
     return null;
-  }, [hasClickPoints, sketchDrawState.previewPoint, sketchDrawState.clickPoints, activeTool]);
-
-  const dims = liveDimensions();
+  }, [hasClickPoints, previewPoint, clickPoints, activeTool]);
 
   // Handle dynamic input
   const handleDynamicInput = useCallback(
@@ -126,17 +110,15 @@ export default function SketchOverlay({ containerRef }: SketchOverlayProps) {
       }
       if (e.key === "Tab") {
         e.preventDefault();
-        // Tab switches between length/angle (future enhancement)
         return;
       }
-      // Enter applies the value - actual application happens in Viewport3D
     },
     [setDynamicInputValue, setDynamicInputActive]
   );
 
   if (!isSketchMode || !isOverCanvas) return null;
 
-  const snapType = sketchDrawState.snapType;
+  const snapType = sketchDrawState?.snapType ?? null;
   const snapColors: Record<string, string> = {
     Endpoint: "#ff8c00",
     Midpoint: "#00ff88",
@@ -151,7 +133,6 @@ export default function SketchOverlay({ containerRef }: SketchOverlayProps) {
       style={{ overflow: "hidden" }}
     >
       {/* ── Full-viewport crosshair ── */}
-      {/* Vertical line */}
       <div
         className="absolute top-0 bottom-0"
         style={{
@@ -161,7 +142,6 @@ export default function SketchOverlay({ containerRef }: SketchOverlayProps) {
           transform: "translateX(-0.5px)",
         }}
       />
-      {/* Horizontal line */}
       <div
         className="absolute left-0 right-0"
         style={{
@@ -254,7 +234,7 @@ export default function SketchOverlay({ containerRef }: SketchOverlayProps) {
       )}
 
       {/* ── Alignment guide indicators ── */}
-      {sketchDrawState.alignH && sketchDrawState.alignRefPoint && (
+      {sketchDrawState?.alignH && sketchDrawState?.alignRefPoint && (
         <div
           className="absolute left-0 right-0"
           style={{
@@ -266,7 +246,7 @@ export default function SketchOverlay({ containerRef }: SketchOverlayProps) {
           }}
         />
       )}
-      {sketchDrawState.alignV && sketchDrawState.alignRefPoint && (
+      {sketchDrawState?.alignV && sketchDrawState?.alignRefPoint && (
         <div
           className="absolute top-0 bottom-0"
           style={{
@@ -307,26 +287,6 @@ export default function SketchOverlay({ containerRef }: SketchOverlayProps) {
           </div>
         </div>
       )}
-
-      {/* ── Constraint symbols on existing geometry ── */}
-      {/* These are rendered via the ConstraintIndicators component in Three.js */}
-      {/* Here we show additional 2D constraint symbols for sketch entities */}
-      {objects.map((obj) => {
-        if (!obj.visible) return null;
-        const symbols: { symbol: string; color: string }[] = [];
-
-        if (obj.type === "line" && obj.linePoints && obj.linePoints.length === 2) {
-          const [p1, p2] = obj.linePoints;
-          const dx = Math.abs(p2[0] - p1[0]);
-          const dz = Math.abs(p2[2] - p1[2]);
-          if (dx < 0.01 && dz > 0.1) symbols.push({ symbol: "V", color: "#4488ff" });
-          if (dz < 0.01 && dx > 0.1) symbols.push({ symbol: "H", color: "#44ff88" });
-        }
-
-        // We can't easily project 3D→2D without camera info here,
-        // so constraint symbols on actual geometry are handled via Three.js Html component
-        return null;
-      })}
 
       {/* ── Active sketch plane border highlight ── */}
       {sketchPlane && (
