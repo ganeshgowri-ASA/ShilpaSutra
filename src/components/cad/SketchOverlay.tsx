@@ -259,13 +259,13 @@ function SketchOverlayInner({ containerRef }: SketchOverlayProps) {
       className="absolute inset-0 pointer-events-none z-20"
       style={{ overflow: "hidden" }}
     >
-      {/* ── Full-viewport crosshair ── */}
+      {/* ── Full-viewport crosshair (thin, subtle like AutoCAD) ── */}
       <div
         className="absolute top-0 bottom-0"
         style={{
           left: mousePos.x,
           width: 1,
-          background: orthoLocked ? "rgba(255, 170, 0, 0.7)" : "rgba(0, 212, 255, 0.6)",
+          background: orthoLocked ? "rgba(255, 170, 0, 0.35)" : "rgba(180, 195, 210, 0.3)",
           transform: "translateX(-0.5px)",
         }}
       />
@@ -274,23 +274,21 @@ function SketchOverlayInner({ containerRef }: SketchOverlayProps) {
         style={{
           top: mousePos.y,
           height: 1,
-          background: orthoLocked ? "rgba(255, 170, 0, 0.7)" : "rgba(0, 212, 255, 0.6)",
+          background: orthoLocked ? "rgba(255, 170, 0, 0.35)" : "rgba(180, 195, 210, 0.3)",
           transform: "translateY(-0.5px)",
         }}
       />
-      {/* Center dot */}
-      <div
-        className="absolute"
-        style={{
-          left: mousePos.x - 3,
-          top: mousePos.y - 3,
-          width: 6,
-          height: 6,
-          borderRadius: "50%",
-          background: orthoLocked ? "rgba(255, 170, 0, 0.9)" : "rgba(0, 212, 255, 0.9)",
-          pointerEvents: "none",
-        }}
-      />
+      {/* Precise crosshair at cursor (thin + symbol, not a dot) */}
+      <svg
+        className="absolute pointer-events-none"
+        style={{ left: mousePos.x - 8, top: mousePos.y - 8, width: 16, height: 16 }}
+        viewBox="0 0 16 16"
+      >
+        <line x1="8" y1="2" x2="8" y2="6" stroke={orthoLocked ? "rgba(255, 170, 0, 0.8)" : "rgba(200, 210, 220, 0.7)"} strokeWidth="0.8" />
+        <line x1="8" y1="10" x2="8" y2="14" stroke={orthoLocked ? "rgba(255, 170, 0, 0.8)" : "rgba(200, 210, 220, 0.7)"} strokeWidth="0.8" />
+        <line x1="2" y1="8" x2="6" y2="8" stroke={orthoLocked ? "rgba(255, 170, 0, 0.8)" : "rgba(200, 210, 220, 0.7)"} strokeWidth="0.8" />
+        <line x1="10" y1="8" x2="14" y2="8" stroke={orthoLocked ? "rgba(255, 170, 0, 0.8)" : "rgba(200, 210, 220, 0.7)"} strokeWidth="0.8" />
+      </svg>
 
       {/* ── Ortho lock indicator ── */}
       {orthoLocked && (
@@ -304,78 +302,75 @@ function SketchOverlayInner({ containerRef }: SketchOverlayProps) {
         </div>
       )}
 
-      {/* ── Coordinate readout ── */}
+      {/* ── Coordinate readout (compact) ── */}
       {cursorPosition && (
         <div
           className="absolute"
           style={{ left: mousePos.x + 14, top: mousePos.y + 14, whiteSpace: "nowrap" }}
         >
-          <div className="bg-[#0d1117]/90 border border-[#16213e] rounded px-1.5 py-0.5 backdrop-blur-sm">
-            <div className="text-[10px] font-mono text-slate-300">
-              X: {cursorPosition[0].toFixed(2)}  Z: {cursorPosition[2].toFixed(2)}
-            </div>
+          <div className="bg-[#0d1117]/85 border border-[#1a2233] rounded px-1 py-0.5 backdrop-blur-sm">
+            <span className="text-[9px] font-mono text-slate-400">
+              {cursorPosition[0].toFixed(2)}, {cursorPosition[2].toFixed(2)}
+            </span>
             {distanceFromOrigin !== null && (
-              <div className="text-[9px] font-mono text-slate-500 mt-0.5">
-                d: {distanceFromOrigin.toFixed(2)}{unit}
-              </div>
+              <span className="text-[8px] font-mono text-slate-600 ml-1.5">
+                d:{distanceFromOrigin.toFixed(1)}
+              </span>
             )}
           </div>
         </div>
       )}
 
-      {/* ── Snap visual indicator ── */}
+      {/* ── Snap visual indicator (compact) ── */}
       {snapType && snapType !== "Grid" && (
         <div
           className="absolute pointer-events-none"
           style={{
-            left: mousePos.x - 9,
-            top: mousePos.y - 9,
-            width: 18,
-            height: 18,
-            border: `2px solid ${snapColors[snapType] || "#ffaa00"}`,
-            borderRadius: snapShape === "circle" ? "50%" : "2px",
-            background: `${snapColors[snapType] || "#ffaa00"}20`,
-            boxShadow: `0 0 8px ${snapColors[snapType] || "#ffaa00"}60`,
+            left: mousePos.x - 6,
+            top: mousePos.y - 6,
+            width: 12,
+            height: 12,
+            border: `1.5px solid ${snapColors[snapType] || "#ffaa00"}`,
+            borderRadius: snapShape === "circle" ? "50%" : "1px",
+            background: `${snapColors[snapType] || "#ffaa00"}15`,
+            boxShadow: `0 0 4px ${snapColors[snapType] || "#ffaa00"}30`,
             transform: snapShape === "diamond" ? "rotate(45deg)" : undefined,
           }}
         />
       )}
 
-      {/* ── Snap type label ── */}
+      {/* ── Snap type label (subtle) ── */}
       {snapType && snapType !== "Grid" && (
         <div
           className="absolute"
-          style={{ left: mousePos.x + 14, top: mousePos.y - 24, whiteSpace: "nowrap" }}
+          style={{ left: mousePos.x + 12, top: mousePos.y - 20, whiteSpace: "nowrap" }}
         >
-          <div
-            className="rounded px-1.5 py-0.5 text-[10px] font-semibold backdrop-blur-sm"
-            style={{
-              background: "rgba(13, 17, 23, 0.9)",
-              border: `1px solid ${snapColors[snapType] || "#666"}`,
-              color: snapColors[snapType] || "#999",
-            }}
+          <span
+            className="text-[8px] font-medium"
+            style={{ color: snapColors[snapType] || "#999", opacity: 0.7 }}
           >
             {snapType}
-          </div>
+          </span>
         </div>
       )}
 
-      {/* ── Constraint inference label ── */}
+      {/* ── Constraint inference label (refined) ── */}
       {inferredConstraint && hasClickPoints && (
         <div
           className="absolute"
           style={{
-            left: mousePos.x - 40,
-            top: mousePos.y - 60,
+            left: mousePos.x - 30,
+            top: mousePos.y - 50,
             whiteSpace: "nowrap",
           }}
         >
           <div
-            className="rounded-md px-2 py-0.5 text-[10px] font-bold backdrop-blur-sm animate-pulse"
+            className="rounded px-1.5 py-0.5 text-[8px] font-semibold"
             style={{
-              background: `${inferredConstraint.color}15`,
-              border: `1.5px solid ${inferredConstraint.color}80`,
+              background: `${inferredConstraint.color}10`,
+              border: `1px solid ${inferredConstraint.color}50`,
               color: inferredConstraint.color,
+              opacity: 0.85,
             }}
           >
             {inferredConstraint.label}
@@ -383,88 +378,69 @@ function SketchOverlayInner({ containerRef }: SketchOverlayProps) {
         </div>
       )}
 
-      {/* ── Real-time dimension display ── */}
+      {/* ── Real-time dimension display (clean tooltip) ── */}
       {dims && (
         <div
           className="absolute"
-          style={{ left: mousePos.x + 20, top: mousePos.y - 54, whiteSpace: "nowrap" }}
+          style={{ left: mousePos.x + 18, top: mousePos.y - 44, whiteSpace: "nowrap" }}
         >
-          <div className="bg-[#0d1117]/95 border border-[#00D4FF]/50 rounded-md px-2.5 py-1.5 backdrop-blur-sm shadow-xl shadow-black/40">
+          <div className="bg-[#0d1117]/92 border border-[#1e2a3a] rounded px-2 py-1 backdrop-blur-sm shadow-lg shadow-black/30">
             {dims.type === "line" && (
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[12px] font-mono font-bold text-[#00D4FF]">
-                    {dims.length.toFixed(2)}{unit}
-                  </span>
-                  <span className="text-[10px] text-slate-500">@</span>
-                  <span className="text-[12px] font-mono font-bold text-[#ffaa00]">
-                    {(((dims.angle % 360) + 360) % 360).toFixed(1)}°
-                  </span>
-                </div>
-                <div className="text-[9px] text-slate-600 mt-0.5 font-mono">
-                  dX:{dims.dx.toFixed(1)} dZ:{dims.dz.toFixed(1)}
-                </div>
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] font-mono font-semibold text-[#7dc4e0]">
+                  {dims.length.toFixed(2)}
+                </span>
+                <span className="text-[8px] text-slate-600">@</span>
+                <span className="text-[10px] font-mono font-semibold text-[#d4a574]">
+                  {(((dims.angle % 360) + 360) % 360).toFixed(1)}°
+                </span>
               </div>
             )}
             {dims.type === "rect" && (
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[12px] font-mono font-bold text-[#00D4FF]">
-                    {dims.width.toFixed(2)}
-                  </span>
-                  <span className="text-[10px] text-slate-500">×</span>
-                  <span className="text-[12px] font-mono font-bold text-[#00D4FF]">
-                    {dims.height.toFixed(2)}{unit}
-                  </span>
-                </div>
-                <div className="text-[9px] text-slate-600 mt-0.5 font-mono">
-                  A:{dims.area.toFixed(1)} P:{dims.perimeter.toFixed(1)}
-                </div>
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] font-mono font-semibold text-[#7dc4e0]">
+                  {dims.width.toFixed(2)}
+                </span>
+                <span className="text-[8px] text-slate-600">×</span>
+                <span className="text-[10px] font-mono font-semibold text-[#7dc4e0]">
+                  {dims.height.toFixed(2)}
+                </span>
               </div>
             )}
             {dims.type === "circle" && (
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] text-slate-500">R</span>
-                  <span className="text-[12px] font-mono font-bold text-[#00D4FF]">
-                    {dims.radius.toFixed(2)}{unit}
-                  </span>
-                  <span className="text-[9px] text-slate-600">⌀{dims.diameter.toFixed(2)}</span>
-                </div>
-                <div className="text-[9px] text-slate-600 mt-0.5 font-mono">
-                  C:{dims.circumference.toFixed(1)} A:{dims.area.toFixed(1)}
-                </div>
+              <div className="flex items-center gap-1">
+                <span className="text-[8px] text-slate-500">R</span>
+                <span className="text-[10px] font-mono font-semibold text-[#7dc4e0]">
+                  {dims.radius.toFixed(2)}
+                </span>
+                <span className="text-[8px] text-slate-600 ml-0.5">⌀{dims.diameter.toFixed(2)}</span>
               </div>
             )}
             {dims.type === "arc" && (
-              <div className="flex items-center gap-1.5">
-                <span className="text-[10px] text-slate-500">R</span>
-                <span className="text-[12px] font-mono font-bold text-[#00D4FF]">
-                  {dims.radius.toFixed(2)}{unit}
+              <div className="flex items-center gap-1">
+                <span className="text-[8px] text-slate-500">R</span>
+                <span className="text-[10px] font-mono font-semibold text-[#7dc4e0]">
+                  {dims.radius.toFixed(2)}
                 </span>
-                <span className="text-[10px] text-slate-500">@</span>
-                <span className="text-[12px] font-mono font-bold text-[#ffaa00]">
+                <span className="text-[8px] text-slate-600">@</span>
+                <span className="text-[10px] font-mono font-semibold text-[#d4a574]">
                   {(((dims.angle % 360) + 360) % 360).toFixed(1)}°
                 </span>
               </div>
             )}
             {dims.type === "polygon" && (
-              <div className="flex items-center gap-1.5">
-                <span className="text-[10px] text-slate-500">R</span>
-                <span className="text-[12px] font-mono font-bold text-[#00D4FF]">
-                  {dims.radius.toFixed(2)}{unit}
-                </span>
-              </div>
+              <span className="text-[10px] font-mono font-semibold text-[#7dc4e0]">
+                R {dims.radius.toFixed(2)}
+              </span>
             )}
             {dims.type === "ellipse" && (
-              <div className="flex items-center gap-1.5">
-                <span className="text-[10px] text-slate-500">Rx</span>
-                <span className="text-[12px] font-mono font-bold text-[#00D4FF]">
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] font-mono font-semibold text-[#7dc4e0]">
                   {dims.rx.toFixed(2)}
                 </span>
-                <span className="text-[10px] text-slate-500">Ry</span>
-                <span className="text-[12px] font-mono font-bold text-[#00D4FF]">
-                  {dims.ry.toFixed(2)}{unit}
+                <span className="text-[8px] text-slate-600">×</span>
+                <span className="text-[10px] font-mono font-semibold text-[#7dc4e0]">
+                  {dims.ry.toFixed(2)}
                 </span>
               </div>
             )}
@@ -530,10 +506,10 @@ function SketchOverlayInner({ containerRef }: SketchOverlayProps) {
       {isDrawing && hasClickPoints && (
         <div
           className="absolute pointer-events-auto"
-          style={{ left: mousePos.x + 20, top: mousePos.y + 30, whiteSpace: "nowrap" }}
+          style={{ left: mousePos.x + 18, top: mousePos.y + 28, whiteSpace: "nowrap" }}
         >
-          <div className="bg-[#0d1117]/95 border border-[#00D4FF]/50 rounded-md px-1.5 py-1 backdrop-blur-sm shadow-lg flex items-center gap-1">
-            <span className="text-[9px] text-slate-500">
+          <div className="bg-[#0d1117]/90 border border-[#1e2a3a] rounded px-1.5 py-0.5 backdrop-blur-sm shadow-md flex items-center gap-1">
+            <span className="text-[8px] text-slate-600">
               {activeTool === "circle" ? "R:" :
                activeTool === "rectangle" ? "W,H:" :
                activeTool === "arc" ? "R,A:" :
@@ -553,48 +529,36 @@ function SketchOverlayInner({ containerRef }: SketchOverlayProps) {
                 activeTool === "ellipse" ? "rx,ry" :
                 "value"
               }
-              className="w-20 bg-transparent text-[11px] text-[#00D4FF] font-mono outline-none border-none placeholder:text-slate-600"
+              className="w-16 bg-transparent text-[10px] text-[#7dc4e0] font-mono outline-none border-none placeholder:text-slate-700"
               autoComplete="off"
             />
-            <span className="text-[9px] text-slate-600">{unit}</span>
+            <span className="text-[8px] text-slate-600">{unit}</span>
           </div>
         </div>
       )}
 
-      {/* ── Status bar at bottom of viewport ── */}
+      {/* ── Status bar at bottom of viewport (minimal) ── */}
       {isSketchMode && (
         <div className="absolute bottom-2 left-1/2 -translate-x-1/2 pointer-events-none">
-          <div className="bg-[#0d1117]/90 border border-[#16213e] rounded-lg px-3 py-1 backdrop-blur-sm flex items-center gap-3 text-[9px] font-mono">
-            <span className="text-slate-500">
-              Plane: <span className={
-                sketchPlane === "xy" ? "text-blue-400" :
-                sketchPlane === "xz" ? "text-green-400" :
-                "text-red-400"
-              }>{(sketchPlane || "xz").toUpperCase()}</span>
-            </span>
-            <span className="text-slate-600">|</span>
-            <span className="text-slate-500">
-              Tool: <span className="text-[#00D4FF]">{activeTool.replace("_", " ")}</span>
-            </span>
+          <div className="bg-[#0d1117]/80 border border-[#1a2233] rounded-md px-2.5 py-0.5 backdrop-blur-sm flex items-center gap-2 text-[8px] font-mono text-slate-500">
+            <span className={
+              sketchPlane === "xy" ? "text-blue-400/70" :
+              sketchPlane === "xz" ? "text-green-400/70" :
+              "text-red-400/70"
+            }>{(sketchPlane || "xz").toUpperCase()}</span>
+            <span className="text-slate-700">|</span>
+            <span className="text-slate-400">{activeTool.replace("_", " ")}</span>
             {orthoLocked && (
               <>
-                <span className="text-slate-600">|</span>
-                <span className="text-[#ffaa00] font-bold">ORTHO</span>
+                <span className="text-slate-700">|</span>
+                <span className="text-[#d4a574] font-semibold">ORTHO</span>
               </>
             )}
             {snapType && (
               <>
-                <span className="text-slate-600">|</span>
-                <span style={{ color: snapColors[snapType] || "#666" }}>
-                  Snap: {snapType}
-                </span>
-              </>
-            )}
-            {inferredConstraint && hasClickPoints && (
-              <>
-                <span className="text-slate-600">|</span>
-                <span style={{ color: inferredConstraint.color }}>
-                  {inferredConstraint.label}
+                <span className="text-slate-700">|</span>
+                <span style={{ color: snapColors[snapType] || "#666", opacity: 0.7 }}>
+                  {snapType}
                 </span>
               </>
             )}

@@ -210,39 +210,40 @@ function CadLine({ obj }: { obj: CadObject }) {
     >
       <Line
         points={obj.linePoints}
-        color={isSelected ? "#00D4FF" : isConstruction ? "#00D4FF" : obj.color}
-        lineWidth={isSelected ? 3 : 2}
+        color={isSelected ? "#7dc4e0" : isConstruction ? "#5a9ab5" : obj.color}
+        lineWidth={isSelected ? 2.5 : 1.5}
         dashed={isConstruction}
-        dashSize={isConstruction ? 0.2 : undefined}
-        gapSize={isConstruction ? 0.1 : undefined}
+        dashSize={isConstruction ? 0.15 : undefined}
+        gapSize={isConstruction ? 0.08 : undefined}
       />
+      {/* Endpoint squares (3px visual) */}
       {obj.linePoints.map((pt, i) => (
         <mesh key={i} position={pt}>
-          <sphereGeometry args={[0.06, 8, 8]} />
-          <meshBasicMaterial color={isSelected ? "#00D4FF" : isConstruction ? "#00D4FF" : "#00ffff"} />
+          <boxGeometry args={[0.04, 0.04, 0.04]} />
+          <meshBasicMaterial color={isSelected ? "#7dc4e0" : isConstruction ? "#5a9ab5" : "#88ccdd"} />
         </mesh>
       ))}
-      {/* Constraint symbols via Html */}
+      {/* Constraint symbols (refined) */}
       {obj.linePoints.length === 2 && (() => {
         const [p1, p2] = obj.linePoints!;
         const dx = Math.abs(p2[0] - p1[0]);
         const dz = Math.abs(p2[2] - p1[2]);
         const mid: [number, number, number] = [
           (p1[0] + p2[0]) / 2,
-          (p1[1] + p2[1]) / 2 + 0.15,
+          (p1[1] + p2[1]) / 2 + 0.12,
           (p1[2] + p2[2]) / 2,
         ];
         if (dz < 0.01 && dx > 0.1) {
           return (
             <Html position={mid} center style={{ pointerEvents: "none" }}>
-              <span className="text-[10px] font-bold text-green-400/60 bg-[#0d1117]/70 px-1 rounded">H</span>
+              <span className="text-[7px] font-semibold text-green-400/50 bg-[#0d1117]/60 px-0.5 rounded-sm">H</span>
             </Html>
           );
         }
         if (dx < 0.01 && dz > 0.1) {
           return (
             <Html position={mid} center style={{ pointerEvents: "none" }}>
-              <span className="text-[10px] font-bold text-blue-400/60 bg-[#0d1117]/70 px-1 rounded">V</span>
+              <span className="text-[7px] font-semibold text-blue-400/50 bg-[#0d1117]/60 px-0.5 rounded-sm">V</span>
             </Html>
           );
         }
@@ -278,13 +279,13 @@ function CadArc({ obj }: { obj: CadObject }) {
     >
       <Line
         points={arcPoints}
-        color={isSelected ? "#00D4FF" : obj.color}
-        lineWidth={isSelected ? 3 : 2}
+        color={isSelected ? "#7dc4e0" : obj.color}
+        lineWidth={isSelected ? 2.5 : 1.5}
       />
       {obj.arcPoints?.map((pt, i) => (
         <mesh key={i} position={pt}>
-          <sphereGeometry args={[0.06, 8, 8]} />
-          <meshBasicMaterial color={isSelected ? "#00D4FF" : "#ff00ff"} />
+          <boxGeometry args={[0.04, 0.04, 0.04]} />
+          <meshBasicMaterial color={isSelected ? "#7dc4e0" : "#cc77cc"} />
         </mesh>
       ))}
     </group>
@@ -341,13 +342,13 @@ function CadCircle({ obj }: { obj: CadObject }) {
     >
       <Line
         points={circlePoints}
-        color={isSelected ? "#00D4FF" : obj.color}
-        lineWidth={isSelected ? 3 : 2}
+        color={isSelected ? "#7dc4e0" : obj.color}
+        lineWidth={isSelected ? 2.5 : 1.5}
       />
       {obj.circleCenter && (
         <mesh position={obj.circleCenter}>
-          <sphereGeometry args={[0.06, 8, 8]} />
-          <meshBasicMaterial color={isSelected ? "#00D4FF" : "#00ff00"} />
+          <boxGeometry args={[0.04, 0.04, 0.04]} />
+          <meshBasicMaterial color={isSelected ? "#7dc4e0" : "#77cc77"} />
         </mesh>
       )}
     </group>
@@ -406,13 +407,13 @@ function CadRectangle({ obj }: { obj: CadObject }) {
     >
       <Line
         points={rectPoints}
-        color={isSelected ? "#00D4FF" : obj.color}
-        lineWidth={isSelected ? 3 : 2}
+        color={isSelected ? "#7dc4e0" : obj.color}
+        lineWidth={isSelected ? 2.5 : 1.5}
       />
       {obj.rectCorners?.map((pt, i) => (
         <mesh key={i} position={[pt[0], SKETCH_Y, pt[2]]}>
-          <sphereGeometry args={[0.06, 8, 8]} />
-          <meshBasicMaterial color={isSelected ? "#00D4FF" : "#ffaa00"} />
+          <boxGeometry args={[0.04, 0.04, 0.04]} />
+          <meshBasicMaterial color={isSelected ? "#7dc4e0" : "#cc9955"} />
         </mesh>
       ))}
     </group>
@@ -1207,12 +1208,12 @@ function SketchPlaneIndicator() {
   // Compute plane and y BEFORE useMemo so the hook is always called unconditionally
   const plane = (sketchPlane || "xz") as "xz" | "xy" | "yz";
   const y = 0.006;
+  const extent = 20;
 
   // useMemo must be called BEFORE any conditional return (Rules of Hooks)
   const gridLines = useMemo(() => {
     const major: [number, number, number][][] = [];
     const minor: [number, number, number][][] = [];
-    const extent = 20;
 
     for (let i = -extent; i <= extent; i++) {
       const isMajor = i % 10 === 0;
@@ -1230,7 +1231,7 @@ function SketchPlaneIndicator() {
       }
     }
     return { major, minor };
-  }, [plane]);
+  }, [plane, extent]);
 
   // Early return AFTER all hooks (Rules of Hooks compliance)
   if (!SKETCH_TOOLS.includes(activeTool) && !sketchPlane) return null;
@@ -1254,13 +1255,13 @@ function SketchPlaneIndicator() {
         <planeGeometry args={[40, 40]} />
         <meshBasicMaterial color={planeColor} transparent opacity={0.03} side={THREE.DoubleSide} />
       </mesh>
-      {/* Minor grid lines (every 1 unit) */}
+      {/* Minor grid lines (every 1 unit, very faint) */}
       {gridLines.minor.map((pts, i) => (
         <Line
           key={`minor-${i}`}
           points={pts as [number, number, number][]}
-          color="#00D4FF"
-          lineWidth={0.3}
+          color="#8899aa"
+          lineWidth={0.2}
           transparent
           opacity={0.06}
         />
@@ -1270,12 +1271,31 @@ function SketchPlaneIndicator() {
         <Line
           key={`major-${i}`}
           points={pts as [number, number, number][]}
-          color="#00D4FF"
-          lineWidth={0.6}
+          color="#8899aa"
+          lineWidth={0.4}
           transparent
-          opacity={0.2}
+          opacity={0.15}
         />
       ))}
+      {/* Origin axes (red X, green Y/Z) */}
+      {plane === "xz" && (
+        <>
+          <Line points={[[-extent, y + 0.001, 0], [extent, y + 0.001, 0]]} color="#ff4444" lineWidth={0.8} transparent opacity={0.4} />
+          <Line points={[[0, y + 0.001, -extent], [0, y + 0.001, extent]]} color="#44cc44" lineWidth={0.8} transparent opacity={0.4} />
+        </>
+      )}
+      {plane === "xy" && (
+        <>
+          <Line points={[[-extent, 0, y + 0.001], [extent, 0, y + 0.001]]} color="#ff4444" lineWidth={0.8} transparent opacity={0.4} />
+          <Line points={[[0, -extent, y + 0.001], [0, extent, y + 0.001]]} color="#44cc44" lineWidth={0.8} transparent opacity={0.4} />
+        </>
+      )}
+      {plane === "yz" && (
+        <>
+          <Line points={[[y + 0.001, -extent, 0], [y + 0.001, extent, 0]]} color="#44cc44" lineWidth={0.8} transparent opacity={0.4} />
+          <Line points={[[y + 0.001, 0, -extent], [y + 0.001, 0, extent]]} color="#4444ff" lineWidth={0.8} transparent opacity={0.4} />
+        </>
+      )}
     </>
   );
 }
@@ -1461,13 +1481,14 @@ export default function Viewport3D({ mode }: Viewport3DProps) {
         {showGrid && (
           <Grid
             args={[20, 20]}
-            cellSize={0.5}
-            cellThickness={0.5}
-            cellColor={isSketchMode ? "#1a3744" : "#1a2744"}
+            cellSize={1}
+            cellThickness={0.3}
+            cellColor={isSketchMode ? "#1a3040" : "#161e2e"}
             sectionSize={5}
-            sectionThickness={1}
-            sectionColor={isSketchMode ? "#0f6060" : "#0f3460"}
-            fadeDistance={25}
+            sectionThickness={0.6}
+            sectionColor={isSketchMode ? "#1a4050" : "#1a2e48"}
+            fadeDistance={20}
+            fadeStrength={1.5}
             infiniteGrid
           />
         )}

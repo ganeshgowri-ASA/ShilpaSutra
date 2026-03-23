@@ -196,25 +196,23 @@ export default function DesignerPage() {
             {/* Sketch Toolbar (floating, top center) */}
             <SketchToolbar visible={isSketchMode} />
 
-            {/* Status overlay - top left */}
-            <div className="absolute top-3 left-3 flex items-center gap-1.5 pointer-events-none z-10">
-              <span
-                className={`text-[10px] font-medium bg-[#0d1117]/85 border rounded-md px-2.5 py-1 backdrop-blur-md shadow-panel ${
-                  isSketchMode
-                    ? "border-[#00D4FF]/30 text-[#00D4FF]"
-                    : "border-[#21262d] text-slate-400"
-                }`}
-              >
-                {activeTool === "select" ? "Select" : activeTool.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
-              </span>
+            {/* Status overlay - top left (below sketch toolbar area) */}
+            <div className={`absolute left-3 flex items-center gap-1.5 pointer-events-none z-[5] ${isSketchMode ? "top-[72px]" : "top-3"}`}>
+              {!isSketchMode && (
+                <span
+                  className="text-[9px] font-medium bg-[#0d1117]/75 border border-[#1a2233] rounded px-2 py-0.5 backdrop-blur-sm text-slate-500"
+                >
+                  {activeTool === "select" ? "Select" : activeTool.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                </span>
+              )}
               {selectedId && (
-                <span className="text-[10px] font-medium bg-[#0d1117]/85 border border-[#00D4FF]/20 rounded-md px-2.5 py-1 text-[#00D4FF] backdrop-blur-md shadow-panel">
+                <span className="text-[9px] font-medium bg-[#0d1117]/75 border border-[#00D4FF]/15 rounded px-2 py-0.5 text-[#7dc4e0] backdrop-blur-sm">
                   Selected
                 </span>
               )}
               {sketchPlane && (
-                <span className="text-[10px] font-medium bg-[#0d1117]/85 border border-[#00D4FF]/20 rounded-md px-2.5 py-1 text-[#00D4FF]/80 backdrop-blur-md shadow-panel">
-                  Sketch: {sketchPlane.toUpperCase()} Plane
+                <span className="text-[9px] font-medium bg-[#0d1117]/75 border border-[#00D4FF]/15 rounded px-2 py-0.5 text-[#7dc4e0]/70 backdrop-blur-sm">
+                  Sketch: {sketchPlane.toUpperCase()}
                 </span>
               )}
             </div>
@@ -252,9 +250,9 @@ export default function DesignerPage() {
               ) : (
                 <button
                   onClick={exitSketchMode}
-                  className="text-[10px] px-4 py-1.5 rounded-lg border border-red-500/30 text-red-400 bg-[#0d1117]/85 hover:bg-red-500/15 transition-all duration-150 backdrop-blur-md font-semibold flex items-center gap-2 shadow-panel"
+                  className="text-[10px] px-5 py-1.5 rounded-full border border-red-500/20 text-red-400/90 bg-[#0d1117]/80 hover:bg-red-500/10 hover:border-red-500/35 transition-all duration-200 backdrop-blur-md font-medium flex items-center gap-2 shadow-[0_0_12px_rgba(239,68,68,0.08)]"
                 >
-                  <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-500/70 animate-pulse" />
                   Exit Sketch
                 </button>
               )}
