@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState, useCallback, Component, type ReactNode } from "react";
+import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { useCadStore, type ToolId } from "@/stores/cad-store";
 
 const SKETCH_TOOLS: ToolId[] = [
@@ -27,12 +27,12 @@ class SketchOverlayErrorBoundary extends Component<{ children: ReactNode }, Erro
 /**
  * Professional CAD sketch overlay providing:
  * 1. Full-viewport crosshair cursor
- * 2. Real-time dimension display while drawing
- * 3. Snap point text labels
+ * 2. Real-time dimension display while drawing (length + angle at cursor)
+ * 3. Snap point text labels (colored dots at endpoints/midpoints/centers)
  * 4. Dynamic input box at cursor
  * 5. Coordinate readout
- * 6. Constraint symbols on geometry
- * 7. Alignment guide indicators
+ * 6. Alignment guide indicators
+ * 7. Active sketch plane border highlight
  */
 function SketchOverlayInner({ containerRef }: SketchOverlayProps) {
   const activeTool = useCadStore((s) => s.activeTool);
@@ -40,39 +40,24 @@ function SketchOverlayInner({ containerRef }: SketchOverlayProps) {
   const cursorPosition = useCadStore((s) => s.cursorPosition);
   const sketchDrawState = useCadStore((s) => s.sketchDrawState);
   const unit = useCadStore((s) => s.unit);
-  const objects = useCadStore((s) => s.objects);
   const dynamicInputValue = useCadStore((s) => s.dynamicInputValue);
-  const dynamicInputActive = useCadStore((s) => s.dynamicInputActive);
   const setDynamicInputValue = useCadStore((s) => s.setDynamicInputValue);
   const setDynamicInputActive = useCadStore((s) => s.setDynamicInputActive);
 
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
-  const [containerBounds, setContainerBounds] = useState({ left: 0, top: 0, width: 0, height: 0 });
   const [isOverCanvas, setIsOverCanvas] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const isSketchMode = SKETCH_TOOLS.includes(activeTool) || !!sketchPlane;
   const isDrawing = SKETCH_TOOLS.includes(activeTool);
-  const clickPoints = sketchDrawState?.clickPoints;
-  const hasClickPoints = Array.isArray(clickPoints) && clickPoints.length > 0;
 
-  // Track container bounds
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const updateBounds = () => {
-      const rect = el.getBoundingClientRect();
-      setContainerBounds({ left: rect.left, top: rect.top, width: rect.width, height: rect.height });
-    };
-    updateBounds();
-    const observer = new ResizeObserver(updateBounds);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [containerRef]);
+  const clickPoints = sketchDrawState?.clickPoints ?? [];
+  const previewPoint = sketchDrawState?.previewPoint ?? null;
+  const hasClickPoints = clickPoints.length > 0;
 
-  // Track mouse position
+  // Track container bounds & mouse position
   useEffect(() => {
-    const el = containerRef.current;
+    const el = containerRef?.current;
     if (!el) return;
     const handleMove = (e: MouseEvent) => {
       const rect = el.getBoundingClientRect();
@@ -98,12 +83,11 @@ function SketchOverlayInner({ containerRef }: SketchOverlayProps) {
     }
   }, [hasClickPoints, isDrawing]);
 
-  // Compute live dimensions
-  const liveDimensions = useCallback(() => {
-    if (!hasClickPoints || !sketchDrawState?.previewPoint) return null;
-    const start = sketchDrawState.clickPoints?.[0];
-    const end = sketchDrawState.previewPoint;
-    if (!start || !end) return null;
+  // Compute live dimensions (useMemo, not useCallback)
+  const dims = useMemo(() => {
+    if (!hasClickPoints || !previewPoint || clickPoints.length === 0) return null;
+    const start = clickPoints[0];
+    const end = previewPoint;
 
     if (activeTool === "line" || activeTool === "construction_line") {
       const dx = end[0] - start[0];
@@ -128,9 +112,7 @@ function SketchOverlayInner({ containerRef }: SketchOverlayProps) {
     }
 
     return null;
-  }, [hasClickPoints, sketchDrawState?.previewPoint, sketchDrawState?.clickPoints, activeTool]);
-
-  const dims = liveDimensions();
+  }, [hasClickPoints, previewPoint, clickPoints, activeTool]);
 
   // Handle dynamic input
   const handleDynamicInput = useCallback(
@@ -142,10 +124,8 @@ function SketchOverlayInner({ containerRef }: SketchOverlayProps) {
       }
       if (e.key === "Tab") {
         e.preventDefault();
-        // Tab switches between length/angle (future enhancement)
         return;
       }
-      // Enter applies the value - actual application happens in Viewport3D
     },
     [setDynamicInputValue, setDynamicInputActive]
   );
@@ -167,7 +147,6 @@ function SketchOverlayInner({ containerRef }: SketchOverlayProps) {
       style={{ overflow: "hidden" }}
     >
       {/* ── Full-viewport crosshair ── */}
-      {/* Vertical line */}
       <div
         className="absolute top-0 bottom-0"
         style={{
@@ -177,7 +156,6 @@ function SketchOverlayInner({ containerRef }: SketchOverlayProps) {
           transform: "translateX(-0.5px)",
         }}
       />
-      {/* Horizontal line */}
       <div
         className="absolute left-0 right-0"
         style={{
