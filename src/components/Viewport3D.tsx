@@ -941,59 +941,54 @@ function CameraController() {
   const cameraView = useCadStore((s) => s.cameraView);
   const setCameraView = useCadStore((s) => s.setCameraView);
   const sketchPlane = useCadStore((s) => s.sketchPlane);
-  const { camera } = useThree();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { camera, controls } = useThree() as any;
 
-  // Lock camera to orthographic view when entering sketch mode
+  // Apply a camera position and sync OrbitControls so it doesn't fight back
+  const applyView = useCallback((pos: [number, number, number]) => {
+    camera.position.set(...pos);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    if (controls) {
+      controls.target.set(0, 0, 0);
+      controls.update();
+    }
+  }, [camera, controls]);
+
+  // Lock camera to face the active sketch plane head-on
   useEffect(() => {
-    const distance = 10;
+    const distance = 15;
+    if ((camera as THREE.PerspectiveCamera).fov !== undefined) {
+      (camera as THREE.PerspectiveCamera).fov = 50;
+    }
     if (sketchPlane) {
       const positions: Record<string, [number, number, number]> = {
-        xy: [0, 0, distance],
-        xz: [0, distance, 0.01],
-        yz: [distance, 0, 0],
+        xy: [0, 0, distance],       // face XY: look from +Z
+        xz: [0, distance, 0.001],   // face XZ: look from +Y (top-down)
+        yz: [distance, 0, 0],       // face YZ: look from +X (side)
       };
-      camera.position.set(...positions[sketchPlane]);
-      camera.lookAt(0, 0, 0);
-      // Switch to orthographic-like by using a very narrow FOV
-      if ((camera as THREE.PerspectiveCamera).fov !== undefined) {
-        (camera as THREE.PerspectiveCamera).fov = 2;
-        (camera as THREE.PerspectiveCamera).position.multiplyScalar(25);
-      }
-      camera.updateProjectionMatrix();
+      applyView(positions[sketchPlane]);
     } else {
-      // Restore perspective camera
-      if ((camera as THREE.PerspectiveCamera).fov !== undefined) {
-        (camera as THREE.PerspectiveCamera).fov = 50;
-        camera.position.set(5, 5, 5);
-        camera.lookAt(0, 0, 0);
-      }
-      camera.updateProjectionMatrix();
+      applyView([5, 5, 5]);
     }
-  }, [sketchPlane, camera]);
+  }, [sketchPlane, camera, applyView]);
 
   useEffect(() => {
     if (!cameraView) return;
-
     const distance = 8;
     const targets: Record<string, [number, number, number]> = {
       front: [0, 0, distance],
       back: [0, 0, -distance],
       left: [-distance, 0, 0],
       right: [distance, 0, 0],
-      top: [0, distance, 0.01],
-      bottom: [0, -distance, 0.01],
+      top: [0, distance, 0.001],
+      bottom: [0, -distance, 0.001],
       iso: [distance * 0.7, distance * 0.7, distance * 0.7],
     };
-
     const target = targets[cameraView];
-    if (target) {
-      camera.position.set(...target);
-      camera.lookAt(0, 0, 0);
-      camera.updateProjectionMatrix();
-    }
-
+    if (target) applyView(target);
     setCameraView(null);
-  }, [cameraView, camera, setCameraView]);
+  }, [cameraView, applyView, setCameraView]);
 
   return null;
 }
@@ -1462,10 +1457,9 @@ export default function Viewport3D({ mode }: Viewport3DProps) {
           makeDefault
           enableDamping
           dampingFactor={0.05}
-          enabled={!sketchPlane}
           enableRotate={!sketchPlane}
           enableZoom={true}
-          enablePan={!sketchPlane}
+          enablePan={true}
         />
 
         <GizmoHelper alignment="top-right" margin={[80, 80]}>

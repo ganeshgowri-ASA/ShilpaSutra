@@ -94,7 +94,12 @@ function SketchOverlayInner({ containerRef }: SketchOverlayProps) {
       const dz = end[2] - start[2];
       const dy = end[1] - start[1];
       const length = Math.sqrt(dx * dx + dy * dy + dz * dz);
-      const angle = Math.atan2(dz, dx) * (180 / Math.PI);
+      // Compute angle in the active sketch plane's 2D coordinate system
+      const angle = sketchPlane === "xy"
+        ? Math.atan2(dy, dx) * (180 / Math.PI)
+        : sketchPlane === "yz"
+        ? Math.atan2(dz, dy) * (180 / Math.PI)
+        : Math.atan2(dz, dx) * (180 / Math.PI); // xz (default)
       return { type: "line" as const, length, angle };
     }
 
@@ -146,13 +151,13 @@ function SketchOverlayInner({ containerRef }: SketchOverlayProps) {
       className="absolute inset-0 pointer-events-none z-20"
       style={{ overflow: "hidden" }}
     >
-      {/* ── Full-viewport crosshair ── */}
+      {/* ── Full-viewport crosshair (two thin lines spanning the whole viewport) ── */}
       <div
         className="absolute top-0 bottom-0"
         style={{
           left: mousePos.x,
           width: 1,
-          background: "rgba(0, 212, 255, 0.35)",
+          background: "rgba(0, 212, 255, 0.6)",
           transform: "translateX(-0.5px)",
         }}
       />
@@ -161,8 +166,21 @@ function SketchOverlayInner({ containerRef }: SketchOverlayProps) {
         style={{
           top: mousePos.y,
           height: 1,
-          background: "rgba(0, 212, 255, 0.35)",
+          background: "rgba(0, 212, 255, 0.6)",
           transform: "translateY(-0.5px)",
+        }}
+      />
+      {/* Small center dot at crosshair intersection */}
+      <div
+        className="absolute"
+        style={{
+          left: mousePos.x - 3,
+          top: mousePos.y - 3,
+          width: 6,
+          height: 6,
+          borderRadius: "50%",
+          background: "rgba(0, 212, 255, 0.9)",
+          pointerEvents: "none",
         }}
       />
 
@@ -180,6 +198,23 @@ function SketchOverlayInner({ containerRef }: SketchOverlayProps) {
             {cursorPosition[0].toFixed(2)}, {cursorPosition[2].toFixed(2)}
           </div>
         </div>
+      )}
+
+      {/* ── Snap visual indicator: colored square (endpoints) or circle (centers) at cursor ── */}
+      {snapType && snapType !== "Grid" && (
+        <div
+          className="absolute pointer-events-none"
+          style={{
+            left: mousePos.x - 9,
+            top: mousePos.y - 9,
+            width: 18,
+            height: 18,
+            border: `2px solid ${snapColors[snapType] || "#ffaa00"}`,
+            borderRadius: snapType === "Center" ? "50%" : "2px",
+            background: `${snapColors[snapType] || "#ffaa00"}20`,
+            boxShadow: `0 0 8px ${snapColors[snapType] || "#ffaa00"}60`,
+          }}
+        />
       )}
 
       {/* ── Snap type label ── */}
@@ -215,32 +250,36 @@ function SketchOverlayInner({ containerRef }: SketchOverlayProps) {
             whiteSpace: "nowrap",
           }}
         >
-          <div className="bg-[#1a1a2e]/95 border border-[#00D4FF]/40 rounded-md px-2 py-1 backdrop-blur-sm shadow-lg">
+          <div className="bg-[#0d1117]/95 border border-[#00D4FF]/50 rounded-md px-2.5 py-1.5 backdrop-blur-sm shadow-xl shadow-black/40">
             {dims.type === "line" && (
-              <div className="flex items-center gap-3">
-                <span className="text-[11px] font-mono text-[#00D4FF]">
-                  L: {dims.length.toFixed(1)}{unit}
+              <div className="flex items-center gap-1.5">
+                <span className="text-[12px] font-mono font-bold text-[#00D4FF]">
+                  {dims.length.toFixed(2)}{unit}
                 </span>
-                <span className="text-[11px] font-mono text-[#ffaa00]">
-                  A: {(((dims.angle % 360) + 360) % 360).toFixed(1)}°
+                <span className="text-[10px] text-slate-500">@</span>
+                <span className="text-[12px] font-mono font-bold text-[#ffaa00]">
+                  {(((dims.angle % 360) + 360) % 360).toFixed(1)}°
                 </span>
               </div>
             )}
             {dims.type === "rect" && (
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] font-mono text-[#00D4FF]">
-                  {dims.width.toFixed(1)} × {dims.height.toFixed(1)} {unit}
+              <div className="flex items-center gap-1.5">
+                <span className="text-[12px] font-mono font-bold text-[#00D4FF]">
+                  {dims.width.toFixed(2)}
+                </span>
+                <span className="text-[10px] text-slate-500">×</span>
+                <span className="text-[12px] font-mono font-bold text-[#00D4FF]">
+                  {dims.height.toFixed(2)}{unit}
                 </span>
               </div>
             )}
             {dims.type === "circle" && (
-              <div className="flex items-center gap-3">
-                <span className="text-[11px] font-mono text-[#00D4FF]">
-                  R: {dims.radius.toFixed(2)}{unit}
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] text-slate-500">R</span>
+                <span className="text-[12px] font-mono font-bold text-[#00D4FF]">
+                  {dims.radius.toFixed(2)}{unit}
                 </span>
-                <span className="text-[11px] font-mono text-slate-400">
-                  ⌀{dims.diameter.toFixed(2)}{unit}
-                </span>
+                <span className="text-[9px] text-slate-600">⌀{dims.diameter.toFixed(2)}</span>
               </div>
             )}
           </div>
