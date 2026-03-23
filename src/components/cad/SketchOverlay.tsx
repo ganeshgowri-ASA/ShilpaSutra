@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, Component, type ReactNode } from "react";
 import { useCadStore, type ToolId } from "@/stores/cad-store";
 
 const SKETCH_TOOLS: ToolId[] = [
@@ -8,6 +8,20 @@ const SKETCH_TOOLS: ToolId[] = [
 
 interface SketchOverlayProps {
   containerRef: React.RefObject<HTMLDivElement | null>;
+}
+
+/* ── Error boundary to prevent sketch overlay errors from crashing the page ── */
+interface ErrorBoundaryState { hasError: boolean }
+class SketchOverlayErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryState> {
+  state: ErrorBoundaryState = { hasError: false };
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(error: Error) {
+    console.warn("[SketchOverlay] Caught render error:", error.message);
+  }
+  render() {
+    if (this.state.hasError) return null;
+    return this.props.children;
+  }
 }
 
 /**
@@ -20,7 +34,7 @@ interface SketchOverlayProps {
  * 6. Constraint symbols on geometry
  * 7. Alignment guide indicators
  */
-export default function SketchOverlay({ containerRef }: SketchOverlayProps) {
+function SketchOverlayInner({ containerRef }: SketchOverlayProps) {
   const activeTool = useCadStore((s) => s.activeTool);
   const sketchPlane = useCadStore((s) => s.sketchPlane);
   const cursorPosition = useCadStore((s) => s.cursorPosition);
@@ -38,8 +52,9 @@ export default function SketchOverlay({ containerRef }: SketchOverlayProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const isSketchMode = SKETCH_TOOLS.includes(activeTool) || !!sketchPlane;
-  const isDrawing = SKETCH_TOOLS.includes(activeTool) && activeTool !== "construction_line" || activeTool === "construction_line";
-  const hasClickPoints = sketchDrawState.clickPoints.length > 0;
+  const isDrawing = SKETCH_TOOLS.includes(activeTool);
+  const clickPoints = sketchDrawState?.clickPoints;
+  const hasClickPoints = Array.isArray(clickPoints) && clickPoints.length > 0;
 
   // Track container bounds
   useEffect(() => {
@@ -85,9 +100,10 @@ export default function SketchOverlay({ containerRef }: SketchOverlayProps) {
 
   // Compute live dimensions
   const liveDimensions = useCallback(() => {
-    if (!hasClickPoints || !sketchDrawState.previewPoint) return null;
-    const start = sketchDrawState.clickPoints[0];
+    if (!hasClickPoints || !sketchDrawState?.previewPoint) return null;
+    const start = sketchDrawState.clickPoints?.[0];
     const end = sketchDrawState.previewPoint;
+    if (!start || !end) return null;
 
     if (activeTool === "line" || activeTool === "construction_line") {
       const dx = end[0] - start[0];
@@ -112,7 +128,7 @@ export default function SketchOverlay({ containerRef }: SketchOverlayProps) {
     }
 
     return null;
-  }, [hasClickPoints, sketchDrawState.previewPoint, sketchDrawState.clickPoints, activeTool]);
+  }, [hasClickPoints, sketchDrawState?.previewPoint, sketchDrawState?.clickPoints, activeTool]);
 
   const dims = liveDimensions();
 
@@ -136,7 +152,7 @@ export default function SketchOverlay({ containerRef }: SketchOverlayProps) {
 
   if (!isSketchMode || !isOverCanvas) return null;
 
-  const snapType = sketchDrawState.snapType;
+  const snapType = sketchDrawState?.snapType ?? null;
   const snapColors: Record<string, string> = {
     Endpoint: "#ff8c00",
     Midpoint: "#00ff88",
@@ -254,7 +270,7 @@ export default function SketchOverlay({ containerRef }: SketchOverlayProps) {
       )}
 
       {/* ── Alignment guide indicators ── */}
-      {sketchDrawState.alignH && sketchDrawState.alignRefPoint && (
+      {sketchDrawState?.alignH && sketchDrawState?.alignRefPoint && (
         <div
           className="absolute left-0 right-0"
           style={{
@@ -266,7 +282,7 @@ export default function SketchOverlay({ containerRef }: SketchOverlayProps) {
           }}
         />
       )}
-      {sketchDrawState.alignV && sketchDrawState.alignRefPoint && (
+      {sketchDrawState?.alignV && sketchDrawState?.alignRefPoint && (
         <div
           className="absolute top-0 bottom-0"
           style={{
@@ -311,8 +327,8 @@ export default function SketchOverlay({ containerRef }: SketchOverlayProps) {
       {/* ── Constraint symbols on existing geometry ── */}
       {/* These are rendered via the ConstraintIndicators component in Three.js */}
       {/* Here we show additional 2D constraint symbols for sketch entities */}
-      {objects.map((obj) => {
-        if (!obj.visible) return null;
+      {(objects ?? []).map((obj) => {
+        if (!obj?.visible) return null;
         const symbols: { symbol: string; color: string }[] = [];
 
         if (obj.type === "line" && obj.linePoints && obj.linePoints.length === 2) {
@@ -347,5 +363,13 @@ export default function SketchOverlay({ containerRef }: SketchOverlayProps) {
         />
       )}
     </div>
+  );
+}
+
+export default function SketchOverlay(props: SketchOverlayProps) {
+  return (
+    <SketchOverlayErrorBoundary>
+      <SketchOverlayInner {...props} />
+    </SketchOverlayErrorBoundary>
   );
 }

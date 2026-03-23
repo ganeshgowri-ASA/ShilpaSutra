@@ -395,9 +395,20 @@ export const useCadStore = create<CadState>((set, get) => ({
   setActiveOperation: (op) => set({ activeOperation: op }),
   setShowHistoryTimeline: (v) => set({ showHistoryTimeline: v }),
   setIsConstructionMode: (v) => set({ isConstructionMode: v }),
-  setSketchDrawState: (state) => set((s) => ({
-    sketchDrawState: { ...s.sketchDrawState, ...state },
-  })),
+  setSketchDrawState: (state) => set((s) => {
+    const defaults = {
+      clickPoints: [] as [number, number, number][],
+      previewPoint: null as [number, number, number] | null,
+      activeTool: "select" as ToolId,
+      snapType: null as string | null,
+      alignH: false,
+      alignV: false,
+      alignRefPoint: null as [number, number, number] | null,
+    };
+    return {
+      sketchDrawState: { ...defaults, ...s.sketchDrawState, ...state },
+    };
+  }),
   setDynamicInputValue: (v) => set({ dynamicInputValue: v }),
   setDynamicInputActive: (v) => set({ dynamicInputActive: v }),
 

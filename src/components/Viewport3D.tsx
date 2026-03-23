@@ -499,19 +499,21 @@ function findSnapPoint(
   objects: CadObject[],
   threshold: number
 ): { point: [number, number, number]; type: string } | null {
+  if (!point || !Array.isArray(objects)) return null;
   const candidates: { point: [number, number, number]; type: string; dist: number }[] = [];
 
   for (const obj of objects) {
-    if (obj.visible === false) continue;
+    if (!obj || obj.visible === false) continue;
 
     // Endpoints
-    if (obj.type === "line" && obj.linePoints) {
+    if (obj.type === "line" && Array.isArray(obj.linePoints)) {
       for (const lp of obj.linePoints) {
+        if (!lp) continue;
         const d = Math.sqrt(Math.pow(point[0] - lp[0], 2) + Math.pow(point[2] - lp[2], 2));
         if (d < threshold) candidates.push({ point: lp, type: "Endpoint", dist: d });
       }
       // Midpoint
-      if (obj.linePoints.length === 2) {
+      if (obj.linePoints.length >= 2 && obj.linePoints[0] && obj.linePoints[1]) {
         const mid: [number, number, number] = [
           (obj.linePoints[0][0] + obj.linePoints[1][0]) / 2,
           (obj.linePoints[0][1] + obj.linePoints[1][1]) / 2,
@@ -529,23 +531,27 @@ function findSnapPoint(
     }
 
     // Rectangle corners
-    if (obj.type === "rectangle" && obj.rectCorners) {
+    if (obj.type === "rectangle" && Array.isArray(obj.rectCorners) && obj.rectCorners.length >= 2) {
       for (const rc of obj.rectCorners) {
+        if (!rc) continue;
         const rp: [number, number, number] = [rc[0], SKETCH_Y, rc[2]];
         const d = Math.sqrt(Math.pow(point[0] - rp[0], 2) + Math.pow(point[2] - rp[2], 2));
         if (d < threshold) candidates.push({ point: rp, type: "Endpoint", dist: d });
       }
       // Rectangle midpoints
-      const [c1, c2] = obj.rectCorners;
-      const mids: [number, number, number][] = [
-        [(c1[0] + c2[0]) / 2, SKETCH_Y, c1[2]],
-        [(c1[0] + c2[0]) / 2, SKETCH_Y, c2[2]],
-        [c1[0], SKETCH_Y, (c1[2] + c2[2]) / 2],
-        [c2[0], SKETCH_Y, (c1[2] + c2[2]) / 2],
-      ];
-      for (const mid of mids) {
-        const d = Math.sqrt(Math.pow(point[0] - mid[0], 2) + Math.pow(point[2] - mid[2], 2));
-        if (d < threshold) candidates.push({ point: mid, type: "Midpoint", dist: d });
+      const c1 = obj.rectCorners[0];
+      const c2 = obj.rectCorners[1];
+      if (c1 && c2) {
+        const mids: [number, number, number][] = [
+          [(c1[0] + c2[0]) / 2, SKETCH_Y, c1[2]],
+          [(c1[0] + c2[0]) / 2, SKETCH_Y, c2[2]],
+          [c1[0], SKETCH_Y, (c1[2] + c2[2]) / 2],
+          [c2[0], SKETCH_Y, (c1[2] + c2[2]) / 2],
+        ];
+        for (const mid of mids) {
+          const d = Math.sqrt(Math.pow(point[0] - mid[0], 2) + Math.pow(point[2] - mid[2], 2));
+          if (d < threshold) candidates.push({ point: mid, type: "Midpoint", dist: d });
+        }
       }
     }
   }
@@ -565,17 +571,26 @@ function checkAlignment(
   let alignV = false;
   let refPoint: [number, number, number] | null = null;
 
+  if (!point || !Array.isArray(objects)) return { alignH, alignV, refPoint };
+
   for (const obj of objects) {
-    if (obj.visible === false) continue;
+    if (!obj || obj.visible === false) continue;
     const points: [number, number, number][] = [];
-    if (obj.linePoints) points.push(...obj.linePoints);
+    if (Array.isArray(obj.linePoints)) {
+      for (const lp of obj.linePoints) {
+        if (lp) points.push(lp);
+      }
+    }
     if (obj.circleCenter) points.push(obj.circleCenter);
-    if (obj.rectCorners) {
-      points.push([obj.rectCorners[0][0], SKETCH_Y, obj.rectCorners[0][2]]);
-      points.push([obj.rectCorners[1][0], SKETCH_Y, obj.rectCorners[1][2]]);
+    if (Array.isArray(obj.rectCorners) && obj.rectCorners.length >= 2) {
+      const rc0 = obj.rectCorners[0];
+      const rc1 = obj.rectCorners[1];
+      if (rc0) points.push([rc0[0], SKETCH_Y, rc0[2]]);
+      if (rc1) points.push([rc1[0], SKETCH_Y, rc1[2]]);
     }
 
     for (const p of points) {
+      if (!p) continue;
       if (Math.abs(point[0] - p[0]) < threshold && !alignV) {
         alignV = true;
         refPoint = p;
@@ -659,7 +674,14 @@ function SketchDrawTools() {
 
   const handleClick = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation();
-    const p = getSnappedPoint(e.point);
+    if (!e.point) return;
+    let p: [number, number, number];
+    try {
+      p = getSnappedPoint(e.point);
+    } catch (err) {
+      console.warn("[SketchDrawTools] getSnappedPoint error:", err);
+      return;
+    }
 
     const effectiveTool = isConstructionMode ? "construction_line" : activeTool;
 
@@ -724,9 +746,14 @@ function SketchDrawTools() {
   };
 
   const handleMove = (e: ThreeEvent<MouseEvent>) => {
-    const snapped = getSnappedPoint(e.point);
-    if (clickPoints.length > 0) {
-      setPreviewPoint(snapped);
+    if (!e.point) return;
+    try {
+      const snapped = getSnappedPoint(e.point);
+      if (clickPoints.length > 0) {
+        setPreviewPoint(snapped);
+      }
+    } catch (err) {
+      console.warn("[SketchDrawTools] handleMove error:", err);
     }
   };
 
@@ -833,12 +860,12 @@ function SketchDrawTools() {
   const snapIndicators = useMemo(() => {
     const points: { pos: [number, number, number]; type: string }[] = [];
     for (const obj of objects) {
-      if (obj.visible === false) continue;
-      if (obj.linePoints) {
+      if (!obj || obj.visible === false) continue;
+      if (Array.isArray(obj.linePoints)) {
         for (const lp of obj.linePoints) {
-          points.push({ pos: lp, type: "endpoint" });
+          if (lp) points.push({ pos: lp, type: "endpoint" });
         }
-        if (obj.linePoints.length === 2) {
+        if (obj.linePoints.length >= 2 && obj.linePoints[0] && obj.linePoints[1]) {
           points.push({
             pos: [
               (obj.linePoints[0][0] + obj.linePoints[1][0]) / 2,
@@ -852,7 +879,7 @@ function SketchDrawTools() {
       if (obj.circleCenter) {
         points.push({ pos: obj.circleCenter, type: "center" });
       }
-      if (obj.rectCorners) {
+      if (Array.isArray(obj.rectCorners) && obj.rectCorners.length >= 2 && obj.rectCorners[0] && obj.rectCorners[1]) {
         points.push({ pos: [obj.rectCorners[0][0], SKETCH_Y, obj.rectCorners[0][2]], type: "endpoint" });
         points.push({ pos: [obj.rectCorners[1][0], SKETCH_Y, obj.rectCorners[1][2]], type: "endpoint" });
         points.push({ pos: [obj.rectCorners[1][0], SKETCH_Y, obj.rectCorners[0][2]], type: "endpoint" });
