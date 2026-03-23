@@ -161,57 +161,57 @@ export default function DashboardPage() {
     <div className="flex-1 overflow-y-auto bg-[#0d1117]">
       {/* Onboarding Banner */}
       {showOnboarding && (
-        <div className="bg-gradient-to-r from-[#00D4FF]/10 to-[#00D4FF]/5 border-b border-[#00D4FF]/20 px-6 py-3 flex items-center justify-between">
+        <div className="bg-gradient-to-r from-[#00D4FF]/8 via-[#00D4FF]/5 to-transparent border-b border-[#00D4FF]/15 px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <span className="w-8 h-8 rounded-lg bg-[#00D4FF]/20 flex items-center justify-center text-[#00D4FF] font-bold text-sm">
+            <span className="w-8 h-8 rounded-lg bg-[#00D4FF]/15 flex items-center justify-center text-[#00D4FF]">
               <Info size={16} />
             </span>
-            <span className="text-sm text-slate-200">
-              <strong>Welcome to ShilpaSutra!</strong> Start with Text-to-CAD or open the Parts Library to begin designing.
-              Press <kbd className="bg-[#21262d] px-1.5 py-0.5 rounded text-[10px] font-mono mx-0.5">?</kbd> for keyboard shortcuts.
+            <span className="text-sm text-slate-300">
+              <strong className="text-slate-100">Welcome to ShilpaSutra!</strong> Start with Text-to-CAD or open the Parts Library to begin designing.
+              Press <kbd className="bg-[#21262d] px-1.5 py-0.5 rounded text-[10px] font-mono mx-0.5 border border-[#30363d]">?</kbd> for keyboard shortcuts.
             </span>
           </div>
-          <button onClick={() => setShowOnboarding(false)} className="text-slate-400 hover:text-white transition-colors p-1">
-            <X size={16} />
+          <button onClick={() => setShowOnboarding(false)} className="text-slate-500 hover:text-white transition-all duration-150 p-1 rounded-md hover:bg-[#21262d]">
+            <X size={14} />
           </button>
         </div>
       )}
 
-      <div className="max-w-[1400px] mx-auto px-6 py-6 space-y-6">
+      <div className="max-w-[1400px] mx-auto px-6 py-8 space-y-7">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-white">Dashboard</h1>
-            <p className="text-slate-500 text-sm mt-0.5">AI-Powered CAD, FEA, CFD & Engineering Platform</p>
+            <h1 className="text-2xl font-bold text-white tracking-tight">Dashboard</h1>
+            <p className="text-slate-500 text-sm mt-1">AI-Powered CAD, FEA, CFD & Engineering Platform</p>
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={generateDashboardReport}
-              className="bg-[#161b22] border border-[#21262d] hover:border-amber-400 text-slate-300 hover:text-amber-400 px-4 py-2 rounded-lg text-sm transition-colors flex items-center gap-1.5"
+              className="bg-[#161b22] border border-[#21262d] hover:border-amber-500/40 text-slate-400 hover:text-amber-400 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-150 flex items-center gap-1.5"
             >
               <FileText size={14} />
-              Generate Report
+              Report
             </button>
             <Link
               href="/wizard"
-              className="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all shadow-lg shadow-purple-500/20 flex items-center gap-1.5"
+              className="bg-gradient-to-r from-purple-600/90 to-purple-700/90 hover:from-purple-500 hover:to-purple-600 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 shadow-lg shadow-purple-500/15 hover:shadow-purple-500/25 flex items-center gap-1.5"
             >
               <Wand2 size={14} />
-              Design Wizard
+              Wizard
             </Link>
             <Link
               href="/text-to-cad"
-              className="bg-[#00D4FF] hover:bg-[#00b8d9] text-black px-4 py-2 rounded-lg text-sm font-semibold transition-colors shadow-lg shadow-[#00D4FF]/20 flex items-center gap-1.5"
+              className="bg-[#00D4FF] hover:bg-[#00b8d9] text-[#0d1117] px-4 py-2 rounded-lg text-sm font-bold transition-all duration-150 shadow-lg shadow-[#00D4FF]/15 hover:shadow-[#00D4FF]/25 flex items-center gap-1.5"
             >
-              <Plus size={14} />
+              <Plus size={14} strokeWidth={3} />
               New Design
             </Link>
             <Link
               href="/library"
-              className="bg-[#161b22] border border-[#21262d] hover:border-[#00D4FF] text-slate-300 hover:text-white px-4 py-2 rounded-lg text-sm transition-colors flex items-center gap-1.5"
+              className="bg-[#161b22] border border-[#21262d] hover:border-[#00D4FF]/30 text-slate-400 hover:text-[#00D4FF] px-4 py-2 rounded-lg text-sm font-medium transition-all duration-150 flex items-center gap-1.5"
             >
               <Library size={14} />
-              Parts Library
+              Library
             </Link>
           </div>
         </div>
@@ -219,12 +219,12 @@ export default function DashboardPage() {
         {/* Stats */}
         <div className="grid grid-cols-6 gap-3">
           {stats.map((s) => (
-            <div key={s.label} className={`bg-gradient-to-br ${s.color} rounded-xl p-3 border ${s.border}`}>
+            <div key={s.label} className={`bg-gradient-to-br ${s.color} rounded-xl p-3.5 border ${s.border} hover:scale-[1.02] transition-transform duration-200 cursor-default`}>
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">{s.label}</span>
-                <span className={`${s.text}`}>{s.icon}</span>
+                <span className="text-[9px] font-semibold text-slate-500 uppercase tracking-widest">{s.label}</span>
+                <span className={`${s.text} opacity-80`}>{s.icon}</span>
               </div>
-              <div className={`text-2xl font-bold mt-1 ${s.text}`}>{s.value}</div>
+              <div className={`text-2xl font-bold mt-1.5 ${s.text}`}>{s.value}</div>
               <div className="text-[10px] text-slate-500 mt-0.5">{s.change}</div>
             </div>
           ))}
@@ -232,25 +232,25 @@ export default function DashboardPage() {
 
         {/* Quick Actions */}
         <div>
-          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Quick Actions</h2>
+          <h2 className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.15em] mb-3">Quick Actions</h2>
           <div className="grid grid-cols-4 gap-3">
             {quickActions.map((a) => (
               <Link
                 key={a.title}
                 href={a.href}
-                className="bg-[#161b22] border border-[#21262d] rounded-xl p-4 hover:border-[#00D4FF]/50 hover:shadow-lg hover:shadow-[#00D4FF]/5 transition-all group"
+                className="bg-[#161b22] border border-[#21262d] rounded-xl p-4 hover:border-[#00D4FF]/30 hover:shadow-xl hover:shadow-[#00D4FF]/5 transition-all duration-200 group hover:-translate-y-0.5"
               >
                 <div className="flex items-center gap-3">
-                  <span className="w-10 h-10 rounded-lg bg-[#00D4FF]/10 text-[#00D4FF] flex items-center justify-center group-hover:bg-[#00D4FF]/20 transition-colors">
+                  <span className="w-10 h-10 rounded-xl bg-[#00D4FF]/8 text-[#00D4FF] flex items-center justify-center group-hover:bg-[#00D4FF]/15 transition-all duration-200">
                     {a.icon}
                   </span>
                   <div>
-                    <div className="font-semibold text-sm text-white group-hover:text-[#00D4FF] transition-colors">{a.title}</div>
-                    <div className="text-[10px] text-slate-500">{a.desc}</div>
+                    <div className="font-semibold text-sm text-white group-hover:text-[#00D4FF] transition-colors duration-150">{a.title}</div>
+                    <div className="text-[10px] text-slate-600">{a.desc}</div>
                   </div>
                 </div>
-                <div className="mt-2 text-right">
-                  <span className="text-[9px] text-slate-600 bg-[#0d1117] px-1.5 py-0.5 rounded font-mono">Alt+{a.hotkey}</span>
+                <div className="mt-2.5 text-right">
+                  <span className="text-[8px] text-slate-600 bg-[#0d1117] px-1.5 py-0.5 rounded-md font-mono border border-[#21262d]">Alt+{a.hotkey}</span>
                 </div>
               </Link>
             ))}
@@ -262,8 +262,8 @@ export default function DashboardPage() {
           {/* Recent Projects */}
           <div className="col-span-2">
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Recent Projects</h2>
-              <Link href="/library" className="text-[10px] text-[#00D4FF] hover:underline flex items-center gap-0.5">
+              <h2 className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.15em]">Recent Projects</h2>
+              <Link href="/library" className="text-[10px] text-[#00D4FF]/70 hover:text-[#00D4FF] font-medium flex items-center gap-0.5 transition-colors duration-150">
                 View all <ArrowRight size={10} />
               </Link>
             </div>
@@ -271,31 +271,31 @@ export default function DashboardPage() {
               {recentProjects.map((p) => (
                 <div
                   key={p.name}
-                  className="bg-[#161b22] border border-[#21262d] rounded-xl p-3 hover:border-[#30363d] hover:shadow-lg transition-all cursor-pointer group"
+                  className="bg-[#161b22] border border-[#21262d] rounded-xl p-3.5 hover:border-[#30363d] hover:shadow-lg hover:shadow-black/20 transition-all duration-200 cursor-pointer group hover:-translate-y-0.5"
                 >
                   <div className="flex items-center justify-between mb-2">
-                    <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded ${typeColors[p.type] || "bg-slate-500/20 text-slate-400"}`}>
+                    <span className={`text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md ${typeColors[p.type] || "bg-slate-500/20 text-slate-400"}`}>
                       {p.type}
                     </span>
                     <span className="flex items-center gap-1">
                       {statusIcons[p.status]}
-                      <span className="text-[9px] text-slate-500 capitalize">{p.status}</span>
+                      <span className="text-[9px] text-slate-600 capitalize">{p.status}</span>
                     </span>
                   </div>
-                  <h3 className="text-xs font-bold text-white group-hover:text-[#00D4FF] transition-colors truncate mb-1">
+                  <h3 className="text-[11px] font-bold text-slate-200 group-hover:text-[#00D4FF] transition-colors duration-150 truncate mb-1">
                     {p.name}
                   </h3>
-                  <div className="text-[9px] text-slate-600 mb-2">{p.modified}</div>
+                  <div className="text-[9px] text-slate-600 mb-2.5">{p.modified}</div>
                   {/* Progress bar */}
                   <div className="w-full h-1 bg-[#21262d] rounded-full overflow-hidden">
                     <div
-                      className={`h-full rounded-full transition-all ${
+                      className={`h-full rounded-full transition-all duration-500 ${
                         p.progress === 100 ? "bg-green-500" : "bg-[#00D4FF]"
                       }`}
                       style={{ width: `${p.progress}%` }}
                     />
                   </div>
-                  <div className="text-[8px] text-slate-600 mt-0.5 text-right">{p.progress}%</div>
+                  <div className="text-[8px] text-slate-600 mt-1 text-right font-mono">{p.progress}%</div>
                 </div>
               ))}
             </div>
@@ -305,17 +305,17 @@ export default function DashboardPage() {
           <div className="space-y-3">
             {/* Activity Feed */}
             <div>
-              <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Activity</h2>
-              <div className="bg-[#161b22] border border-[#21262d] rounded-xl divide-y divide-[#21262d]">
+              <h2 className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.15em] mb-3">Activity</h2>
+              <div className="bg-[#161b22] border border-[#21262d] rounded-xl divide-y divide-[#21262d]/80 overflow-hidden">
                 {activityFeed.map((a, i) => (
-                  <div key={i} className="px-3 py-2 flex items-center gap-2 hover:bg-[#21262d]/50 transition-colors">
-                    <span className="text-slate-500 shrink-0">{a.icon}</span>
+                  <div key={i} className="px-3 py-2.5 flex items-center gap-2.5 hover:bg-[#21262d]/30 transition-colors duration-150">
+                    <span className="text-slate-600 shrink-0">{a.icon}</span>
                     <div className="flex-1 min-w-0">
-                      <div className="text-[10px] text-slate-300 truncate">
-                        <span className="text-slate-500">{a.action}:</span> {a.target}
+                      <div className="text-[10px] text-slate-400 truncate">
+                        <span className="text-slate-600">{a.action}:</span> <span className="text-slate-300">{a.target}</span>
                       </div>
                     </div>
-                    <span className="text-[9px] text-slate-600 shrink-0">{a.time}</span>
+                    <span className="text-[9px] text-slate-700 shrink-0 font-mono">{a.time}</span>
                   </div>
                 ))}
               </div>
@@ -323,48 +323,43 @@ export default function DashboardPage() {
 
             {/* Storage Usage */}
             <div className="bg-[#161b22] border border-[#21262d] rounded-xl p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <HardDrive size={12} className="text-slate-500" />
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Storage</span>
+              <div className="flex items-center gap-2 mb-2.5">
+                <HardDrive size={12} className="text-slate-600" />
+                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-[0.15em]">Storage</span>
               </div>
-              <div className="w-full h-2 bg-[#21262d] rounded-full overflow-hidden mb-1.5">
+              <div className="w-full h-1.5 bg-[#21262d] rounded-full overflow-hidden mb-2">
                 <div
-                  className="h-full bg-gradient-to-r from-[#00D4FF] to-[#0090b8] rounded-full"
+                  className="h-full bg-gradient-to-r from-[#00D4FF] to-[#0090b8] rounded-full transition-all duration-500"
                   style={{ width: `${storagePercent}%` }}
                 />
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-[10px] text-slate-500">{storageUsed} MB used</span>
-                <span className="text-[10px] text-slate-500">{storageTotal} MB total</span>
+                <span className="text-[10px] text-slate-600">{storageTotal} MB total</span>
               </div>
             </div>
 
             {/* System Status */}
-            <div className="bg-[#161b22] border border-[#21262d] rounded-xl p-4 space-y-2">
+            <div className="bg-[#161b22] border border-[#21262d] rounded-xl p-4 space-y-2.5">
               <div className="flex items-center gap-2 mb-1">
-                <Cpu size={12} className="text-slate-500" />
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">System</span>
+                <Cpu size={12} className="text-slate-600" />
+                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-[0.15em]">System</span>
               </div>
-              <div className="text-[10px] text-slate-500 flex justify-between">
-                <span>Version</span>
-                <span className="text-white font-mono">ShilpaSutra v2.0</span>
-              </div>
-              <div className="text-[10px] text-slate-500 flex justify-between">
-                <span>AI Engine</span>
-                <span className="text-[#00D4FF]">Claude</span>
-              </div>
-              <div className="text-[10px] text-slate-500 flex justify-between">
-                <span>CAD Kernel</span>
-                <span className="text-white">OpenCASCADE.js</span>
-              </div>
-              <div className="text-[10px] text-slate-500 flex justify-between">
-                <span>Simulation</span>
-                <span className="text-white">FEM + FVM</span>
-              </div>
+              {[
+                { label: "Version", value: "ShilpaSutra v2.0", color: "text-slate-200" },
+                { label: "AI Engine", value: "Claude", color: "text-[#00D4FF]" },
+                { label: "CAD Kernel", value: "OpenCASCADE.js", color: "text-slate-200" },
+                { label: "Simulation", value: "FEM + FVM", color: "text-slate-200" },
+              ].map((item) => (
+                <div key={item.label} className="text-[10px] text-slate-500 flex justify-between">
+                  <span>{item.label}</span>
+                  <span className={`${item.color} font-mono font-medium`}>{item.value}</span>
+                </div>
+              ))}
               <div className="text-[10px] text-slate-500 flex justify-between">
                 <span>Status</span>
-                <span className="flex items-center gap-1 text-green-400">
-                  <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                <span className="flex items-center gap-1.5 text-green-400">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-400 pulse-ring" />
                   Online
                 </span>
               </div>
@@ -373,8 +368,8 @@ export default function DashboardPage() {
         </div>
 
         {/* Footer */}
-        <div className="text-center text-[10px] text-slate-600 py-4 border-t border-[#21262d]">
-          ShilpaSutra v2.0 | AI Engine: Claude | Geometry Kernel: OpenCASCADE.js | Simulation: FEM + FVM
+        <div className="text-center text-[10px] text-slate-700 py-4 border-t border-[#21262d]/60">
+          ShilpaSutra v2.0 &middot; AI Engine: Claude &middot; Geometry Kernel: OpenCASCADE.js &middot; Simulation: FEM + FVM
         </div>
       </div>
     </div>

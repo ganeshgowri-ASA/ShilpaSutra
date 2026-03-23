@@ -90,10 +90,10 @@ function ObjectRow({
       onClick={(e) => onSelect(obj.id, e)}
       onDoubleClick={() => onDoubleClick(obj)}
       onContextMenu={(e) => onContextMenu(e, obj.id)}
-      className={`flex items-center gap-1.5 px-2 py-1.5 rounded cursor-pointer group transition-colors ${
+      className={`flex items-center gap-1.5 px-2 py-1.5 rounded-md cursor-pointer group transition-all duration-150 ${
         isSelected
-          ? "bg-[#00D4FF]/15 text-[#00D4FF]"
-          : "text-slate-400 hover:bg-[#0f3460]/40 hover:text-slate-300"
+          ? "bg-[#00D4FF]/10 text-[#00D4FF] shadow-[inset_0_0_0_1px_rgba(0,212,255,0.15)]"
+          : "text-slate-400 hover:bg-[#21262d]/50 hover:text-slate-300"
       }`}
     >
       <span className={`shrink-0 ${isSelected ? "text-[#00D4FF]" : "text-slate-500"}`}>
@@ -110,25 +110,25 @@ function ObjectRow({
             if (e.key === "Enter") onRename(obj.id);
             if (e.key === "Escape") setEditingId(null);
           }}
-          className="flex-1 bg-[#0d1117] text-[11px] px-1 py-0.5 rounded border border-[#00D4FF]/50 outline-none text-white min-w-0"
+          className="flex-1 bg-[#0d1117] text-[11px] px-1.5 py-0.5 rounded-md border border-[#00D4FF]/40 outline-none text-white min-w-0"
           autoFocus
           onClick={(e) => e.stopPropagation()}
         />
       ) : (
-        <span className="flex-1 text-[11px] truncate">{obj.name}</span>
+        <span className="flex-1 text-[11px] truncate font-medium">{obj.name}</span>
       )}
 
       {paramSummary && (
-        <span className="text-[9px] text-slate-600 shrink-0">{paramSummary}</span>
+        <span className="text-[8px] text-slate-600 shrink-0 font-mono bg-[#0d1117] px-1 rounded">{paramSummary}</span>
       )}
 
-      <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-all duration-150">
         <button
           onClick={(e) => {
             e.stopPropagation();
             updateObject(obj.id, { visible: !obj.visible });
           }}
-          className="w-5 h-5 flex items-center justify-center rounded hover:bg-[#0f3460]"
+          className="w-5 h-5 flex items-center justify-center rounded-md hover:bg-[#21262d]"
         >
           {obj.visible !== false ? (
             <Eye size={10} className="text-slate-500" />
@@ -141,7 +141,7 @@ function ObjectRow({
             e.stopPropagation();
             updateObject(obj.id, { locked: !obj.locked });
           }}
-          className="w-5 h-5 flex items-center justify-center rounded hover:bg-[#0f3460]"
+          className="w-5 h-5 flex items-center justify-center rounded-md hover:bg-[#21262d]"
         >
           {obj.locked ? (
             <Lock size={10} className="text-red-400" />
@@ -256,18 +256,20 @@ export default function FeatureTree() {
     setExpanded: (v: boolean) => void,
     count: number
   ) => (
-    <div className="mb-1">
+    <div className="mb-0.5">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-1 px-2 py-1 rounded text-slate-400 hover:bg-[#0f3460]/50 transition-colors"
+        className="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-md text-slate-400 hover:bg-[#21262d]/60 transition-all duration-150 group"
       >
-        {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        <span className="transition-transform duration-150" style={{ transform: expanded ? "rotate(90deg)" : "rotate(0deg)" }}>
+          <ChevronRight size={11} className="text-slate-600 group-hover:text-slate-400" />
+        </span>
         {icon}
-        <span className="text-[11px] font-medium">{title}</span>
-        <span className="ml-auto text-[9px] text-slate-600 bg-[#0d1117] rounded px-1">{count}</span>
+        <span className="text-[11px] font-semibold tracking-wide">{title}</span>
+        <span className="ml-auto text-[8px] text-slate-600 bg-[#0d1117] rounded-full px-1.5 py-0.5 font-mono min-w-[18px] text-center">{count}</span>
       </button>
       {expanded && items.length > 0 && (
-        <div className="ml-4 space-y-0.5">
+        <div className="ml-3 pl-2 border-l border-[#21262d]/60 space-y-px mt-0.5 animate-fade-in">
           {items.map((obj) => {
             const isSelected = selectedId === obj.id || selectedIds.includes(obj.id);
             return (
@@ -284,8 +286,8 @@ export default function FeatureTree() {
         </div>
       )}
       {expanded && items.length === 0 && (
-        <div className="ml-4 py-1 text-[10px] text-slate-700 px-2">
-          {searchQuery ? "No matching" : "Empty"}
+        <div className="ml-3 pl-2 border-l border-[#21262d]/60 py-2 text-[10px] text-slate-600 italic px-2">
+          {searchQuery ? "No matching items" : "No items yet"}
         </div>
       )}
     </div>
@@ -293,10 +295,10 @@ export default function FeatureTree() {
 
   if (featureTreeCollapsed) {
     return (
-      <div className="w-10 bg-[#1a1a2e] border-r border-[#16213e] flex flex-col items-center pt-2 shrink-0">
+      <div className="w-10 bg-[#161b22] border-r border-[#21262d] flex flex-col items-center pt-2 shrink-0">
         <button
           onClick={() => setFeatureTreeCollapsed(false)}
-          className="w-8 h-8 rounded flex items-center justify-center text-slate-500 hover:text-white hover:bg-[#0f3460] transition-colors"
+          className="w-8 h-8 rounded-md flex items-center justify-center text-slate-500 hover:text-white hover:bg-[#21262d] transition-all duration-150"
           title="Expand Feature Tree"
         >
           <PanelLeft size={16} />
@@ -306,67 +308,72 @@ export default function FeatureTree() {
   }
 
   return (
-    <div className="w-[240px] bg-[#1a1a2e] border-r border-[#16213e] flex flex-col shrink-0 select-none">
+    <div className="w-[240px] bg-[#161b22] border-r border-[#21262d] flex flex-col shrink-0 select-none">
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-[#16213e]">
-        <div className="flex items-center gap-1.5">
+      <div className="flex items-center justify-between px-3 py-2.5 border-b border-[#21262d]">
+        <div className="flex items-center gap-2">
           <Layers size={14} className="text-[#00D4FF]" />
-          <span className="text-xs font-semibold text-slate-300">Feature Tree</span>
+          <span className="text-[11px] font-bold text-slate-200 tracking-wide">Feature Tree</span>
         </div>
         <button
           onClick={() => setFeatureTreeCollapsed(true)}
-          className="w-6 h-6 rounded flex items-center justify-center text-slate-500 hover:text-white hover:bg-[#0f3460] transition-colors"
+          className="w-6 h-6 rounded-md flex items-center justify-center text-slate-500 hover:text-white hover:bg-[#21262d] transition-all duration-150"
         >
           <PanelLeftClose size={14} />
         </button>
       </div>
 
       {/* Search */}
-      <div className="px-2 py-1.5 border-b border-[#16213e]">
+      <div className="px-2.5 py-2 border-b border-[#21262d]">
         <div className="relative">
-          <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500" />
+          <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-600" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Filter..."
-            className="w-full bg-[#0d1117] text-[11px] text-slate-300 rounded pl-7 pr-2 py-1.5 border border-[#16213e] focus:border-[#00D4FF]/50 outline-none placeholder-slate-600"
+            placeholder="Filter objects..."
+            className="w-full bg-[#0d1117] text-[11px] text-slate-300 rounded-md pl-7 pr-2 py-1.5 border border-[#21262d] focus:border-[#00D4FF]/40 outline-none placeholder-slate-600 transition-colors duration-150"
           />
         </div>
       </div>
 
       {/* Tree content */}
-      <div className="flex-1 overflow-y-auto px-1 py-1">
+      <div className="flex-1 overflow-y-auto thin-scrollbar px-1.5 py-1.5">
         {/* Origin folder */}
-        <div className="mb-1">
+        <div className="mb-0.5">
           <button
             onClick={() => setOriginExpanded(!originExpanded)}
-            className="w-full flex items-center gap-1 px-2 py-1 rounded text-slate-400 hover:bg-[#0f3460]/50 transition-colors"
+            className="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-md text-slate-400 hover:bg-[#21262d]/60 transition-all duration-150 group"
           >
-            {originExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-            <Layers size={12} className="text-yellow-500" />
-            <span className="text-[11px]">Origin</span>
+            <span className="transition-transform duration-150" style={{ transform: originExpanded ? "rotate(90deg)" : "rotate(0deg)" }}>
+              <ChevronRight size={11} className="text-slate-600 group-hover:text-slate-400" />
+            </span>
+            <Layers size={12} className="text-yellow-500/80" />
+            <span className="text-[11px] font-semibold tracking-wide">Origin</span>
           </button>
           {originExpanded && (
-            <div className="ml-5 space-y-0.5">
-              {(["xy", "xz", "yz"] as const).map((plane) => (
-                <div
-                  key={plane}
-                  className="flex items-center justify-between px-2 py-0.5 rounded hover:bg-[#0f3460]/30 group"
-                >
-                  <span className="text-[10px] text-slate-500 uppercase">{plane.toUpperCase()} Plane</span>
-                  <button
-                    onClick={() => setPlaneVisibility((p) => ({ ...p, [plane]: !p[plane] }))}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity"
+            <div className="ml-3 pl-2 border-l border-[#21262d]/60 space-y-px mt-0.5 animate-fade-in">
+              {(["xy", "xz", "yz"] as const).map((plane) => {
+                const planeColors: Record<string, string> = { xy: "text-blue-400/70", xz: "text-green-400/70", yz: "text-red-400/70" };
+                return (
+                  <div
+                    key={plane}
+                    className="flex items-center justify-between px-2 py-1 rounded-md hover:bg-[#21262d]/40 group transition-colors duration-150"
                   >
-                    {planeVisibility[plane] ? (
-                      <Eye size={10} className="text-slate-500" />
-                    ) : (
-                      <EyeOff size={10} className="text-slate-600" />
-                    )}
-                  </button>
-                </div>
-              ))}
+                    <span className={`text-[10px] font-mono font-medium ${planeColors[plane] || "text-slate-500"}`}>{plane.toUpperCase()} Plane</span>
+                    <button
+                      onClick={() => setPlaneVisibility((p) => ({ ...p, [plane]: !p[plane] }))}
+                      className="opacity-0 group-hover:opacity-100 transition-all duration-150"
+                    >
+                      {planeVisibility[plane] ? (
+                        <Eye size={10} className="text-slate-500" />
+                      ) : (
+                        <EyeOff size={10} className="text-slate-600" />
+                      )}
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -406,9 +413,9 @@ export default function FeatureTree() {
       <ConstraintManager />
 
       {/* Footer */}
-      <div className="px-3 py-1.5 border-t border-[#16213e] text-[10px] text-slate-600">
-        {objects.length} object{objects.length !== 1 ? "s" : ""}
-        {selectedIds.length > 1 && ` (${selectedIds.length} selected)`}
+      <div className="px-3 py-2 border-t border-[#21262d] text-[10px] text-slate-600 flex items-center justify-between">
+        <span>{objects.length} object{objects.length !== 1 ? "s" : ""}</span>
+        {selectedIds.length > 1 && <span className="text-[#00D4FF]/70">{selectedIds.length} selected</span>}
       </div>
 
       {/* Context Menu */}
@@ -419,7 +426,7 @@ export default function FeatureTree() {
             onClick={() => setContextMenu(null)}
           />
           <div
-            className="fixed z-50 bg-[#1a1a2e] border border-[#16213e] rounded-lg shadow-xl py-1 min-w-[160px]"
+            className="fixed z-50 bg-[#161b22] border border-[#30363d] rounded-lg shadow-2xl shadow-black/50 py-1 min-w-[160px] animate-scale-in"
             style={{ left: contextMenu.x, top: contextMenu.y }}
           >
             <button
@@ -431,15 +438,15 @@ export default function FeatureTree() {
                 }
                 setContextMenu(null);
               }}
-              className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-slate-300 hover:bg-[#0f3460] transition-colors"
+              className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[11px] text-slate-300 hover:bg-[#21262d] transition-colors duration-150"
             >
-              <Edit3 size={12} /> Rename
+              <Edit3 size={12} className="text-slate-500" /> Rename
             </button>
             <button
               onClick={() => handleDuplicate(contextMenu.objectId)}
-              className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-slate-300 hover:bg-[#0f3460] transition-colors"
+              className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[11px] text-slate-300 hover:bg-[#21262d] transition-colors duration-150"
             >
-              <Copy size={12} /> Duplicate
+              <Copy size={12} className="text-slate-500" /> Duplicate
             </button>
             <button
               onClick={() => {
@@ -447,9 +454,9 @@ export default function FeatureTree() {
                 if (obj) updateObject(obj.id, { visible: !obj.visible });
                 setContextMenu(null);
               }}
-              className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-slate-300 hover:bg-[#0f3460] transition-colors"
+              className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[11px] text-slate-300 hover:bg-[#21262d] transition-colors duration-150"
             >
-              <EyeOff size={12} /> Toggle Visibility
+              <EyeOff size={12} className="text-slate-500" /> Toggle Visibility
             </button>
             {/* Suppress feature */}
             {(() => {
@@ -460,19 +467,19 @@ export default function FeatureTree() {
                     updateObject(contextMenu.objectId, { locked: true, visible: false });
                     setContextMenu(null);
                   }}
-                  className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-yellow-400 hover:bg-yellow-900/30 transition-colors"
+                  className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[11px] text-yellow-400 hover:bg-yellow-500/10 transition-colors duration-150"
                 >
                   <MoreVertical size={12} /> Suppress Feature
                 </button>
               ) : null;
             })()}
-            <div className="h-px bg-[#16213e] my-1" />
+            <div className="h-px bg-[#21262d] my-1" />
             <button
               onClick={() => {
                 deleteObject(contextMenu.objectId);
                 setContextMenu(null);
               }}
-              className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-red-400 hover:bg-red-900/30 transition-colors"
+              className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[11px] text-red-400 hover:bg-red-500/10 transition-colors duration-150"
             >
               <Trash2 size={12} /> Delete
             </button>

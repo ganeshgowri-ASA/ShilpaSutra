@@ -264,16 +264,16 @@ export default function RibbonToolbar({ onExtrude, onRevolve }: { onExtrude?: ()
   const currentTools = activeTab === "view" ? [] : getToolsForTab(activeTab);
 
   return (
-    <div className="bg-[#16213e] border-b border-[#1a1a2e]/50 shrink-0 select-none">
+    <div className="bg-[#161b22] border-b border-[#21262d] shrink-0 select-none">
       {/* Tab headers */}
-      <div className="flex items-center bg-[#1a1a2e] px-2">
+      <div className="flex items-center bg-[#0d1117] px-1">
         {/* Undo/Redo quick access */}
-        <div className="flex items-center gap-0.5 mr-3 pr-3 border-r border-[#16213e]">
+        <div className="flex items-center gap-0.5 mr-2 pr-2 border-r border-[#21262d]">
           <button
             onClick={undo}
             disabled={undoStack.length === 0}
             title="Undo (Ctrl+Z)"
-            className="w-7 h-7 rounded flex items-center justify-center text-slate-400 hover:text-white hover:bg-[#0f3460] disabled:opacity-30 transition-colors"
+            className="w-7 h-7 rounded-md flex items-center justify-center text-slate-400 hover:text-white hover:bg-[#21262d] disabled:opacity-20 disabled:cursor-not-allowed transition-all duration-150"
           >
             <Undo2 size={14} />
           </button>
@@ -281,7 +281,7 @@ export default function RibbonToolbar({ onExtrude, onRevolve }: { onExtrude?: ()
             onClick={redo}
             disabled={redoStack.length === 0}
             title="Redo (Ctrl+Y)"
-            className="w-7 h-7 rounded flex items-center justify-center text-slate-400 hover:text-white hover:bg-[#0f3460] disabled:opacity-30 transition-colors"
+            className="w-7 h-7 rounded-md flex items-center justify-center text-slate-400 hover:text-white hover:bg-[#21262d] disabled:opacity-20 disabled:cursor-not-allowed transition-all duration-150"
           >
             <Redo2 size={14} />
           </button>
@@ -292,15 +292,15 @@ export default function RibbonToolbar({ onExtrude, onRevolve }: { onExtrude?: ()
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             onDoubleClick={handleTabDoubleClick}
-            className={`px-4 py-1.5 text-xs font-medium transition-colors relative ${
+            className={`px-3.5 py-2 text-[11px] font-semibold tracking-wide transition-all duration-150 relative ${
               activeTab === tab.id
                 ? "text-[#00D4FF]"
-                : "text-slate-400 hover:text-slate-200"
+                : "text-slate-500 hover:text-slate-200"
             }`}
           >
             {tab.label}
             {activeTab === tab.id && (
-              <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-[#00D4FF]" />
+              <div className="absolute bottom-0 left-1 right-1 h-[2px] bg-[#00D4FF] rounded-full" />
             )}
           </button>
         ))}
@@ -308,40 +308,40 @@ export default function RibbonToolbar({ onExtrude, onRevolve }: { onExtrude?: ()
         <div className="flex-1" />
 
         {/* Analysis + Project buttons */}
-        <div className="flex items-center gap-1 mr-2">
+        <div className="flex items-center gap-1.5 mr-2">
           <button onClick={() => router.push("/simulator")}
             title="Send current model to FEA simulator"
-            className="px-2 py-1 rounded text-[10px] font-semibold bg-green-700/30 hover:bg-green-700/60 text-green-400 border border-green-700/40 transition-colors">
+            className="px-2.5 py-1 rounded-md text-[10px] font-bold bg-emerald-500/10 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/20 hover:border-emerald-500/40 transition-all duration-150">
             FEA
           </button>
           <button onClick={() => router.push("/cfd")}
             title="Send current model to CFD solver"
-            className="px-2 py-1 rounded text-[10px] font-semibold bg-blue-700/30 hover:bg-blue-700/60 text-blue-400 border border-blue-700/40 transition-colors">
+            className="px-2.5 py-1 rounded-md text-[10px] font-bold bg-blue-500/10 hover:bg-blue-500/25 text-blue-400 border border-blue-500/20 hover:border-blue-500/40 transition-all duration-150">
             CFD
           </button>
           <div className="w-px h-4 bg-[#21262d] mx-0.5" />
           <button onClick={saveProject} title="Save project as .shilpa file"
-            className="px-2 py-1 rounded text-[10px] bg-[#21262d] hover:bg-[#30363d] text-slate-300 border border-[#30363d] transition-colors">
+            className="px-2.5 py-1 rounded-md text-[10px] font-medium bg-[#21262d] hover:bg-[#30363d] text-slate-300 border border-[#30363d] hover:border-[#484f58] transition-all duration-150">
             Save
           </button>
           <button onClick={loadProject} title="Load .shilpa project file"
-            className="px-2 py-1 rounded text-[10px] bg-[#21262d] hover:bg-[#30363d] text-slate-300 border border-[#30363d] transition-colors">
+            className="px-2.5 py-1 rounded-md text-[10px] font-medium bg-[#21262d] hover:bg-[#30363d] text-slate-300 border border-[#30363d] hover:border-[#484f58] transition-all duration-150">
             Load
           </button>
         </div>
 
         <button
           onClick={() => setCollapsed(!collapsed)}
-          className="w-6 h-6 flex items-center justify-center text-slate-500 hover:text-white"
+          className="w-6 h-6 rounded-md flex items-center justify-center text-slate-500 hover:text-white hover:bg-[#21262d] transition-all duration-150"
           title={collapsed ? "Expand ribbon" : "Collapse ribbon"}
         >
           {collapsed ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
         </button>
       </div>
 
-      {/* Tool buttons - compact icon-only with tooltips */}
+      {/* Tool buttons with icon + label on hover */}
       {!collapsed && (
-        <div className="px-2 py-1 flex items-center gap-0.5 min-h-[36px]">
+        <div className="px-2 py-1.5 flex items-center gap-0.5 min-h-[40px] bg-[#161b22] animate-fade-in">
           {activeTab === "view" ? (
             /* View tab */
             <div className="flex items-center gap-0.5">
@@ -350,52 +350,63 @@ export default function RibbonToolbar({ onExtrude, onRevolve }: { onExtrude?: ()
                   key={view.label}
                   onClick={() => setCameraView(view.label.toLowerCase())}
                   title={view.shortcut ? `${view.label} (${view.shortcut})` : view.label}
-                  className="w-8 h-8 rounded flex items-center justify-center hover:bg-[#0f3460] transition-colors text-slate-400 hover:text-white"
+                  className="group relative flex flex-col items-center justify-center w-9 h-9 rounded-md hover:bg-[#21262d] transition-all duration-150 text-slate-400 hover:text-white"
                 >
-                  <MonitorSmartphone size={16} />
+                  <MonitorSmartphone size={15} />
+                  <span className="text-[7px] mt-0.5 opacity-60 group-hover:opacity-100 transition-opacity">{view.label}</span>
                 </button>
               ))}
-              <div className="w-px h-5 bg-[#1a1a2e] mx-1" />
+              <div className="w-px h-6 bg-[#21262d] mx-1.5" />
               {(["wireframe", "shaded", "realistic"] as const).map((mode) => (
                 <button
                   key={mode}
                   onClick={() => setViewMode(mode)}
                   title={`${mode.charAt(0).toUpperCase() + mode.slice(1)}`}
-                  className={`w-8 h-8 rounded flex items-center justify-center transition-colors ${
-                    viewMode === mode ? "bg-[#00D4FF]/20 text-[#00D4FF]" : "hover:bg-[#0f3460] text-slate-400 hover:text-white"
+                  className={`group relative flex flex-col items-center justify-center w-9 h-9 rounded-md transition-all duration-150 ${
+                    viewMode === mode ? "bg-[#00D4FF]/15 text-[#00D4FF] shadow-glow-sm" : "hover:bg-[#21262d] text-slate-400 hover:text-white"
                   }`}
                 >
-                  {mode === "wireframe" ? <Grid2X2 size={16} /> : mode === "shaded" ? <Sun size={16} /> : <Moon size={16} />}
+                  {mode === "wireframe" ? <Grid2X2 size={15} /> : mode === "shaded" ? <Sun size={15} /> : <Moon size={15} />}
+                  <span className="text-[7px] mt-0.5 opacity-60 group-hover:opacity-100 transition-opacity capitalize">{mode}</span>
                 </button>
               ))}
-              <div className="w-px h-5 bg-[#1a1a2e] mx-1" />
+              <div className="w-px h-6 bg-[#21262d] mx-1.5" />
               <button onClick={() => setShowGrid(!showGrid)} title="Grid (G)"
-                className={`w-8 h-8 rounded flex items-center justify-center transition-colors ${showGrid ? "bg-[#00D4FF]/20 text-[#00D4FF]" : "hover:bg-[#0f3460] text-slate-400"}`}>
-                <Grid3X3 size={16} />
+                className={`group flex flex-col items-center justify-center w-9 h-9 rounded-md transition-all duration-150 ${showGrid ? "bg-[#00D4FF]/15 text-[#00D4FF]" : "hover:bg-[#21262d] text-slate-400 hover:text-white"}`}>
+                <Grid3X3 size={15} />
+                <span className="text-[7px] mt-0.5 opacity-60 group-hover:opacity-100 transition-opacity">Grid</span>
               </button>
               <button onClick={() => setShowOrigin(!showOrigin)} title="Origin Axes"
-                className={`w-8 h-8 rounded flex items-center justify-center transition-colors ${showOrigin ? "bg-[#00D4FF]/20 text-[#00D4FF]" : "hover:bg-[#0f3460] text-slate-400"}`}>
-                <Axis3D size={16} />
+                className={`group flex flex-col items-center justify-center w-9 h-9 rounded-md transition-all duration-150 ${showOrigin ? "bg-[#00D4FF]/15 text-[#00D4FF]" : "hover:bg-[#21262d] text-slate-400 hover:text-white"}`}>
+                <Axis3D size={15} />
+                <span className="text-[7px] mt-0.5 opacity-60 group-hover:opacity-100 transition-opacity">Origin</span>
               </button>
               <button onClick={() => setPerspectiveMode(!perspectiveMode)} title="Perspective/Ortho (5)"
-                className={`w-8 h-8 rounded flex items-center justify-center transition-colors ${!perspectiveMode ? "bg-[#00D4FF]/20 text-[#00D4FF]" : "hover:bg-[#0f3460] text-slate-400"}`}>
-                <Maximize2 size={16} />
+                className={`group flex flex-col items-center justify-center w-9 h-9 rounded-md transition-all duration-150 ${!perspectiveMode ? "bg-[#00D4FF]/15 text-[#00D4FF]" : "hover:bg-[#21262d] text-slate-400 hover:text-white"}`}>
+                <Maximize2 size={15} />
+                <span className="text-[7px] mt-0.5 opacity-60 group-hover:opacity-100 transition-opacity">Ortho</span>
               </button>
             </div>
           ) : (
-            /* Standard tool buttons - icon only */
+            /* Standard tool buttons - icon + label */
             currentTools.map((tool) => (
               <button
                 key={tool.id}
                 onClick={() => tool.action ? tool.action() : handleToolClick(tool.id)}
                 title={tool.shortcut ? `${tool.label} (${tool.shortcut})` : tool.label}
-                className={`w-8 h-8 rounded flex items-center justify-center transition-colors ${
+                className={`group relative flex flex-col items-center justify-center min-w-[36px] h-9 px-1 rounded-md transition-all duration-150 ${
                   activeTool === tool.id
-                    ? "bg-[#00D4FF]/20 text-[#00D4FF]"
-                    : "hover:bg-[#0f3460] text-slate-400 hover:text-white"
+                    ? "bg-[#00D4FF]/15 text-[#00D4FF] shadow-glow-sm"
+                    : "hover:bg-[#21262d] text-slate-400 hover:text-white"
                 }`}
               >
                 {tool.icon}
+                <span className={`text-[7px] mt-0.5 transition-opacity ${
+                  activeTool === tool.id ? "opacity-100" : "opacity-50 group-hover:opacity-100"
+                }`}>{tool.label}</span>
+                {tool.shortcut && (
+                  <span className="absolute -top-0.5 -right-0.5 text-[7px] text-slate-600 font-mono opacity-0 group-hover:opacity-100 transition-opacity bg-[#0d1117] rounded px-0.5">{tool.shortcut}</span>
+                )}
               </button>
             ))
           )}

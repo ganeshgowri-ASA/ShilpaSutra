@@ -3,21 +3,172 @@
 @tailwind utilities;
 
 :root {
-  --foreground-rgb: 255, 255, 255;
-  --background-start-rgb: 15, 23, 42;
-  --background-end-rgb: 15, 23, 42;
+  /* Core surface colors */
+  --bg-primary: #0d1117;
+  --bg-secondary: #161b22;
+  --bg-tertiary: #1a1a2e;
+  --bg-elevated: #21262d;
+  --bg-input: #0d1117;
+
+  /* Border colors */
+  --border-default: #21262d;
+  --border-subtle: #16213e;
+  --border-hover: #30363d;
+
+  /* Accent */
+  --accent: #00D4FF;
+  --accent-hover: #00b8d9;
+  --accent-muted: rgba(0, 212, 255, 0.15);
+  --accent-subtle: rgba(0, 212, 255, 0.08);
+
+  /* Text */
+  --text-primary: #e6edf3;
+  --text-secondary: #8b949e;
+  --text-tertiary: #6e7681;
+  --text-muted: #484f58;
+
+  /* Foreground/Background base */
+  --foreground-rgb: 230, 237, 243;
+  --background-start-rgb: 13, 17, 23;
+  --background-end-rgb: 13, 17, 23;
 }
 
 body {
   color: rgb(var(--foreground-rgb));
-  background: linear-gradient(to bottom, transparent, rgb(var(--background-end-rgb))) rgb(var(--background-start-rgb));
+  background: rgb(var(--background-start-rgb));
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Custom scrollbar */
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: #1e293b; }
-::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #64748b; }
+/* ── Professional scrollbar ── */
+::-webkit-scrollbar { width: 7px; height: 7px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #484f58; }
+::-webkit-scrollbar-corner { background: transparent; }
 
-/* 3D Viewport canvas */
+/* Thin scrollbar for panels */
+.thin-scrollbar::-webkit-scrollbar { width: 4px; }
+.thin-scrollbar::-webkit-scrollbar-thumb { background: #21262d; border-radius: 2px; }
+.thin-scrollbar::-webkit-scrollbar-thumb:hover { background: #30363d; }
+
+/* ── 3D Viewport canvas ── */
 .viewport-canvas { width: 100% !important; height: 100% !important; }
+
+/* ── Focus ring for accessibility ── */
+*:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+  border-radius: 2px;
+}
+
+/* ── Professional input styles ── */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  opacity: 0;
+  height: 0;
+}
+input[type="number"]:hover::-webkit-inner-spin-button,
+input[type="number"]:hover::-webkit-outer-spin-button {
+  opacity: 1;
+  height: auto;
+}
+
+/* ── Range slider professional styling ── */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  background: #21262d;
+  border-radius: 2px;
+  outline: none;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  border: 2px solid #0d1117;
+  box-shadow: 0 0 4px rgba(0, 212, 255, 0.3);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+  box-shadow: 0 0 8px rgba(0, 212, 255, 0.5);
+}
+input[type="range"]::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  border: 2px solid #0d1117;
+}
+
+/* ── Select dropdown ── */
+select {
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236e7681' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+  background-position: right 0.5rem center;
+  background-repeat: no-repeat;
+  background-size: 1em 1em;
+  padding-right: 2rem;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* ── Smooth transitions for panels ── */
+.panel-transition {
+  transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+              opacity 0.15s ease,
+              transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ── Subtle glow effect for active elements ── */
+.glow-accent {
+  box-shadow: 0 0 12px rgba(0, 212, 255, 0.15),
+              0 0 4px rgba(0, 212, 255, 0.1);
+}
+
+/* ── Professional badge/pill ── */
+.badge {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: 4px;
+  line-height: 1.4;
+}
+
+/* ── Tooltip animation ── */
+@keyframes tooltipIn {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.tooltip-animate {
+  animation: tooltipIn 0.15s ease-out;
+}
+
+/* ── Pulse ring for status indicators ── */
+@keyframes pulseRing {
+  0% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.4); }
+  70% { box-shadow: 0 0 0 4px rgba(74, 222, 128, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0); }
+}
+.pulse-ring {
+  animation: pulseRing 2s infinite;
+}
+
+/* ── Skeleton loading ── */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, #21262d 25%, #30363d 50%, #21262d 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 4px;
+}

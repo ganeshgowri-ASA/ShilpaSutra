@@ -197,51 +197,50 @@ export default function DesignerPage() {
             <SketchToolbar visible={isSketchMode} />
 
             {/* Status overlay - top left */}
-            <div className="absolute top-2 left-2 flex items-center gap-2 pointer-events-none z-10">
+            <div className="absolute top-3 left-3 flex items-center gap-1.5 pointer-events-none z-10">
               <span
-                className={`text-[10px] bg-[#1a1a2e]/90 border rounded px-2 py-0.5 backdrop-blur-sm ${
+                className={`text-[10px] font-medium bg-[#0d1117]/85 border rounded-md px-2.5 py-1 backdrop-blur-md shadow-panel ${
                   isSketchMode
-                    ? "border-[#00D4FF]/40 text-[#00D4FF]"
-                    : "border-[#16213e] text-slate-400"
+                    ? "border-[#00D4FF]/30 text-[#00D4FF]"
+                    : "border-[#21262d] text-slate-400"
                 }`}
               >
                 {activeTool === "select" ? "Select" : activeTool.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
               </span>
               {selectedId && (
-                <span className="text-[10px] bg-[#1a1a2e]/90 border border-[#00D4FF]/30 rounded px-2 py-0.5 text-[#00D4FF] backdrop-blur-sm">
+                <span className="text-[10px] font-medium bg-[#0d1117]/85 border border-[#00D4FF]/20 rounded-md px-2.5 py-1 text-[#00D4FF] backdrop-blur-md shadow-panel">
                   Selected
                 </span>
               )}
               {sketchPlane && (
-                <span className="text-[10px] bg-[#1a1a2e]/90 border border-[#00D4FF]/30 rounded px-2 py-0.5 text-[#00D4FF]/80 backdrop-blur-sm">
-                  Sketch Mode - {sketchPlane.toUpperCase()} Plane
+                <span className="text-[10px] font-medium bg-[#0d1117]/85 border border-[#00D4FF]/20 rounded-md px-2.5 py-1 text-[#00D4FF]/80 backdrop-blur-md shadow-panel">
+                  Sketch: {sketchPlane.toUpperCase()} Plane
                 </span>
               )}
             </div>
 
             {/* Sketch plane selector - bottom left */}
-            <div className="absolute bottom-2 left-2 flex items-center gap-1 z-10 pointer-events-auto">
+            <div className="absolute bottom-3 left-3 flex items-center gap-1.5 z-10 pointer-events-auto">
               {!sketchPlane ? (
-                <>
-                  <span className="text-[10px] text-slate-500 mr-1">Sketch:</span>
+                <div className="flex items-center gap-1 bg-[#0d1117]/80 backdrop-blur-md rounded-lg p-1 border border-[#21262d] shadow-panel">
+                  <span className="text-[9px] text-slate-600 font-semibold uppercase tracking-wider px-1.5">Sketch</span>
                   {(["xy", "xz", "yz"] as const).map((plane) => {
                     const colors: Record<string, string> = {
-                      xy: "#4444ff",
-                      xz: "#44ff44",
-                      yz: "#ff4444",
+                      xy: "#6366f1",
+                      xz: "#22c55e",
+                      yz: "#ef4444",
                     };
                     return (
                       <button
                         key={plane}
                         onClick={() => enterSketchMode(plane)}
-                        className="text-[10px] px-2 py-0.5 rounded border border-[#16213e] text-slate-400 bg-[#1a1a2e]/80 hover:text-white transition-all duration-150 backdrop-blur-sm hover:scale-105"
-                        style={{ borderColor: undefined }}
+                        className="text-[10px] font-semibold px-2.5 py-1 rounded-md text-slate-400 hover:text-white transition-all duration-150"
                         onMouseEnter={(e) => {
-                          (e.target as HTMLElement).style.borderColor = colors[plane] + "66";
+                          (e.target as HTMLElement).style.backgroundColor = colors[plane] + "20";
                           (e.target as HTMLElement).style.color = colors[plane];
                         }}
                         onMouseLeave={(e) => {
-                          (e.target as HTMLElement).style.borderColor = "";
+                          (e.target as HTMLElement).style.backgroundColor = "";
                           (e.target as HTMLElement).style.color = "";
                         }}
                       >
@@ -249,11 +248,11 @@ export default function DesignerPage() {
                       </button>
                     );
                   })}
-                </>
+                </div>
               ) : (
                 <button
                   onClick={exitSketchMode}
-                  className="text-[10px] px-4 py-1.5 rounded-md border border-red-500/50 text-red-400 bg-red-500/15 hover:bg-red-500/30 transition-all duration-150 backdrop-blur-sm font-medium flex items-center gap-1.5 shadow-lg shadow-red-500/10"
+                  className="text-[10px] px-4 py-1.5 rounded-lg border border-red-500/30 text-red-400 bg-[#0d1117]/85 hover:bg-red-500/15 transition-all duration-150 backdrop-blur-md font-semibold flex items-center gap-2 shadow-panel"
                 >
                   <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
                   Exit Sketch
@@ -263,17 +262,19 @@ export default function DesignerPage() {
 
             {/* Measurement overlay - top right */}
             {measureResult && (
-              <div className="absolute top-2 right-2 bg-[#1a1a2e]/95 border border-yellow-500/40 rounded-lg p-3 pointer-events-auto z-10 backdrop-blur-sm">
-                <div className="text-[10px] text-yellow-400 font-bold mb-1">Measurement</div>
+              <div className="absolute top-3 right-3 bg-[#0d1117]/90 border border-yellow-500/30 rounded-xl p-3.5 pointer-events-auto z-10 backdrop-blur-md shadow-2xl shadow-black/30 animate-scale-in">
+                <div className="text-[9px] text-yellow-500 font-bold mb-1.5 uppercase tracking-wider">Measurement</div>
                 <div className="text-xs text-white font-mono">
-                  Distance: <span className="text-yellow-300">{measureResult.distance} {unit}</span>
+                  Distance: <span className="text-yellow-300 font-bold">{measureResult.distance} {unit}</span>
                 </div>
-                <div className="text-[10px] text-slate-400 font-mono mt-1">
-                  dX: {measureResult.dx} | dY: {measureResult.dy} | dZ: {measureResult.dz}
+                <div className="text-[10px] text-slate-500 font-mono mt-1.5 space-x-2">
+                  <span>dX: <span className="text-slate-300">{measureResult.dx}</span></span>
+                  <span>dY: <span className="text-slate-300">{measureResult.dy}</span></span>
+                  <span>dZ: <span className="text-slate-300">{measureResult.dz}</span></span>
                 </div>
                 <button
                   onClick={clearMeasure}
-                  className="mt-2 text-[10px] text-slate-500 hover:text-white transition-colors"
+                  className="mt-2.5 text-[10px] text-slate-500 hover:text-white transition-colors px-2 py-0.5 rounded-md hover:bg-[#21262d]"
                 >
                   Clear
                 </button>
@@ -285,18 +286,18 @@ export default function DesignerPage() {
 
             {/* AI + Parametric toggle buttons - top right */}
             {!measureResult && (
-              <div className="absolute top-2 right-2 flex items-center gap-1 z-10 pointer-events-auto">
+              <div className="absolute top-3 right-3 flex items-center gap-1 z-10 pointer-events-auto">
                 <button onClick={() => setParametricOpen(!parametricOpen)}
-                  className={`px-2 py-1 rounded text-xs font-medium transition-all ${parametricOpen ? "bg-green-600 text-white" : "text-slate-400 hover:text-white bg-[#1a1a2e]/80 hover:bg-[#0f3460] border border-[#16213e] backdrop-blur-sm"}`}>
+                  className={`px-2.5 py-1 rounded-md text-[10px] font-semibold transition-all duration-150 backdrop-blur-md shadow-panel ${parametricOpen ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" : "text-slate-400 hover:text-white bg-[#0d1117]/80 hover:bg-[#21262d] border border-[#21262d]"}`}>
                   Param
                 </button>
                 {aiOpen && (
                   <button
                     onClick={() => setAiMode(aiMode === "basic" ? "zookeeper" : "basic")}
-                    className={`text-[10px] px-2 py-1 rounded border transition-colors backdrop-blur-sm ${
+                    className={`text-[10px] px-2 py-1 rounded-md border font-medium transition-all duration-150 backdrop-blur-md ${
                       aiMode === "zookeeper"
-                        ? "border-purple-500/40 text-purple-400 bg-purple-500/10"
-                        : "border-[#16213e] text-slate-500 bg-[#1a1a2e]/80"
+                        ? "border-purple-500/30 text-purple-400 bg-purple-500/10"
+                        : "border-[#21262d] text-slate-500 bg-[#0d1117]/80"
                     }`}
                   >
                     {aiMode === "zookeeper" ? "Zookeeper" : "Basic"}
@@ -304,10 +305,10 @@ export default function DesignerPage() {
                 )}
                 <button
                   onClick={() => setAiOpen(!aiOpen)}
-                  className={`px-3 py-1 rounded text-xs font-medium transition-all ${
+                  className={`px-3 py-1 rounded-md text-[10px] font-semibold transition-all duration-150 backdrop-blur-md shadow-panel ${
                     aiOpen
-                      ? "bg-purple-600 text-white"
-                      : "text-slate-400 hover:text-white bg-[#1a1a2e]/80 hover:bg-[#0f3460] border border-[#16213e] backdrop-blur-sm"
+                      ? "bg-purple-500/20 text-purple-400 border border-purple-500/30"
+                      : "text-slate-400 hover:text-white bg-[#0d1117]/80 hover:bg-[#21262d] border border-[#21262d]"
                   }`}
                 >
                   AI
@@ -355,19 +356,21 @@ export default function DesignerPage() {
 
         {/* Right Panel: Properties / Components - only shows when object selected or explicitly opened */}
         {selectedId && (
-          <div className="flex flex-col border-l border-[#21262d] flex-shrink-0 w-64">
-            <div className="flex border-b border-[#21262d] bg-[#161b22] flex-shrink-0">
+          <div className="flex flex-col border-l border-[#21262d] flex-shrink-0 w-64 animate-slide-in-right">
+            <div className="flex border-b border-[#21262d] bg-[#0d1117] flex-shrink-0">
               <button
                 onClick={() => setRightTab("properties")}
-                className={`flex-1 py-1.5 text-[11px] font-medium transition-colors ${rightTab === "properties" ? "text-[#00D4FF] border-b-2 border-[#00D4FF]" : "text-slate-500 hover:text-white"}`}
+                className={`flex-1 py-2 text-[11px] font-semibold tracking-wide transition-all duration-150 relative ${rightTab === "properties" ? "text-[#00D4FF]" : "text-slate-500 hover:text-white"}`}
               >
                 Properties
+                {rightTab === "properties" && <div className="absolute bottom-0 left-2 right-2 h-[2px] bg-[#00D4FF] rounded-full" />}
               </button>
               <button
                 onClick={() => setRightTab("components")}
-                className={`flex-1 py-1.5 text-[11px] font-medium transition-colors flex items-center justify-center gap-1 ${rightTab === "components" ? "text-[#00D4FF] border-b-2 border-[#00D4FF]" : "text-slate-500 hover:text-white"}`}
+                className={`flex-1 py-2 text-[11px] font-semibold tracking-wide transition-all duration-150 flex items-center justify-center gap-1 relative ${rightTab === "components" ? "text-[#00D4FF]" : "text-slate-500 hover:text-white"}`}
               >
                 <Package size={11} /> Components
+                {rightTab === "components" && <div className="absolute bottom-0 left-2 right-2 h-[2px] bg-[#00D4FF] rounded-full" />}
               </button>
             </div>
             <div className="flex-1 overflow-hidden">
@@ -386,9 +389,9 @@ export default function DesignerPage() {
       </div>
 
       {/* Timeline toggle + Command Bar */}
-      <div className="flex items-center gap-2 px-3 py-0.5 bg-[#0d1117] border-t border-[#16213e]">
+      <div className="flex items-center gap-2 px-3 py-1 bg-[#0d1117] border-t border-[#21262d]">
         <button onClick={() => setTimelineOpen(!timelineOpen)}
-          className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${timelineOpen ? "border-[#00D4FF]/40 text-[#00D4FF] bg-[#00D4FF]/10" : "border-[#16213e] text-slate-500 hover:text-slate-300"}`}>
+          className={`text-[9px] font-semibold px-2.5 py-0.5 rounded-md border transition-all duration-150 ${timelineOpen ? "border-[#00D4FF]/30 text-[#00D4FF] bg-[#00D4FF]/10" : "border-[#21262d] text-slate-500 hover:text-slate-300 hover:border-[#30363d]"}`}>
           Timeline
         </button>
       </div>
