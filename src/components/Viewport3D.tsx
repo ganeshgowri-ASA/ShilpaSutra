@@ -680,6 +680,40 @@ function SketchDrawTools() {
     setSketchDrawState({ clickPoints, previewPoint, activeTool });
   }, [clickPoints, previewPoint, activeTool, setSketchDrawState]);
 
+  // Collect all snap-able points for visual indicators
+  // useMemo must be called BEFORE any conditional return (Rules of Hooks)
+  const snapIndicators = useMemo(() => {
+    const points: { pos: [number, number, number]; type: string }[] = [];
+    for (const obj of objects) {
+      if (!obj || obj.visible === false) continue;
+      if (Array.isArray(obj.linePoints)) {
+        for (const lp of obj.linePoints) {
+          if (lp) points.push({ pos: lp, type: "endpoint" });
+        }
+        if (obj.linePoints.length >= 2 && obj.linePoints[0] && obj.linePoints[1]) {
+          points.push({
+            pos: [
+              (obj.linePoints[0][0] + obj.linePoints[1][0]) / 2,
+              (obj.linePoints[0][1] + obj.linePoints[1][1]) / 2,
+              (obj.linePoints[0][2] + obj.linePoints[1][2]) / 2,
+            ],
+            type: "midpoint",
+          });
+        }
+      }
+      if (obj.circleCenter) {
+        points.push({ pos: obj.circleCenter, type: "center" });
+      }
+      if (Array.isArray(obj.rectCorners) && obj.rectCorners.length >= 2 && obj.rectCorners[0] && obj.rectCorners[1]) {
+        points.push({ pos: [obj.rectCorners[0][0], SKETCH_Y, obj.rectCorners[0][2]], type: "endpoint" });
+        points.push({ pos: [obj.rectCorners[1][0], SKETCH_Y, obj.rectCorners[1][2]], type: "endpoint" });
+        points.push({ pos: [obj.rectCorners[1][0], SKETCH_Y, obj.rectCorners[0][2]], type: "endpoint" });
+        points.push({ pos: [obj.rectCorners[0][0], SKETCH_Y, obj.rectCorners[1][2]], type: "endpoint" });
+      }
+    }
+    return points;
+  }, [objects]);
+
   if (!SKETCH_TOOLS.includes(activeTool)) return null;
 
   const SNAP_THRESHOLD = 0.3;
@@ -901,39 +935,6 @@ function SketchDrawTools() {
 
     return null;
   };
-
-  // Collect all snap-able points for visual indicators
-  const snapIndicators = useMemo(() => {
-    const points: { pos: [number, number, number]; type: string }[] = [];
-    for (const obj of objects) {
-      if (!obj || obj.visible === false) continue;
-      if (Array.isArray(obj.linePoints)) {
-        for (const lp of obj.linePoints) {
-          if (lp) points.push({ pos: lp, type: "endpoint" });
-        }
-        if (obj.linePoints.length >= 2 && obj.linePoints[0] && obj.linePoints[1]) {
-          points.push({
-            pos: [
-              (obj.linePoints[0][0] + obj.linePoints[1][0]) / 2,
-              (obj.linePoints[0][1] + obj.linePoints[1][1]) / 2,
-              (obj.linePoints[0][2] + obj.linePoints[1][2]) / 2,
-            ],
-            type: "midpoint",
-          });
-        }
-      }
-      if (obj.circleCenter) {
-        points.push({ pos: obj.circleCenter, type: "center" });
-      }
-      if (Array.isArray(obj.rectCorners) && obj.rectCorners.length >= 2 && obj.rectCorners[0] && obj.rectCorners[1]) {
-        points.push({ pos: [obj.rectCorners[0][0], SKETCH_Y, obj.rectCorners[0][2]], type: "endpoint" });
-        points.push({ pos: [obj.rectCorners[1][0], SKETCH_Y, obj.rectCorners[1][2]], type: "endpoint" });
-        points.push({ pos: [obj.rectCorners[1][0], SKETCH_Y, obj.rectCorners[0][2]], type: "endpoint" });
-        points.push({ pos: [obj.rectCorners[0][0], SKETCH_Y, obj.rectCorners[1][2]], type: "endpoint" });
-      }
-    }
-    return points;
-  }, [objects]);
 
   const snapPointColor = (type: string) => {
     switch (type) {
@@ -1203,24 +1204,11 @@ function SketchPlaneIndicator() {
   const activeTool = useCadStore((s) => s.activeTool);
   const sketchPlane = useCadStore((s) => s.sketchPlane);
 
-  if (!SKETCH_TOOLS.includes(activeTool) && !sketchPlane) return null;
-
-  const plane = sketchPlane || "xz";
-  const rotation: [number, number, number] = plane === "xz"
-    ? [-Math.PI / 2, 0, 0]
-    : plane === "xy"
-    ? [0, 0, 0]
-    : [0, Math.PI / 2, 0];
-  const position: [number, number, number] = plane === "xz"
-    ? [0, 0.005, 0]
-    : plane === "xy"
-    ? [0, 0, 0.005]
-    : [0.005, 0, 0];
-
-  const planeColor = plane === "xy" ? "#4444ff" : plane === "xz" ? "#44ff44" : "#ff4444";
+  // Compute plane and y BEFORE useMemo so the hook is always called unconditionally
+  const plane = (sketchPlane || "xz") as "xz" | "xy" | "yz";
   const y = 0.006;
 
-  // Generate grid lines: major every 10 units, minor every 1 unit
+  // useMemo must be called BEFORE any conditional return (Rules of Hooks)
   const gridLines = useMemo(() => {
     const major: [number, number, number][][] = [];
     const minor: [number, number, number][][] = [];
@@ -1243,6 +1231,21 @@ function SketchPlaneIndicator() {
     }
     return { major, minor };
   }, [plane]);
+
+  // Early return AFTER all hooks (Rules of Hooks compliance)
+  if (!SKETCH_TOOLS.includes(activeTool) && !sketchPlane) return null;
+
+  const rotation: [number, number, number] = plane === "xz"
+    ? [-Math.PI / 2, 0, 0]
+    : plane === "xy"
+    ? [0, 0, 0]
+    : [0, Math.PI / 2, 0];
+  const position: [number, number, number] = plane === "xz"
+    ? [0, 0.005, 0]
+    : plane === "xy"
+    ? [0, 0, 0.005]
+    : [0.005, 0, 0];
+  const planeColor = plane === "xy" ? "#4444ff" : plane === "xz" ? "#44ff44" : "#ff4444";
 
   return (
     <>
