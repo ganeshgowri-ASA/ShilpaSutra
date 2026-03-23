@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useCallback, useEffect, useState, useMemo } from "react";
+import { useRef, useCallback, useEffect, useState, useMemo, Component, type ReactNode } from "react";
 import { Canvas, useThree, useFrame, ThreeEvent } from "@react-three/fiber";
 import {
   OrbitControls,
@@ -26,6 +26,31 @@ import ViewportContextMenu from "@/components/cad/ViewportContextMenu";
 
 const SKETCH_TOOLS: ToolId[] = ["line", "arc", "circle", "rectangle", "polygon", "spline", "ellipse", "construction_line"];
 const SKETCH_Y = 0.02;
+
+/* ── Safe event handler wrapper ── */
+function safeHandler<E>(label: string, fn: (e: E) => void): (e: E) => void {
+  return (e: E) => {
+    try {
+      fn(e);
+    } catch (err) {
+      console.error(`[Viewport3D:${label}] Event handler error:`, err);
+    }
+  };
+}
+
+/* ── R3F-compatible error boundary ── */
+interface SceneErrorBoundaryState { hasError: boolean }
+class SceneErrorBoundary extends Component<{ children: ReactNode }, SceneErrorBoundaryState> {
+  state: SceneErrorBoundaryState = { hasError: false };
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error("[Viewport3D] Scene error boundary caught:", error.message, info.componentStack);
+  }
+  render() {
+    if (this.state.hasError) return null;
+    return this.props.children;
+  }
+}
 
 /* ── Snap helper ── */
 function snap(value: number, gridSize: number, enabled: boolean): number {
@@ -61,7 +86,7 @@ function CadMesh({ obj }: { obj: CadObject }) {
   if (obj.visible === false) return null;
 
   const handleClick = useCallback(
-    (e: ThreeEvent<MouseEvent>) => {
+    safeHandler("CadMesh.click", (e: ThreeEvent<MouseEvent>) => {
       if (activeTool !== "select") return;
       e.stopPropagation();
       if (e.nativeEvent.ctrlKey || e.nativeEvent.metaKey) {
@@ -69,9 +94,15 @@ function CadMesh({ obj }: { obj: CadObject }) {
       } else {
         selectObject(obj.id);
       }
-    },
+    }),
     [activeTool, selectObject, toggleSelectObject, obj.id]
   );
+
+  const handlePointerEnter = useCallback(
+    safeHandler("CadMesh.pointerEnter", (e: ThreeEvent<PointerEvent>) => { e.stopPropagation(); setHovered(true); }),
+    []
+  );
+  const handlePointerLeave = useCallback(() => { setHovered(false); }, []);
 
   // For "mesh" type with vertex data, render as CustomBufferGeometry
   if (obj.type === "mesh" && obj.meshVertices && obj.meshIndices && obj.meshVertices.length > 0) {
@@ -82,8 +113,8 @@ function CadMesh({ obj }: { obj: CadObject }) {
         rotation={obj.rotation}
         scale={obj.scale}
         onClick={handleClick}
-        onPointerEnter={(e) => { e.stopPropagation(); setHovered(true); }}
-        onPointerLeave={() => setHovered(false)}
+        onPointerEnter={handlePointerEnter}
+        onPointerLeave={handlePointerLeave}
         userData={{ cadId: obj.id }}
       >
         <CustomBufferGeometry vertices={obj.meshVertices} indices={obj.meshIndices} />
@@ -134,8 +165,8 @@ function CadMesh({ obj }: { obj: CadObject }) {
       rotation={obj.rotation}
       scale={obj.scale}
       onClick={handleClick}
-      onPointerEnter={(e) => { e.stopPropagation(); setHovered(true); }}
-      onPointerLeave={() => setHovered(false)}
+      onPointerEnter={handlePointerEnter}
+      onPointerLeave={handlePointerLeave}
       userData={{ cadId: obj.id }}
     >
       {geometry}
@@ -202,11 +233,11 @@ function CadLine({ obj }: { obj: CadObject }) {
 
   return (
     <group
-      onClick={(e) => {
+      onClick={safeHandler("CadLine.click", (e: ThreeEvent<MouseEvent>) => {
         if (activeTool !== "select") return;
         e.stopPropagation();
         selectObject(obj.id);
-      }}
+      })}
     >
       <Line
         points={obj.linePoints}
@@ -270,11 +301,11 @@ function CadArc({ obj }: { obj: CadObject }) {
 
   return (
     <group
-      onClick={(e) => {
+      onClick={safeHandler("CadArc.click", (e: ThreeEvent<MouseEvent>) => {
         if (activeTool !== "select") return;
         e.stopPropagation();
         selectObject(obj.id);
-      }}
+      })}
     >
       <Line
         points={arcPoints}
@@ -318,11 +349,11 @@ function CadCircle({ obj }: { obj: CadObject }) {
 
   return (
     <group
-      onClick={(e) => {
+      onClick={safeHandler("CadCircle.click", (e: ThreeEvent<MouseEvent>) => {
         if (activeTool !== "select") return;
         e.stopPropagation();
         selectObject(obj.id);
-      }}
+      })}
     >
       <Line
         points={circlePoints}
@@ -363,11 +394,11 @@ function CadRectangle({ obj }: { obj: CadObject }) {
 
   return (
     <group
-      onClick={(e) => {
+      onClick={safeHandler("CadRectangle.click", (e: ThreeEvent<MouseEvent>) => {
         if (activeTool !== "select") return;
         e.stopPropagation();
         selectObject(obj.id);
-      }}
+      })}
     >
       <Line
         points={rectPoints}
@@ -408,15 +439,19 @@ function SelectedTransform() {
       rotation={new THREE.Euler(...selected.rotation)}
       scale={new THREE.Vector3(...selected.scale)}
       onObjectChange={(e) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const ctrl = e?.target as any;
-        if (!ctrl?.object) return;
-        const obj = ctrl.object;
-        updateObject(selected.id, {
-          position: [obj.position.x, obj.position.y, obj.position.z],
-          rotation: [obj.rotation.x, obj.rotation.y, obj.rotation.z],
-          scale: [obj.scale.x, obj.scale.y, obj.scale.z],
-        });
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const ctrl = e?.target as any;
+          if (!ctrl?.object) return;
+          const obj = ctrl.object;
+          updateObject(selected.id, {
+            position: [obj.position.x, obj.position.y, obj.position.z],
+            rotation: [obj.rotation.x, obj.rotation.y, obj.rotation.z],
+            scale: [obj.scale.x, obj.scale.y, obj.scale.z],
+          });
+        } catch (err) {
+          console.error("[Viewport3D:TransformControls] onObjectChange error:", err);
+        }
       }}
     >
       <mesh visible={false}>
@@ -436,10 +471,11 @@ function GroundPlane() {
   const addMeasurePoint = useCadStore((s) => s.addMeasurePoint);
 
   const handleClick = useCallback(
-    (e: ThreeEvent<MouseEvent>) => {
+    safeHandler("GroundPlane.click", (e: ThreeEvent<MouseEvent>) => {
       if (activeTool === "measure" || activeTool === "measure_angle") {
         e.stopPropagation();
         const p = e.point;
+        if (!p) return;
         addMeasurePoint([
           snap(p.x, gridSize, snapGrid),
           0,
@@ -463,6 +499,7 @@ function GroundPlane() {
       }
       e.stopPropagation();
       const point = e.point;
+      if (!point) return;
       const id = addObject(shapeType);
       const store = useCadStore.getState();
       const obj = store.objects.find((o) => o.id === id);
@@ -476,7 +513,7 @@ function GroundPlane() {
           ],
         });
       }
-    },
+    }),
     [activeTool, addObject, selectObject, snapGrid, gridSize, addMeasurePoint]
   );
 
@@ -650,6 +687,10 @@ function SketchDrawTools() {
   const SNAP_THRESHOLD = 0.3;
 
   const getSnappedPoint = (point: THREE.Vector3): [number, number, number] => {
+    if (!point || typeof point.x !== "number" || typeof point.y !== "number" || typeof point.z !== "number") {
+      console.warn("[SketchDrawTools] Invalid point received:", point);
+      return [0, SKETCH_Y, 0];
+    }
     let raw: [number, number, number];
     if (plane === "xy") {
       raw = [snap(point.x, gridSize, snapGrid), snap(point.y, gridSize, snapGrid), 0.01];
@@ -660,19 +701,23 @@ function SketchDrawTools() {
     }
 
     // Check for object snap points
-    const snapResult = findSnapPoint(raw, objects, SNAP_THRESHOLD);
-    if (snapResult) {
-      setSketchDrawState({ snapType: snapResult.type });
-      return snapResult.point;
-    }
+    try {
+      const snapResult = findSnapPoint(raw, objects, SNAP_THRESHOLD);
+      if (snapResult) {
+        setSketchDrawState({ snapType: snapResult.type });
+        return snapResult.point;
+      }
 
-    // Check alignment
-    const alignment = checkAlignment(raw, objects, 0.15);
-    setSketchDrawState({ snapType: snapGrid ? "Grid" : null, alignH: alignment.alignH, alignV: alignment.alignV, alignRefPoint: alignment.refPoint });
+      // Check alignment
+      const alignment = checkAlignment(raw, objects, 0.15);
+      setSketchDrawState({ snapType: snapGrid ? "Grid" : null, alignH: alignment.alignH, alignV: alignment.alignV, alignRefPoint: alignment.refPoint });
+    } catch (err) {
+      console.error("[SketchDrawTools] Snap/alignment error:", err);
+    }
     return raw;
   };
 
-  const handleClick = (e: ThreeEvent<MouseEvent>) => {
+  const handleClick = safeHandler("SketchDrawTools.click", (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation();
     if (!e.point) return;
     let p: [number, number, number];
@@ -692,13 +737,17 @@ function SketchDrawTools() {
         addLine([clickPoints[0], p]);
         // If construction mode, mark the line differently (via color)
         if (isConstructionMode) {
-          const state = useCadStore.getState();
-          const lastObj = state.objects[state.objects.length - 1];
-          if (lastObj) {
-            useCadStore.getState().updateObject(lastObj.id, {
-              color: "#00D4FF",
-              name: lastObj.name.replace("Line", "Construction"),
-            });
+          try {
+            const state = useCadStore.getState();
+            const lastObj = state.objects[state.objects.length - 1];
+            if (lastObj) {
+              useCadStore.getState().updateObject(lastObj.id, {
+                color: "#00D4FF",
+                name: lastObj.name.replace("Line", "Construction"),
+              });
+            }
+          } catch (err) {
+            console.error("[SketchDrawTools] Construction mode update error:", err);
           }
         }
         setClickPoints([]);
@@ -725,6 +774,7 @@ function SketchDrawTools() {
         setClickPoints([p]);
       } else {
         const center = clickPoints[0];
+        if (!center) { setClickPoints([]); return; }
         const radius = Math.sqrt(
           Math.pow(p[0] - center[0], 2) + Math.pow(p[2] - center[2], 2)
         );
@@ -738,26 +788,24 @@ function SketchDrawTools() {
       if (clickPoints.length === 0) {
         setClickPoints([p]);
       } else {
+        if (!clickPoints[0]) { setClickPoints([]); return; }
         addRectangle(clickPoints[0], p);
         setClickPoints([]);
         setPreviewPoint(null);
       }
     }
-  };
+  });
 
-  const handleMove = (e: ThreeEvent<MouseEvent>) => {
+  const handleMove = safeHandler("SketchDrawTools.move", (e: ThreeEvent<MouseEvent>) => {
     if (!e.point) return;
-    try {
-      const snapped = getSnappedPoint(e.point);
-      if (clickPoints.length > 0) {
-        setPreviewPoint(snapped);
-      }
-    } catch (err) {
-      console.warn("[SketchDrawTools] handleMove error:", err);
+    const snapped = getSnappedPoint(e.point);
+    if (clickPoints.length > 0) {
+      setPreviewPoint(snapped);
     }
-  };
+  });
 
   const renderPreview = () => {
+    try {
     if (clickPoints.length === 0 || !previewPoint) return null;
 
     const previewColor = isConstructionMode ? "#00D4FF" : undefined;
@@ -854,6 +902,10 @@ function SketchDrawTools() {
     }
 
     return null;
+    } catch (err) {
+      console.error("[SketchDrawTools] renderPreview error:", err);
+      return null;
+    }
   };
 
   // Collect all snap-able points for visual indicators
@@ -945,29 +997,35 @@ function CameraController() {
 
   // Lock camera to orthographic view when entering sketch mode
   useEffect(() => {
-    const distance = 10;
-    if (sketchPlane) {
-      const positions: Record<string, [number, number, number]> = {
-        xy: [0, 0, distance],
-        xz: [0, distance, 0.01],
-        yz: [distance, 0, 0],
-      };
-      camera.position.set(...positions[sketchPlane]);
-      camera.lookAt(0, 0, 0);
-      // Switch to orthographic-like by using a very narrow FOV
-      if ((camera as THREE.PerspectiveCamera).fov !== undefined) {
-        (camera as THREE.PerspectiveCamera).fov = 2;
-        (camera as THREE.PerspectiveCamera).position.multiplyScalar(25);
-      }
-      camera.updateProjectionMatrix();
-    } else {
-      // Restore perspective camera
-      if ((camera as THREE.PerspectiveCamera).fov !== undefined) {
-        (camera as THREE.PerspectiveCamera).fov = 50;
-        camera.position.set(5, 5, 5);
+    try {
+      const distance = 10;
+      if (sketchPlane) {
+        const positions: Record<string, [number, number, number]> = {
+          xy: [0, 0, distance],
+          xz: [0, distance, 0.01],
+          yz: [distance, 0, 0],
+        };
+        const pos = positions[sketchPlane];
+        if (!pos) return;
+        camera.position.set(...pos);
         camera.lookAt(0, 0, 0);
+        // Switch to orthographic-like by using a very narrow FOV
+        if ((camera as THREE.PerspectiveCamera).fov !== undefined) {
+          (camera as THREE.PerspectiveCamera).fov = 2;
+          (camera as THREE.PerspectiveCamera).position.multiplyScalar(25);
+        }
+        camera.updateProjectionMatrix();
+      } else {
+        // Restore perspective camera
+        if ((camera as THREE.PerspectiveCamera).fov !== undefined) {
+          (camera as THREE.PerspectiveCamera).fov = 50;
+          camera.position.set(5, 5, 5);
+          camera.lookAt(0, 0, 0);
+        }
+        camera.updateProjectionMatrix();
       }
-      camera.updateProjectionMatrix();
+    } catch (err) {
+      console.error("[Viewport3D:CameraController] sketch plane camera error:", err);
     }
   }, [sketchPlane, camera]);
 
@@ -1243,15 +1301,19 @@ function CursorTracker() {
   const groundRef = useRef<THREE.Mesh>(null);
 
   useFrame(() => {
-    if (!groundRef.current) return;
-    const intersects = raycaster.intersectObject(groundRef.current);
-    if (intersects.length > 0) {
-      const p = intersects[0].point;
-      setCursorPosition([
-        Math.round(p.x * 100) / 100,
-        Math.round(p.y * 100) / 100,
-        Math.round(p.z * 100) / 100,
-      ]);
+    try {
+      if (!groundRef.current) return;
+      const intersects = raycaster.intersectObject(groundRef.current);
+      if (intersects.length > 0) {
+        const p = intersects[0].point;
+        setCursorPosition([
+          Math.round(p.x * 100) / 100,
+          Math.round(p.y * 100) / 100,
+          Math.round(p.z * 100) / 100,
+        ]);
+      }
+    } catch (err) {
+      // Silently ignore frame errors to prevent crash loops
     }
   });
 
@@ -1355,7 +1417,8 @@ function GradientBackground() {
     const canvas = document.createElement("canvas");
     canvas.width = 2;
     canvas.height = 256;
-    const ctx = canvas.getContext("2d")!;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
     const gradient = ctx.createLinearGradient(0, 0, 0, 256);
     gradient.addColorStop(0, "#0a0a1a");
     gradient.addColorStop(1, "#1a1a2e");
@@ -1388,8 +1451,20 @@ export default function Viewport3D({ mode }: Viewport3DProps) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    setContextMenu({ x: e.clientX, y: e.clientY });
+    try {
+      e.preventDefault();
+      setContextMenu({ x: e.clientX, y: e.clientY });
+    } catch (err) {
+      console.error("[Viewport3D] Context menu error:", err);
+    }
+  }, []);
+
+  const handlePointerMissed = useCallback(() => {
+    try {
+      useCadStore.getState().selectObject(null);
+    } catch (err) {
+      console.error("[Viewport3D] onPointerMissed error:", err);
+    }
   }, []);
 
   return (
@@ -1404,10 +1479,9 @@ export default function Viewport3D({ mode }: Viewport3DProps) {
       <Canvas
         camera={{ position: [5, 5, 5], fov: 50, near: 0.1, far: 1000 }}
         gl={{ antialias: true, alpha: false, preserveDrawingBuffer: true }}
-        onPointerMissed={() => {
-          useCadStore.getState().selectObject(null);
-        }}
+        onPointerMissed={handlePointerMissed}
       >
+        <SceneErrorBoundary>
         <GradientBackground />
 
         <ambientLight intensity={0.4} />
@@ -1480,6 +1554,7 @@ export default function Viewport3D({ mode }: Viewport3DProps) {
         <CursorTracker />
         <Environment preset="city" />
         <KeyboardHandler />
+        </SceneErrorBoundary>
       </Canvas>
     </div>
   );
