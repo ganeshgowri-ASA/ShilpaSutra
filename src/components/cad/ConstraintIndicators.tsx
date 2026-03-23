@@ -15,6 +15,11 @@ const constraintSymbols: Record<ConstraintType, string> = {
   vertical: "\u2502",
   concentric: "\u25CE",
   symmetric: "\u2194",
+  distance: "\u2194",
+  angle: "\u2220",
+  radius: "R",
+  diameter: "\u2300",
+  midpoint: "\u25C6",
 };
 
 const constraintColors: Record<ConstraintType, string> = {
@@ -28,6 +33,11 @@ const constraintColors: Record<ConstraintType, string> = {
   vertical: "#3498db",
   concentric: "#e67e22",
   symmetric: "#9b59b6",
+  distance: "#00D4FF",
+  angle: "#ff8800",
+  radius: "#44aaff",
+  diameter: "#44aaff",
+  midpoint: "#ff44aa",
 };
 
 export default function ConstraintIndicators() {
