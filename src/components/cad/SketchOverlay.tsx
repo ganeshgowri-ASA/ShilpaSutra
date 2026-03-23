@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState, useMemo, useCallback } from "react";
+import { useEffect, useRef, useState, useMemo, useCallback, Component, type ReactNode } from "react";
 import { useCadStore, type ToolId } from "@/stores/cad-store";
 
 const SKETCH_TOOLS: ToolId[] = [
