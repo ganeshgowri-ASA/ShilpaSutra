@@ -521,22 +521,164 @@ export default function PropertyPanel() {
               </>
             )}
 
-            {/* Sketch entity info */}
+            {/* Sketch entity info - EDITABLE */}
             {sketchTypes.includes(selected.type) && (
               <div className="bg-[#0d1117] rounded-lg p-3 border border-[#16213e]">
-                <div className="text-[10px] text-slate-400 mb-2">Sketch Entity</div>
-                <div className="text-[10px] text-slate-500 space-y-1">
+                <div className="flex items-center gap-1.5 mb-2">
+                  <Ruler size={12} className="text-[#00D4FF]" />
+                  <span className="text-[10px] text-slate-400 font-medium">Sketch Entity</span>
+                </div>
+                <div className="text-[10px] text-slate-500 space-y-2">
                   <div>Type: <span className="text-white capitalize">{selected.type}</span></div>
-                  {selected.type === "circle" && selected.circleRadius && (
-                    <div>Radius: <span className="text-white">{selected.circleRadius.toFixed(2)} {unit}</span></div>
+
+                  {/* Editable circle radius */}
+                  {selected.type === "circle" && selected.circleRadius != null && selected.circleCenter && (
+                    <NumericInput
+                      label="R"
+                      value={selected.circleRadius}
+                      unit={unit}
+                      min={0.05}
+                      onChange={(v) => {
+                        updateObject(selected.id, {
+                          circleRadius: v,
+                          dimensions: { width: v * 2, height: 0, depth: v * 2 },
+                        });
+                      }}
+                    />
                   )}
-                  {selected.type === "line" && selected.linePoints && selected.linePoints.length === 2 && (
-                    <div>Length: <span className="text-white">
-                      {Math.sqrt(
-                        Math.pow(selected.linePoints[1][0] - selected.linePoints[0][0], 2) +
-                        Math.pow(selected.linePoints[1][2] - selected.linePoints[0][2], 2)
-                      ).toFixed(2)} {unit}
-                    </span></div>
+
+                  {/* Editable line length */}
+                  {selected.type === "line" && selected.linePoints && selected.linePoints.length === 2 && (() => {
+                    const [p1, p2] = selected.linePoints;
+                    const dx = p2[0] - p1[0];
+                    const dz = p2[2] - p1[2];
+                    const currentLength = Math.sqrt(dx * dx + dz * dz);
+                    const angle = Math.atan2(dz, dx);
+                    return (
+                      <>
+                        <NumericInput
+                          label="L"
+                          value={currentLength}
+                          unit={unit}
+                          min={0.05}
+                          onChange={(newLength) => {
+                            const newP2: [number, number, number] = [
+                              p1[0] + Math.cos(angle) * newLength,
+                              p2[1],
+                              p1[2] + Math.sin(angle) * newLength,
+                            ];
+                            updateObject(selected.id, {
+                              linePoints: [p1, newP2],
+                            });
+                          }}
+                        />
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-slate-500 w-6">A</span>
+                          <span className="text-[10px] text-white font-mono">
+                            {((angle * 180 / Math.PI + 360) % 360).toFixed(1)}°
+                          </span>
+                        </div>
+                      </>
+                    );
+                  })()}
+
+                  {/* Editable rectangle dimensions */}
+                  {selected.type === "rectangle" && selected.rectCorners && (() => {
+                    const [c1, c2] = selected.rectCorners;
+                    const w = Math.abs(c2[0] - c1[0]);
+                    const h = Math.abs(c2[2] - c1[2]);
+                    return (
+                      <>
+                        <NumericInput
+                          label="W"
+                          value={w}
+                          unit={unit}
+                          min={0.05}
+                          onChange={(newW) => {
+                            const signX = c2[0] >= c1[0] ? 1 : -1;
+                            const newC2: [number, number, number] = [
+                              c1[0] + signX * newW, c2[1], c2[2],
+                            ];
+                            updateObject(selected.id, {
+                              rectCorners: [c1, newC2],
+                              dimensions: { width: newW, height: 0, depth: h },
+                            });
+                          }}
+                        />
+                        <NumericInput
+                          label="H"
+                          value={h}
+                          unit={unit}
+                          min={0.05}
+                          onChange={(newH) => {
+                            const signZ = c2[2] >= c1[2] ? 1 : -1;
+                            const newC2: [number, number, number] = [
+                              c2[0], c2[1], c1[2] + signZ * newH,
+                            ];
+                            updateObject(selected.id, {
+                              rectCorners: [c1, newC2],
+                              dimensions: { width: w, height: 0, depth: newH },
+                            });
+                          }}
+                        />
+                      </>
+                    );
+                  })()}
+
+                  {/* Position (editable for all sketch types) */}
+                  {selected.type === "line" && selected.linePoints && selected.linePoints.length >= 1 && (
+                    <div className="mt-2 pt-2 border-t border-[#16213e]">
+                      <div className="text-[9px] text-slate-500 mb-1">Start Point</div>
+                      <div className="space-y-1">
+                        <NumericInput
+                          label="X"
+                          value={selected.linePoints[0][0]}
+                          unit={unit}
+                          onChange={(v) => {
+                            const pts = [...selected.linePoints!] as [number, number, number][];
+                            pts[0] = [v, pts[0][1], pts[0][2]];
+                            updateObject(selected.id, { linePoints: pts });
+                          }}
+                        />
+                        <NumericInput
+                          label="Z"
+                          value={selected.linePoints[0][2]}
+                          unit={unit}
+                          onChange={(v) => {
+                            const pts = [...selected.linePoints!] as [number, number, number][];
+                            pts[0] = [pts[0][0], pts[0][1], v];
+                            updateObject(selected.id, { linePoints: pts });
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                  {selected.type === "circle" && selected.circleCenter && (
+                    <div className="mt-2 pt-2 border-t border-[#16213e]">
+                      <div className="text-[9px] text-slate-500 mb-1">Center</div>
+                      <div className="space-y-1">
+                        <NumericInput
+                          label="X"
+                          value={selected.circleCenter[0]}
+                          unit={unit}
+                          onChange={(v) => {
+                            updateObject(selected.id, {
+                              circleCenter: [v, selected.circleCenter![1], selected.circleCenter![2]],
+                            });
+                          }}
+                        />
+                        <NumericInput
+                          label="Z"
+                          value={selected.circleCenter[2]}
+                          unit={unit}
+                          onChange={(v) => {
+                            updateObject(selected.id, {
+                              circleCenter: [selected.circleCenter![0], selected.circleCenter![1], v],
+                            });
+                          }}
+                        />
+                      </div>
+                    </div>
                   )}
                 </div>
               </div>

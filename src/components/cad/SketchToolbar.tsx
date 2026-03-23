@@ -2,8 +2,8 @@
 import { useState, useCallback } from "react";
 import { useCadStore, type ToolId } from "@/stores/cad-store";
 import {
-  Pencil, Spline, Circle, Square, Pentagon, Hexagon,
-  Minus, RotateCw, Scissors, FlipHorizontal, ArrowRight,
+  Pencil, Spline, Circle, Square, Pentagon,
+  Minus, Scissors, FlipHorizontal, ArrowRight,
   RulerIcon, Construction, Ellipsis, MousePointer2, X,
 } from "lucide-react";
 
@@ -61,6 +61,8 @@ const sketchOperations: {
 export default function SketchToolbar({ visible, onSelectPlane }: SketchToolbarProps) {
   const activeTool = useCadStore((s) => s.activeTool);
   const setActiveTool = useCadStore((s) => s.setActiveTool);
+  const isConstructionMode = useCadStore((s) => s.isConstructionMode);
+  const setIsConstructionMode = useCadStore((s) => s.setIsConstructionMode);
 
   const [activeOp, setActiveOp] = useState<SketchOperation | null>(null);
   const [sketchPlane, setSketchPlane] = useState<"xy" | "xz" | "yz" | "face">("xz");
@@ -158,10 +160,10 @@ export default function SketchToolbar({ visible, onSelectPlane }: SketchToolbarP
           {/* Select */}
           <button
             onClick={() => setActiveTool("select")}
-            className={`flex flex-col items-center justify-center w-[38px] h-[40px] rounded transition-colors ${
+            className={`flex flex-col items-center justify-center w-[38px] h-[40px] rounded transition-all duration-150 ${
               activeTool === "select"
-                ? "bg-[#00D4FF]/20 text-[#00D4FF]"
-                : "hover:bg-[#0f3460] text-slate-400 hover:text-white"
+                ? "bg-[#00D4FF]/20 text-[#00D4FF] border-b-2 border-[#00D4FF]"
+                : "hover:bg-[#0f3460] text-slate-400 hover:text-white hover:scale-105"
             }`}
             title="Select (Esc)"
           >
@@ -176,10 +178,10 @@ export default function SketchToolbar({ visible, onSelectPlane }: SketchToolbarP
             <button
               key={entity.id}
               onClick={() => handleEntityClick(entity)}
-              className={`flex flex-col items-center justify-center w-[38px] h-[40px] rounded transition-colors ${
+              className={`flex flex-col items-center justify-center w-[38px] h-[40px] rounded transition-all duration-150 ${
                 activeTool === entity.toolId
-                  ? "bg-[#00D4FF]/20 text-[#00D4FF]"
-                  : "hover:bg-[#0f3460] text-slate-400 hover:text-white"
+                  ? "bg-[#00D4FF]/20 text-[#00D4FF] border-b-2 border-[#00D4FF]"
+                  : "hover:bg-[#0f3460] text-slate-400 hover:text-white hover:scale-105"
               }`}
               title={entity.shortcut ? `${entity.label} (${entity.shortcut})` : entity.label}
             >
@@ -190,15 +192,31 @@ export default function SketchToolbar({ visible, onSelectPlane }: SketchToolbarP
 
           <div className="w-px h-8 bg-[#16213e]" />
 
+          {/* Construction mode toggle */}
+          <button
+            onClick={() => setIsConstructionMode(!isConstructionMode)}
+            className={`flex flex-col items-center justify-center w-[38px] h-[40px] rounded transition-all duration-150 ${
+              isConstructionMode
+                ? "bg-cyan-500/20 text-cyan-400 border-b-2 border-cyan-400"
+                : "hover:bg-[#0f3460] text-slate-400 hover:text-white hover:scale-105"
+            }`}
+            title="Construction Mode (toggle between geometry/construction)"
+          >
+            <Construction size={14} />
+            <span className="text-[8px] mt-0.5">Constr.</span>
+          </button>
+
+          <div className="w-px h-8 bg-[#16213e]" />
+
           {/* Sketch operations */}
           {sketchOperations.map((op) => (
             <button
               key={op.id}
               onClick={() => handleOpClick(op.id)}
-              className={`flex flex-col items-center justify-center w-[38px] h-[40px] rounded transition-colors ${
+              className={`flex flex-col items-center justify-center w-[38px] h-[40px] rounded transition-all duration-150 ${
                 activeOp === op.id
-                  ? "bg-orange-500/20 text-orange-400"
-                  : "hover:bg-[#0f3460] text-slate-400 hover:text-white"
+                  ? "bg-orange-500/20 text-orange-400 border-b-2 border-orange-400"
+                  : "hover:bg-[#0f3460] text-slate-400 hover:text-white hover:scale-105"
               }`}
               title={op.label}
             >

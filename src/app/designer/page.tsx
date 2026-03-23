@@ -1,5 +1,5 @@
 "use client";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import dynamic from "next/dynamic";
 import { useCadStore } from "@/stores/cad-store";
 import { Package } from "lucide-react";
@@ -67,6 +67,11 @@ const SketchToolbar = dynamic(
   { ssr: false }
 );
 
+const SketchOverlay = dynamic(
+  () => import("@/components/cad/SketchOverlay"),
+  { ssr: false }
+);
+
 const ExtrudeDialog = dynamic(
   () => import("@/components/cad/ExtrudeDialog"),
   { ssr: false }
@@ -104,6 +109,7 @@ export default function DesignerPage() {
   const enterSketchMode = useCadStore((s) => s.enterSketchMode);
   const exitSketchMode = useCadStore((s) => s.exitSketchMode);
 
+  const viewportRef = useRef<HTMLDivElement>(null);
   const [aiOpen, setAiOpen] = useState(false);
   const [aiMode, setAiMode] = useState<"basic" | "zookeeper">("zookeeper");
   const [parametricOpen, setParametricOpen] = useState(false);
@@ -134,8 +140,11 @@ export default function DesignerPage() {
 
         {/* Center: 3D Viewport - HERO element, takes all remaining space */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-          <div className="flex-1 relative min-w-0">
+          <div className="flex-1 relative min-w-0" ref={viewportRef}>
             <Viewport3D />
+
+            {/* Professional sketch overlay (crosshair, dimensions, snap, dynamic input) */}
+            <SketchOverlay containerRef={viewportRef} />
 
             {/* Sketch Toolbar (floating, top center) */}
             <SketchToolbar visible={isSketchMode} />
@@ -168,21 +177,26 @@ export default function DesignerPage() {
               {!sketchPlane ? (
                 <>
                   <span className="text-[10px] text-slate-500 mr-1">Sketch:</span>
-                  {(["xy", "xz", "yz"] as const).map((plane) => (
-                    <button
-                      key={plane}
-                      onClick={() => enterSketchMode(plane)}
-                      className="text-[10px] px-2 py-0.5 rounded border border-[#16213e] text-slate-400 bg-[#1a1a2e]/80 hover:border-[#00D4FF]/40 hover:text-[#00D4FF] transition-colors backdrop-blur-sm"
-                    >
-                      {plane.toUpperCase()}
-                    </button>
-                  ))}
+                  {(["xy", "xz", "yz"] as const).map((plane) => {
+                    const colors = { xy: "blue", xz: "green", yz: "red" };
+                    const c = colors[plane];
+                    return (
+                      <button
+                        key={plane}
+                        onClick={() => enterSketchMode(plane)}
+                        className={`text-[10px] px-2 py-0.5 rounded border border-[#16213e] text-slate-400 bg-[#1a1a2e]/80 hover:border-${c}-500/40 hover:text-${c}-400 transition-all duration-150 backdrop-blur-sm hover:scale-105`}
+                      >
+                        {plane.toUpperCase()}
+                      </button>
+                    );
+                  })}
                 </>
               ) : (
                 <button
                   onClick={exitSketchMode}
-                  className="text-[10px] px-3 py-1 rounded border border-red-500/40 text-red-400 bg-red-500/10 hover:bg-red-500/20 transition-colors backdrop-blur-sm"
+                  className="text-[10px] px-4 py-1.5 rounded-md border border-red-500/50 text-red-400 bg-red-500/15 hover:bg-red-500/30 transition-all duration-150 backdrop-blur-sm font-medium flex items-center gap-1.5 shadow-lg shadow-red-500/10"
                 >
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
                   Exit Sketch
                 </button>
               )}

@@ -200,6 +200,24 @@ interface CadState {
   // Active operation dialogs
   activeOperation: "fillet" | "chamfer" | "shell" | "draft" | "linear_pattern" | "circular_pattern" | "mirror" | "path_pattern" | null;
 
+  // Construction mode
+  isConstructionMode: boolean;
+
+  // Sketch draw state (shared with overlay)
+  sketchDrawState: {
+    clickPoints: [number, number, number][];
+    previewPoint: [number, number, number] | null;
+    activeTool: ToolId;
+    snapType: string | null; // "Endpoint" | "Midpoint" | "Center" | "Intersection" | "Grid" | null
+    alignH: boolean;
+    alignV: boolean;
+    alignRefPoint: [number, number, number] | null;
+  };
+
+  // Dynamic input
+  dynamicInputValue: string;
+  dynamicInputActive: boolean;
+
   // History timeline
   showHistoryTimeline: boolean;
 
@@ -224,6 +242,10 @@ interface CadState {
   setAutoConstraints: (v: boolean) => void;
   setActiveOperation: (op: CadState["activeOperation"]) => void;
   setShowHistoryTimeline: (v: boolean) => void;
+  setIsConstructionMode: (v: boolean) => void;
+  setSketchDrawState: (state: Partial<CadState["sketchDrawState"]>) => void;
+  setDynamicInputValue: (v: string) => void;
+  setDynamicInputActive: (v: boolean) => void;
 
   addObject: (type: CadObject["type"]) => string;
   addLine: (points: [number, number, number][]) => string;
@@ -330,6 +352,24 @@ export const useCadStore = create<CadState>((set, get) => ({
   // Active operation
   activeOperation: null,
 
+  // Construction mode
+  isConstructionMode: false,
+
+  // Sketch draw state
+  sketchDrawState: {
+    clickPoints: [],
+    previewPoint: null,
+    activeTool: "select",
+    snapType: null,
+    alignH: false,
+    alignV: false,
+    alignRefPoint: null,
+  },
+
+  // Dynamic input
+  dynamicInputValue: "",
+  dynamicInputActive: false,
+
   // History timeline
   showHistoryTimeline: false,
 
@@ -354,6 +394,12 @@ export const useCadStore = create<CadState>((set, get) => ({
   setAutoConstraints: (v) => set({ autoConstraints: v }),
   setActiveOperation: (op) => set({ activeOperation: op }),
   setShowHistoryTimeline: (v) => set({ showHistoryTimeline: v }),
+  setIsConstructionMode: (v) => set({ isConstructionMode: v }),
+  setSketchDrawState: (state) => set((s) => ({
+    sketchDrawState: { ...s.sketchDrawState, ...state },
+  })),
+  setDynamicInputValue: (v) => set({ dynamicInputValue: v }),
+  setDynamicInputActive: (v) => set({ dynamicInputActive: v }),
 
   snapToGrid: (value: number) => {
     const { snapGrid, gridSize } = get();

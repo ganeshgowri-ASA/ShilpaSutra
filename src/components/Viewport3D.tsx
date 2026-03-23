@@ -198,6 +198,8 @@ function CadLine({ obj }: { obj: CadObject }) {
   if (!obj.linePoints || obj.linePoints.length < 2) return null;
   if (obj.visible === false) return null;
 
+  const isConstruction = obj.name.startsWith("Construction") || obj.color === "#00D4FF";
+
   return (
     <group
       onClick={(e) => {
@@ -208,15 +210,44 @@ function CadLine({ obj }: { obj: CadObject }) {
     >
       <Line
         points={obj.linePoints}
-        color={isSelected ? "#00D4FF" : obj.color}
+        color={isSelected ? "#00D4FF" : isConstruction ? "#00D4FF" : obj.color}
         lineWidth={isSelected ? 3 : 2}
+        dashed={isConstruction}
+        dashSize={isConstruction ? 0.2 : undefined}
+        gapSize={isConstruction ? 0.1 : undefined}
       />
       {obj.linePoints.map((pt, i) => (
         <mesh key={i} position={pt}>
           <sphereGeometry args={[0.06, 8, 8]} />
-          <meshBasicMaterial color={isSelected ? "#00D4FF" : "#00ffff"} />
+          <meshBasicMaterial color={isSelected ? "#00D4FF" : isConstruction ? "#00D4FF" : "#00ffff"} />
         </mesh>
       ))}
+      {/* Constraint symbols via Html */}
+      {obj.linePoints.length === 2 && (() => {
+        const [p1, p2] = obj.linePoints!;
+        const dx = Math.abs(p2[0] - p1[0]);
+        const dz = Math.abs(p2[2] - p1[2]);
+        const mid: [number, number, number] = [
+          (p1[0] + p2[0]) / 2,
+          (p1[1] + p2[1]) / 2 + 0.15,
+          (p1[2] + p2[2]) / 2,
+        ];
+        if (dz < 0.01 && dx > 0.1) {
+          return (
+            <Html position={mid} center style={{ pointerEvents: "none" }}>
+              <span className="text-[10px] font-bold text-green-400/60 bg-[#0d1117]/70 px-1 rounded">H</span>
+            </Html>
+          );
+        }
+        if (dx < 0.01 && dz > 0.1) {
+          return (
+            <Html position={mid} center style={{ pointerEvents: "none" }}>
+              <span className="text-[10px] font-bold text-blue-400/60 bg-[#0d1117]/70 px-1 rounded">V</span>
+            </Html>
+          );
+        }
+        return null;
+      })()}
     </group>
   );
 }
@@ -462,6 +493,103 @@ function GroundPlane() {
   );
 }
 
+/* ── Snap detection helper ── */
+function findSnapPoint(
+  point: [number, number, number],
+  objects: CadObject[],
+  threshold: number
+): { point: [number, number, number]; type: string } | null {
+  const candidates: { point: [number, number, number]; type: string; dist: number }[] = [];
+
+  for (const obj of objects) {
+    if (obj.visible === false) continue;
+
+    // Endpoints
+    if (obj.type === "line" && obj.linePoints) {
+      for (const lp of obj.linePoints) {
+        const d = Math.sqrt(Math.pow(point[0] - lp[0], 2) + Math.pow(point[2] - lp[2], 2));
+        if (d < threshold) candidates.push({ point: lp, type: "Endpoint", dist: d });
+      }
+      // Midpoint
+      if (obj.linePoints.length === 2) {
+        const mid: [number, number, number] = [
+          (obj.linePoints[0][0] + obj.linePoints[1][0]) / 2,
+          (obj.linePoints[0][1] + obj.linePoints[1][1]) / 2,
+          (obj.linePoints[0][2] + obj.linePoints[1][2]) / 2,
+        ];
+        const d = Math.sqrt(Math.pow(point[0] - mid[0], 2) + Math.pow(point[2] - mid[2], 2));
+        if (d < threshold) candidates.push({ point: mid, type: "Midpoint", dist: d });
+      }
+    }
+
+    // Circle center
+    if (obj.type === "circle" && obj.circleCenter) {
+      const d = Math.sqrt(Math.pow(point[0] - obj.circleCenter[0], 2) + Math.pow(point[2] - obj.circleCenter[2], 2));
+      if (d < threshold) candidates.push({ point: obj.circleCenter, type: "Center", dist: d });
+    }
+
+    // Rectangle corners
+    if (obj.type === "rectangle" && obj.rectCorners) {
+      for (const rc of obj.rectCorners) {
+        const rp: [number, number, number] = [rc[0], SKETCH_Y, rc[2]];
+        const d = Math.sqrt(Math.pow(point[0] - rp[0], 2) + Math.pow(point[2] - rp[2], 2));
+        if (d < threshold) candidates.push({ point: rp, type: "Endpoint", dist: d });
+      }
+      // Rectangle midpoints
+      const [c1, c2] = obj.rectCorners;
+      const mids: [number, number, number][] = [
+        [(c1[0] + c2[0]) / 2, SKETCH_Y, c1[2]],
+        [(c1[0] + c2[0]) / 2, SKETCH_Y, c2[2]],
+        [c1[0], SKETCH_Y, (c1[2] + c2[2]) / 2],
+        [c2[0], SKETCH_Y, (c1[2] + c2[2]) / 2],
+      ];
+      for (const mid of mids) {
+        const d = Math.sqrt(Math.pow(point[0] - mid[0], 2) + Math.pow(point[2] - mid[2], 2));
+        if (d < threshold) candidates.push({ point: mid, type: "Midpoint", dist: d });
+      }
+    }
+  }
+
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => a.dist - b.dist);
+  return { point: candidates[0].point, type: candidates[0].type };
+}
+
+/* ── Check alignment with existing points ── */
+function checkAlignment(
+  point: [number, number, number],
+  objects: CadObject[],
+  threshold: number
+): { alignH: boolean; alignV: boolean; refPoint: [number, number, number] | null } {
+  let alignH = false;
+  let alignV = false;
+  let refPoint: [number, number, number] | null = null;
+
+  for (const obj of objects) {
+    if (obj.visible === false) continue;
+    const points: [number, number, number][] = [];
+    if (obj.linePoints) points.push(...obj.linePoints);
+    if (obj.circleCenter) points.push(obj.circleCenter);
+    if (obj.rectCorners) {
+      points.push([obj.rectCorners[0][0], SKETCH_Y, obj.rectCorners[0][2]]);
+      points.push([obj.rectCorners[1][0], SKETCH_Y, obj.rectCorners[1][2]]);
+    }
+
+    for (const p of points) {
+      if (Math.abs(point[0] - p[0]) < threshold && !alignV) {
+        alignV = true;
+        refPoint = p;
+      }
+      if (Math.abs(point[2] - p[2]) < threshold && !alignH) {
+        alignH = true;
+        refPoint = refPoint || p;
+      }
+    }
+  }
+
+  return { alignH, alignV, refPoint };
+}
+
 /* ── Sketch drawing tools ── */
 function SketchDrawTools() {
   const activeTool = useCadStore((s) => s.activeTool);
@@ -472,8 +600,10 @@ function SketchDrawTools() {
   const addRectangle = useCadStore((s) => s.addRectangle);
   const snapGrid = useCadStore((s) => s.snapGrid);
   const gridSize = useCadStore((s) => s.gridSize);
-  // Determine plane rotation and coordinate mapping based on sketchPlane
-  // xz: ground plane (default), xy: front plane, yz: side plane
+  const objects = useCadStore((s) => s.objects);
+  const isConstructionMode = useCadStore((s) => s.isConstructionMode);
+  const setSketchDrawState = useCadStore((s) => s.setSketchDrawState);
+
   const plane = sketchPlane || "xz";
   const planeRotation: [number, number, number] = plane === "xz"
     ? [-Math.PI / 2, 0, 0]
@@ -492,29 +622,63 @@ function SketchDrawTools() {
   useEffect(() => {
     setClickPoints([]);
     setPreviewPoint(null);
-  }, [activeTool]);
+    setSketchDrawState({ clickPoints: [], previewPoint: null, activeTool, snapType: null, alignH: false, alignV: false, alignRefPoint: null });
+  }, [activeTool, setSketchDrawState]);
+
+  // Sync draw state to store for overlay
+  useEffect(() => {
+    setSketchDrawState({ clickPoints, previewPoint, activeTool });
+  }, [clickPoints, previewPoint, activeTool, setSketchDrawState]);
 
   if (!SKETCH_TOOLS.includes(activeTool)) return null;
 
+  const SNAP_THRESHOLD = 0.3;
+
   const getSnappedPoint = (point: THREE.Vector3): [number, number, number] => {
+    let raw: [number, number, number];
     if (plane === "xy") {
-      return [snap(point.x, gridSize, snapGrid), snap(point.y, gridSize, snapGrid), 0.01];
+      raw = [snap(point.x, gridSize, snapGrid), snap(point.y, gridSize, snapGrid), 0.01];
     } else if (plane === "yz") {
-      return [0.01, snap(point.y, gridSize, snapGrid), snap(point.z, gridSize, snapGrid)];
+      raw = [0.01, snap(point.y, gridSize, snapGrid), snap(point.z, gridSize, snapGrid)];
+    } else {
+      raw = [snap(point.x, gridSize, snapGrid), SKETCH_Y, snap(point.z, gridSize, snapGrid)];
     }
-    // xz (default)
-    return [snap(point.x, gridSize, snapGrid), SKETCH_Y, snap(point.z, gridSize, snapGrid)];
+
+    // Check for object snap points
+    const snapResult = findSnapPoint(raw, objects, SNAP_THRESHOLD);
+    if (snapResult) {
+      setSketchDrawState({ snapType: snapResult.type });
+      return snapResult.point;
+    }
+
+    // Check alignment
+    const alignment = checkAlignment(raw, objects, 0.15);
+    setSketchDrawState({ snapType: snapGrid ? "Grid" : null, alignH: alignment.alignH, alignV: alignment.alignV, alignRefPoint: alignment.refPoint });
+    return raw;
   };
 
   const handleClick = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation();
     const p = getSnappedPoint(e.point);
 
-    if (activeTool === "line") {
+    const effectiveTool = isConstructionMode ? "construction_line" : activeTool;
+
+    if (effectiveTool === "line" || effectiveTool === "construction_line") {
       if (clickPoints.length === 0) {
         setClickPoints([p]);
       } else {
         addLine([clickPoints[0], p]);
+        // If construction mode, mark the line differently (via color)
+        if (isConstructionMode) {
+          const state = useCadStore.getState();
+          const lastObj = state.objects[state.objects.length - 1];
+          if (lastObj) {
+            useCadStore.getState().updateObject(lastObj.id, {
+              color: "#00D4FF",
+              name: lastObj.name.replace("Line", "Construction"),
+            });
+          }
+        }
         setClickPoints([]);
         setPreviewPoint(null);
       }
@@ -560,19 +724,22 @@ function SketchDrawTools() {
   };
 
   const handleMove = (e: ThreeEvent<MouseEvent>) => {
+    const snapped = getSnappedPoint(e.point);
     if (clickPoints.length > 0) {
-      setPreviewPoint(getSnappedPoint(e.point));
+      setPreviewPoint(snapped);
     }
   };
 
   const renderPreview = () => {
     if (clickPoints.length === 0 || !previewPoint) return null;
 
-    if (activeTool === "line") {
+    const previewColor = isConstructionMode ? "#00D4FF" : undefined;
+
+    if (activeTool === "line" || activeTool === "construction_line") {
       return (
         <Line
           points={[clickPoints[0], previewPoint]}
-          color="#ffff00"
+          color={previewColor || "#ffff00"}
           lineWidth={2}
           dashed
           dashSize={0.15}
@@ -662,6 +829,48 @@ function SketchDrawTools() {
     return null;
   };
 
+  // Collect all snap-able points for visual indicators
+  const snapIndicators = useMemo(() => {
+    const points: { pos: [number, number, number]; type: string }[] = [];
+    for (const obj of objects) {
+      if (obj.visible === false) continue;
+      if (obj.linePoints) {
+        for (const lp of obj.linePoints) {
+          points.push({ pos: lp, type: "endpoint" });
+        }
+        if (obj.linePoints.length === 2) {
+          points.push({
+            pos: [
+              (obj.linePoints[0][0] + obj.linePoints[1][0]) / 2,
+              (obj.linePoints[0][1] + obj.linePoints[1][1]) / 2,
+              (obj.linePoints[0][2] + obj.linePoints[1][2]) / 2,
+            ],
+            type: "midpoint",
+          });
+        }
+      }
+      if (obj.circleCenter) {
+        points.push({ pos: obj.circleCenter, type: "center" });
+      }
+      if (obj.rectCorners) {
+        points.push({ pos: [obj.rectCorners[0][0], SKETCH_Y, obj.rectCorners[0][2]], type: "endpoint" });
+        points.push({ pos: [obj.rectCorners[1][0], SKETCH_Y, obj.rectCorners[1][2]], type: "endpoint" });
+        points.push({ pos: [obj.rectCorners[1][0], SKETCH_Y, obj.rectCorners[0][2]], type: "endpoint" });
+        points.push({ pos: [obj.rectCorners[0][0], SKETCH_Y, obj.rectCorners[1][2]], type: "endpoint" });
+      }
+    }
+    return points;
+  }, [objects]);
+
+  const snapPointColor = (type: string) => {
+    switch (type) {
+      case "endpoint": return "#ff8c00";
+      case "midpoint": return "#00ff88";
+      case "center": return "#ff00ff";
+      default: return "#ffaa00";
+    }
+  };
+
   return (
     <>
       <mesh
@@ -675,18 +884,27 @@ function SketchDrawTools() {
         <meshBasicMaterial transparent opacity={0} />
       </mesh>
       {renderPreview()}
+      {/* Click points */}
       {clickPoints.map((pt, i) => (
         <mesh key={i} position={pt}>
           <sphereGeometry args={[0.08, 16, 16]} />
-          <meshBasicMaterial color="#ffff00" />
+          <meshBasicMaterial color={isConstructionMode ? "#00D4FF" : "#ffff00"} />
         </mesh>
       ))}
+      {/* Crosshair at preview point */}
       {previewPoint && (
         <group position={previewPoint}>
           <Line points={[[-0.15, 0, 0], [0.15, 0, 0]]} color="#ffffff" lineWidth={1} />
           <Line points={[[0, 0, -0.15], [0, 0, 0.15]]} color="#ffffff" lineWidth={1} />
         </group>
       )}
+      {/* Snap point indicators - colored dots at snap-able points */}
+      {snapIndicators.map((si, i) => (
+        <mesh key={`snap-${i}`} position={si.pos}>
+          <sphereGeometry args={[0.04, 8, 8]} />
+          <meshBasicMaterial color={snapPointColor(si.type)} transparent opacity={0.7} />
+        </mesh>
+      ))}
     </>
   );
 }
@@ -912,7 +1130,7 @@ function computeArcThrough3Points(
   return points;
 }
 
-/* ── Sketch plane indicator ── */
+/* ── Sketch plane indicator with professional grid ── */
 function SketchPlaneIndicator() {
   const activeTool = useCadStore((s) => s.activeTool);
   const sketchPlane = useCadStore((s) => s.sketchPlane);
@@ -931,30 +1149,61 @@ function SketchPlaneIndicator() {
     ? [0, 0, 0.005]
     : [0.005, 0, 0];
 
+  const planeColor = plane === "xy" ? "#4444ff" : plane === "xz" ? "#44ff44" : "#ff4444";
+  const y = 0.006;
+
+  // Generate grid lines: major every 10 units, minor every 1 unit
+  const gridLines = useMemo(() => {
+    const major: [number, number, number][][] = [];
+    const minor: [number, number, number][][] = [];
+    const extent = 20;
+
+    for (let i = -extent; i <= extent; i++) {
+      const isMajor = i % 10 === 0;
+      const target = isMajor ? major : minor;
+
+      if (plane === "xz") {
+        target.push([[i, y, -extent], [i, y, extent]]);
+        target.push([[-extent, y, i], [extent, y, i]]);
+      } else if (plane === "xy") {
+        target.push([[i, -extent, y], [i, extent, y]]);
+        target.push([[-extent, i, y], [extent, i, y]]);
+      } else {
+        target.push([[y, i, -extent], [y, i, extent]]);
+        target.push([[y, -extent, i], [y, extent, i]]);
+      }
+    }
+    return { major, minor };
+  }, [plane]);
+
   return (
     <>
+      {/* Sketch plane background */}
       <mesh rotation={rotation} position={position}>
-        <planeGeometry args={[20, 20]} />
-        <meshBasicMaterial color="#00D4FF" transparent opacity={0.04} side={THREE.DoubleSide} />
+        <planeGeometry args={[40, 40]} />
+        <meshBasicMaterial color={planeColor} transparent opacity={0.03} side={THREE.DoubleSide} />
       </mesh>
-      {/* Grid lines on sketch plane */}
-      {[-10, -8, -6, -4, -2, 0, 2, 4, 6, 8, 10].map((i) => (
-        <group key={i}>
-          <Line
-            points={plane === "xz" ? [[i, 0.006, -10], [i, 0.006, 10]] as [number,number,number][] : plane === "xy" ? [[i, -10, 0.006], [i, 10, 0.006]] as [number,number,number][] : [[0.006, i, -10], [0.006, i, 10]] as [number,number,number][]}
-            color="#00D4FF"
-            lineWidth={0.4}
-            transparent
-            opacity={0.15}
-          />
-          <Line
-            points={plane === "xz" ? [[-10, 0.006, i], [10, 0.006, i]] as [number,number,number][] : plane === "xy" ? [[-10, i, 0.006], [10, i, 0.006]] as [number,number,number][] : [[0.006, -10, i], [0.006, 10, i]] as [number,number,number][]}
-            color="#00D4FF"
-            lineWidth={0.4}
-            transparent
-            opacity={0.15}
-          />
-        </group>
+      {/* Minor grid lines (every 1 unit) */}
+      {gridLines.minor.map((pts, i) => (
+        <Line
+          key={`minor-${i}`}
+          points={pts as [number, number, number][]}
+          color="#00D4FF"
+          lineWidth={0.3}
+          transparent
+          opacity={0.06}
+        />
+      ))}
+      {/* Major grid lines (every 10 units) */}
+      {gridLines.major.map((pts, i) => (
+        <Line
+          key={`major-${i}`}
+          points={pts as [number, number, number][]}
+          color="#00D4FF"
+          lineWidth={0.6}
+          transparent
+          opacity={0.2}
+        />
       ))}
     </>
   );
@@ -988,6 +1237,87 @@ function CursorTracker() {
       <meshBasicMaterial transparent opacity={0} />
     </mesh>
   );
+}
+
+/* ── Selection resize handles ── */
+function SelectionHandles() {
+  const selectedId = useCadStore((s) => s.selectedId);
+  const objects = useCadStore((s) => s.objects);
+  const activeTool = useCadStore((s) => s.activeTool);
+
+  const selected = objects.find((o) => o.id === selectedId);
+  if (!selected || activeTool !== "select") return null;
+
+  // For sketch entities, show handles at key points
+  if (selected.type === "line" && selected.linePoints && selected.linePoints.length === 2) {
+    const [p1, p2] = selected.linePoints;
+    const mid: [number, number, number] = [
+      (p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2, (p1[2] + p2[2]) / 2,
+    ];
+    return (
+      <group>
+        {[p1, p2, mid].map((pt, i) => (
+          <mesh key={i} position={pt}>
+            <boxGeometry args={[0.08, 0.08, 0.08]} />
+            <meshBasicMaterial color={i === 2 ? "#00ff88" : "#ffffff"} />
+          </mesh>
+        ))}
+      </group>
+    );
+  }
+
+  if (selected.type === "rectangle" && selected.rectCorners) {
+    const [c1, c2] = selected.rectCorners;
+    const corners: [number, number, number][] = [
+      [c1[0], SKETCH_Y, c1[2]],
+      [c2[0], SKETCH_Y, c1[2]],
+      [c2[0], SKETCH_Y, c2[2]],
+      [c1[0], SKETCH_Y, c2[2]],
+    ];
+    const midpoints: [number, number, number][] = corners.map((c, i) => {
+      const next = corners[(i + 1) % corners.length];
+      return [(c[0] + next[0]) / 2, SKETCH_Y, (c[2] + next[2]) / 2];
+    });
+    return (
+      <group>
+        {corners.map((pt, i) => (
+          <mesh key={`c-${i}`} position={pt}>
+            <boxGeometry args={[0.08, 0.08, 0.08]} />
+            <meshBasicMaterial color="#ffffff" />
+          </mesh>
+        ))}
+        {midpoints.map((pt, i) => (
+          <mesh key={`m-${i}`} position={pt}>
+            <boxGeometry args={[0.06, 0.06, 0.06]} />
+            <meshBasicMaterial color="#00ff88" />
+          </mesh>
+        ))}
+      </group>
+    );
+  }
+
+  if (selected.type === "circle" && selected.circleCenter && selected.circleRadius) {
+    const c = selected.circleCenter;
+    const r = selected.circleRadius;
+    const quadrants: [number, number, number][] = [
+      [c[0] + r, SKETCH_Y, c[2]],
+      [c[0] - r, SKETCH_Y, c[2]],
+      [c[0], SKETCH_Y, c[2] + r],
+      [c[0], SKETCH_Y, c[2] - r],
+    ];
+    return (
+      <group>
+        {quadrants.map((pt, i) => (
+          <mesh key={i} position={pt}>
+            <boxGeometry args={[0.07, 0.07, 0.07]} />
+            <meshBasicMaterial color="#ffffff" />
+          </mesh>
+        ))}
+      </group>
+    );
+  }
+
+  return null;
 }
 
 /* ── Background gradient ── */
@@ -1036,7 +1366,7 @@ export default function Viewport3D({ mode }: Viewport3DProps) {
   }, []);
 
   return (
-    <div className="w-full h-full relative" onContextMenu={handleContextMenu}>
+    <div className={`w-full h-full relative ${isSketchMode ? "cursor-none" : ""}`} onContextMenu={handleContextMenu}>
       {contextMenu && (
         <ViewportContextMenu
           x={contextMenu.x}
@@ -1093,6 +1423,7 @@ export default function Viewport3D({ mode }: Viewport3DProps) {
         })}
 
         <SelectedTransform />
+        <SelectionHandles />
         <DimensionOverlay />
         <SmartDimensions />
         <MeasurementTool />
