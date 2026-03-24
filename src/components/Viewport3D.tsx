@@ -420,6 +420,92 @@ function CadRectangle({ obj }: { obj: CadObject }) {
   );
 }
 
+/* ── Sketch Polygon object ── */
+function CadPolygon({ obj }: { obj: CadObject }) {
+  const selectedId = useCadStore((s) => s.selectedId);
+  const selectObject = useCadStore((s) => s.selectObject);
+  const activeTool = useCadStore((s) => s.activeTool);
+  const isSelected = selectedId === obj.id;
+
+  if (!obj.polygonPoints || obj.polygonPoints.length < 3) return null;
+  if (obj.visible === false) return null;
+
+  const pts: [number, number, number][] = [
+    ...obj.polygonPoints,
+    obj.polygonPoints[0], // close the polygon
+  ];
+
+  return (
+    <group
+      onClick={(e) => {
+        if (activeTool !== "select") return;
+        e.stopPropagation();
+        selectObject(obj.id);
+      }}
+    >
+      <Line
+        points={pts}
+        color={isSelected ? "#7dc4e0" : obj.color}
+        lineWidth={isSelected ? 2.5 : 1.5}
+      />
+      {obj.polygonPoints.map((pt, i) => (
+        <mesh key={i} position={pt}>
+          <boxGeometry args={[0.04, 0.04, 0.04]} />
+          <meshBasicMaterial color={isSelected ? "#7dc4e0" : "#ff6600"} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+/* ── Sketch Ellipse object ── */
+function CadEllipse({ obj }: { obj: CadObject }) {
+  const selectedId = useCadStore((s) => s.selectedId);
+  const selectObject = useCadStore((s) => s.selectObject);
+  const activeTool = useCadStore((s) => s.activeTool);
+  const isSelected = selectedId === obj.id;
+
+  const ellipsePoints = useMemo(() => {
+    if (!obj.ellipseCenter || !obj.ellipseRx || !obj.ellipseRy) return [];
+    const segments = 64;
+    const points: [number, number, number][] = [];
+    for (let i = 0; i <= segments; i++) {
+      const angle = (i / segments) * Math.PI * 2;
+      points.push([
+        obj.ellipseCenter[0] + Math.cos(angle) * obj.ellipseRx,
+        SKETCH_Y,
+        obj.ellipseCenter[2] + Math.sin(angle) * obj.ellipseRy,
+      ]);
+    }
+    return points;
+  }, [obj.ellipseCenter, obj.ellipseRx, obj.ellipseRy]);
+
+  if (ellipsePoints.length < 2) return null;
+  if (obj.visible === false) return null;
+
+  return (
+    <group
+      onClick={(e) => {
+        if (activeTool !== "select") return;
+        e.stopPropagation();
+        selectObject(obj.id);
+      }}
+    >
+      <Line
+        points={ellipsePoints}
+        color={isSelected ? "#7dc4e0" : obj.color}
+        lineWidth={isSelected ? 2.5 : 1.5}
+      />
+      {obj.ellipseCenter && (
+        <mesh position={obj.ellipseCenter}>
+          <boxGeometry args={[0.04, 0.04, 0.04]} />
+          <meshBasicMaterial color={isSelected ? "#7dc4e0" : "#9966ff"} />
+        </mesh>
+      )}
+    </group>
+  );
+}
+
 /* ── Transform wrapper for selected object ── */
 function SelectedTransform() {
   const selectedId = useCadStore((s) => s.selectedId);
@@ -820,6 +906,46 @@ function SketchDrawTools() {
         setClickPoints([]);
         setPreviewPoint(null);
       }
+    } else if (activeTool === "polygon") {
+      // Regular polygon: center click, then radius click
+      if (clickPoints.length === 0) {
+        setClickPoints([p]);
+      } else {
+        const center = clickPoints[0];
+        const radius = Math.sqrt(Math.pow(p[0] - center[0], 2) + Math.pow(p[2] - center[2], 2));
+        if (radius > 0.05) {
+          const sides = 6; // Default hexagon
+          const pts: [number, number, number][] = [];
+          for (let i = 0; i < sides; i++) {
+            const angle = (i / sides) * Math.PI * 2 - Math.PI / 2;
+            pts.push([
+              center[0] + Math.cos(angle) * radius,
+              SKETCH_Y,
+              center[2] + Math.sin(angle) * radius,
+            ]);
+          }
+          const store = useCadStore.getState();
+          store.addPolygon(pts, sides);
+        }
+        setClickPoints([]);
+        setPreviewPoint(null);
+      }
+    } else if (activeTool === "ellipse") {
+      if (clickPoints.length === 0) {
+        setClickPoints([p]);
+      } else if (clickPoints.length === 1) {
+        setClickPoints([...clickPoints, p]);
+      } else {
+        const center = clickPoints[0];
+        const rx = Math.abs(clickPoints[1][0] - center[0]);
+        const ry = Math.abs(p[2] - center[2]);
+        if (rx > 0.05 && ry > 0.05) {
+          const store = useCadStore.getState();
+          store.addEllipse(center, rx, ry);
+        }
+        setClickPoints([]);
+        setPreviewPoint(null);
+      }
     }
   };
 
@@ -931,6 +1057,28 @@ function SketchDrawTools() {
           ];
       return (
         <Line points={pts} color="#ffaa00" lineWidth={2} dashed dashSize={0.15} gapSize={0.1} />
+      );
+    }
+
+    if (activeTool === "polygon") {
+      const center = clickPoints[0];
+      const radius = Math.sqrt(Math.pow(previewPoint[0] - center[0], 2) + Math.pow(previewPoint[2] - center[2], 2));
+      if (radius < 0.05) return null;
+      const sides = 6;
+      const pts: [number, number, number][] = [];
+      for (let i = 0; i <= sides; i++) {
+        const angle = (i / sides) * Math.PI * 2 - Math.PI / 2;
+        pts.push([
+          center[0] + Math.cos(angle) * radius,
+          SKETCH_Y,
+          center[2] + Math.sin(angle) * radius,
+        ]);
+      }
+      return (
+        <>
+          <Line points={pts} color="#ff6600" lineWidth={2} dashed dashSize={0.15} gapSize={0.1} />
+          <Line points={[center, previewPoint]} color="#ff6600" lineWidth={1} dashed dashSize={0.1} gapSize={0.1} />
+        </>
       );
     }
 
@@ -1437,6 +1585,42 @@ function GradientBackground() {
   return null;
 }
 
+/* ── Section View Plane ── */
+function SectionViewPlane() {
+  const activeTool = useCadStore((s) => s.activeTool);
+  const [offset, setOffset] = useState(0);
+
+  useFrame(() => {
+    // Gentle animation
+  });
+
+  if (activeTool !== "section_view") return null;
+
+  return (
+    <group>
+      {/* Section plane visualization */}
+      <mesh position={[0, offset, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[20, 20]} />
+        <meshBasicMaterial color="#ff4444" transparent opacity={0.08} side={THREE.DoubleSide} />
+      </mesh>
+      {/* Section plane border */}
+      <Line
+        points={[[-10, offset, -10], [10, offset, -10], [10, offset, 10], [-10, offset, 10], [-10, offset, -10]]}
+        color="#ff4444"
+        lineWidth={1}
+        transparent
+        opacity={0.4}
+      />
+      {/* Label */}
+      <Html position={[0, offset + 0.3, 0]} center>
+        <div className="text-[9px] text-red-400 bg-[#0d1117]/80 px-2 py-0.5 rounded border border-red-500/20">
+          Section Plane Y={offset.toFixed(1)}
+        </div>
+      </Html>
+    </group>
+  );
+}
+
 /* ── Main Viewport ── */
 interface Viewport3DProps {
   mode?: "designer" | "simulator" | "assembly";
@@ -1509,6 +1693,10 @@ export default function Viewport3D({ mode }: Viewport3DProps) {
               return <CadCircle key={obj.id} obj={obj} />;
             case "rectangle":
               return <CadRectangle key={obj.id} obj={obj} />;
+            case "polygon":
+              return <CadPolygon key={obj.id} obj={obj} />;
+            case "ellipse":
+              return <CadEllipse key={obj.id} obj={obj} />;
             default:
               return <CadMesh key={obj.id} obj={obj} />;
           }
@@ -1520,6 +1708,7 @@ export default function Viewport3D({ mode }: Viewport3DProps) {
         <SmartDimensions />
         <MeasurementTool />
         <ConstraintIndicators />
+        <SectionViewPlane />
 
         <ContactShadows position={[0, -0.01, 0]} opacity={0.4} blur={2} />
 

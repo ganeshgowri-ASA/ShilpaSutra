@@ -13,8 +13,8 @@ export default function RevolveDialog({ onClose }: RevolveDialogProps) {
   const revolveFromSketch = useCadStore((s) => s.revolveFromSketch);
 
   const selected = objects.find((o) => o.id === selectedId);
-  const sketchTypes = ["rectangle", "circle"];
-  const isValidSketch = selected && sketchTypes.includes(selected.type);
+  const sketchTypes = ["rectangle", "circle", "polygon"];
+  const isValidSketch = selected && (sketchTypes.includes(selected.type) || selected.isProfile);
 
   const [angle, setAngle] = useState(360);
 

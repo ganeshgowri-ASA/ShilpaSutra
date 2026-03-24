@@ -172,6 +172,10 @@ export default function FeatureTree() {
   const featureTreeCollapsed = useCadStore((s) => s.featureTreeCollapsed);
   const setFeatureTreeCollapsed = useCadStore((s) => s.setFeatureTreeCollapsed);
   const featureHistory = useCadStore((s) => s.featureHistory);
+  const enterSketchMode = useCadStore((s) => s.enterSketchMode);
+  const sketchPlane = useCadStore((s) => s.sketchPlane);
+  const setActiveTool = useCadStore((s) => s.setActiveTool);
+  const exitSketchMode = useCadStore((s) => s.exitSketchMode);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -366,22 +370,45 @@ export default function FeatureTree() {
             <div className="ml-3 pl-2 border-l border-[#21262d]/60 space-y-px mt-0.5 animate-fade-in">
               {(["xy", "xz", "yz"] as const).map((plane) => {
                 const planeColors: Record<string, string> = { xy: "text-blue-400/70", xz: "text-green-400/70", yz: "text-red-400/70" };
+                const isActive = sketchPlane === plane;
                 return (
                   <div
                     key={plane}
-                    className="flex items-center justify-between px-2 py-1 rounded-md hover:bg-[#21262d]/40 group transition-colors duration-150"
+                    onClick={() => {
+                      if (isActive) {
+                        exitSketchMode();
+                      } else {
+                        enterSketchMode(plane);
+                      }
+                    }}
+                    className={`flex items-center justify-between px-2 py-1 rounded-md cursor-pointer group transition-colors duration-150 ${
+                      isActive
+                        ? "bg-[#00D4FF]/10 text-[#00D4FF] shadow-[inset_0_0_0_1px_rgba(0,212,255,0.15)]"
+                        : "hover:bg-[#21262d]/40"
+                    }`}
                   >
-                    <span className={`text-[10px] font-mono font-medium ${planeColors[plane] || "text-slate-500"}`}>{plane.toUpperCase()} Plane</span>
-                    <button
-                      onClick={() => setPlaneVisibility((p) => ({ ...p, [plane]: !p[plane] }))}
-                      className="opacity-0 group-hover:opacity-100 transition-all duration-150"
-                    >
-                      {planeVisibility[plane] ? (
-                        <Eye size={10} className="text-slate-500" />
-                      ) : (
-                        <EyeOff size={10} className="text-slate-600" />
+                    <div className="flex items-center gap-1.5">
+                      <span className={`text-[10px] font-mono font-medium ${isActive ? "text-[#00D4FF]" : planeColors[plane] || "text-slate-500"}`}>{plane.toUpperCase()} Plane</span>
+                      {isActive && <span className="text-[8px] text-emerald-400 font-medium animate-pulse">Sketching</span>}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {!isActive && (
+                        <span className="text-[8px] text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity">Click to sketch</span>
                       )}
-                    </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPlaneVisibility((p) => ({ ...p, [plane]: !p[plane] }));
+                        }}
+                        className="opacity-0 group-hover:opacity-100 transition-all duration-150"
+                      >
+                        {planeVisibility[plane] ? (
+                          <Eye size={10} className="text-slate-500" />
+                        ) : (
+                          <EyeOff size={10} className="text-slate-600" />
+                        )}
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -393,6 +420,10 @@ export default function FeatureTree() {
         {featureHistory.filter(f => f.type === "sketch_group").map((sketchGroup) => {
           const sketchEntities = objects.filter(o => o.sketchId === sketchGroup.id);
           const isLocked = (sketchGroup as { sketchStatus?: string }).sketchStatus === "locked";
+          // Find child features (extrude/revolve) that reference this sketch
+          const childFeatures = featureHistory.filter(f =>
+            f.parentId === sketchGroup.id && f.type !== "sketch_group"
+          );
           return (
             <div key={sketchGroup.id} className="mb-0.5">
               <button
@@ -409,7 +440,7 @@ export default function FeatureTree() {
                   <span className="text-[8px] text-slate-600 bg-[#0d1117] rounded-full px-1.5 py-0.5 font-mono">{sketchEntities.length}</span>
                 </span>
               </button>
-              {sketchesExpanded && sketchEntities.length > 0 && (
+              {sketchesExpanded && (sketchEntities.length > 0 || childFeatures.length > 0) && (
                 <div className="ml-3 pl-2 border-l border-[#21262d]/60 space-y-px mt-0.5">
                   {sketchEntities.map((obj) => {
                     const isSelected = selectedId === obj.id || selectedIds.includes(obj.id);
@@ -417,6 +448,22 @@ export default function FeatureTree() {
                       <ObjectRow
                         key={obj.id}
                         obj={obj}
+                        isSelected={isSelected}
+                        onSelect={handleClick}
+                        onContextMenu={handleContextMenu}
+                        {...commonRowProps}
+                      />
+                    );
+                  })}
+                  {/* Child features (Extrude, Revolve) derived from this sketch */}
+                  {childFeatures.map((feat) => {
+                    const featObj = objects.find(o => o.id === feat.objectId);
+                    if (!featObj) return null;
+                    const isSelected = selectedId === featObj.id || selectedIds.includes(featObj.id);
+                    return (
+                      <ObjectRow
+                        key={featObj.id}
+                        obj={featObj}
                         isSelected={isSelected}
                         onSelect={handleClick}
                         onContextMenu={handleContextMenu}
@@ -472,10 +519,18 @@ export default function FeatureTree() {
 
         {/* Rollback Bar */}
         <div className="mt-2 mx-1.5">
-          <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-[#0d1117]/50 border border-dashed border-[#30363d] cursor-row-resize hover:border-[#00D4FF]/30 transition-colors group">
-            <Grip size={10} className="text-slate-600 group-hover:text-[#00D4FF]" />
-            <span className="text-[9px] text-slate-600 group-hover:text-slate-400 font-medium">Rollback Bar</span>
+          <div
+            className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-blue-500/5 border border-dashed border-blue-500/20 cursor-row-resize hover:border-blue-500/40 transition-colors group"
+            title="Drag to roll back feature history (SolidWorks-style)"
+          >
+            <div className="w-full h-[2px] bg-blue-500/30 rounded-full group-hover:bg-blue-500/50 transition-colors" />
+            <Grip size={10} className="text-blue-500/40 group-hover:text-blue-400 shrink-0" />
           </div>
+          {rollbackIdx !== null && (
+            <div className="text-[9px] text-blue-400 mt-0.5 px-2">
+              Rolled back to step {rollbackIdx + 1}
+            </div>
+          )}
         </div>
       </div>
 

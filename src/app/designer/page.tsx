@@ -135,6 +135,11 @@ const ParametricPanel = dynamic(
   { ssr: false }
 );
 
+const MassPropertiesDialog = dynamic(
+  () => import("@/components/cad/MassPropertiesDialog"),
+  { ssr: false }
+);
+
 const AnimationTimeline = dynamic(
   () => import("@/components/cad/AnimationTimeline"),
   { ssr: false }
@@ -159,6 +164,7 @@ export default function DesignerPage() {
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [showExtrudeDialog, setShowExtrudeDialog] = useState(false);
   const [showRevolveDialog, setShowRevolveDialog] = useState(false);
+  const [showMassProps, setShowMassProps] = useState(false);
   const [rightTab, setRightTab] = useState<"properties" | "components">("properties");
 
   const sketchTools = ["line", "arc", "circle", "rectangle", "polygon", "spline", "ellipse", "construction_line"];
@@ -170,11 +176,12 @@ export default function DesignerPage() {
 
   const handleExtrude = useCallback(() => setShowExtrudeDialog(true), []);
   const handleRevolve = useCallback(() => setShowRevolveDialog(true), []);
+  const handleMassProps = useCallback(() => setShowMassProps(true), []);
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-[#0d1117]">
       {/* Ribbon Toolbar (top) */}
-      <RibbonToolbar onExtrude={handleExtrude} onRevolve={handleRevolve} />
+      <RibbonToolbar onExtrude={handleExtrude} onRevolve={handleRevolve} onMassProps={handleMassProps} />
 
       {/* Main workspace area */}
       <div className="flex-1 flex overflow-hidden">
@@ -342,6 +349,11 @@ export default function DesignerPage() {
             {/* Revolve Dialog */}
             {showRevolveDialog && (
               <RevolveDialog onClose={() => setShowRevolveDialog(false)} />
+            )}
+
+            {/* Mass Properties Dialog */}
+            {showMassProps && (
+              <MassPropertiesDialog onClose={() => setShowMassProps(false)} />
             )}
 
             {/* History Timeline (floating, bottom right) */}
