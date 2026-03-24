@@ -2,6 +2,15 @@
 import { useState, useCallback, useEffect } from "react";
 import { useCadStore, type ToolId } from "@/stores/cad-store";
 import {
+  trimLine,
+  extendLine,
+  offsetLine,
+  mirrorLine,
+  sketchFillet,
+  sketchChamfer,
+  type SketchEntity2D,
+} from "@/lib/sketch-engine";
+import {
   Pencil, Spline, Circle, Square, Pentagon,
   Minus, Scissors, FlipHorizontal, ArrowRight,
   RulerIcon, Construction, Ellipsis, MousePointer2, X,
@@ -210,9 +219,212 @@ export default function SketchToolbar({ visible, onSelectPlane }: SketchToolbarP
 
   const handleOpClick = useCallback(
     (op: SketchOperation) => {
-      setActiveOp(activeOp === op ? null : op);
+      if (activeOp === op) {
+        setActiveOp(null);
+        return;
+      }
+      setActiveOp(op);
+
+      // Execute operations that can work immediately on selected entities
+      const cadStore = useCadStore.getState();
+      const selected = cadStore.getSelected();
+      if (!selected) return;
+
+      const activeSketchId = cadStore.activeSketchId;
+      const sketchEntities = activeSketchId
+        ? cadStore.objects.filter((o) => o.sketchId === activeSketchId)
+        : [];
+
+      switch (op) {
+        case "trim": {
+          // Trim requires a line selected and other entities to trim against
+          if (selected.type === "line" && selected.linePoints && selected.linePoints.length >= 2) {
+            const otherEntities: SketchEntity2D[] = sketchEntities
+              .filter((e) => e.id !== selected.id)
+              .map((e) => {
+                if (e.type === "line" && e.linePoints && e.linePoints.length >= 2)
+                  return { type: "line" as const, points: e.linePoints.map((p) => [p[0], p[2]] as [number, number]) };
+                if (e.type === "circle" && e.circleCenter && e.circleRadius)
+                  return { type: "circle" as const, center: [e.circleCenter[0], e.circleCenter[2]] as [number, number], radius: e.circleRadius };
+                return null;
+              })
+              .filter(Boolean) as SketchEntity2D[];
+
+            if (otherEntities.length > 0) {
+              const lp = selected.linePoints;
+              const midPt: [number, number] = [(lp[0][0] + lp[1][0]) / 2, (lp[0][2] + lp[1][2]) / 2];
+              const result = trimLine(
+                [lp[0][0], lp[0][2]], [lp[1][0], lp[1][2]],
+                midPt, otherEntities
+              );
+              if (result.success && result.remainingSegments.length > 0) {
+                cadStore.pushHistory();
+                cadStore.deleteObject(selected.id);
+                const SKETCH_Y = 0.02;
+                for (const seg of result.remainingSegments) {
+                  cadStore.addLine([
+                    [seg.start[0], SKETCH_Y, seg.start[1]],
+                    [seg.end[0], SKETCH_Y, seg.end[1]],
+                  ]);
+                }
+              }
+            }
+          }
+          setActiveOp(null);
+          break;
+        }
+
+        case "offset": {
+          // Offset: create a parallel copy of the selected line at a fixed distance
+          if (selected.type === "line" && selected.linePoints && selected.linePoints.length >= 2) {
+            const lp = selected.linePoints;
+            const offsetDist = 0.5; // Default offset distance
+            const result = offsetLine(
+              [lp[0][0], lp[0][2]], [lp[1][0], lp[1][2]],
+              offsetDist
+            );
+            cadStore.pushHistory();
+            const SKETCH_Y = 0.02;
+            cadStore.addLine([
+              [result.start[0], SKETCH_Y, result.start[1]],
+              [result.end[0], SKETCH_Y, result.end[1]],
+            ]);
+          }
+          setActiveOp(null);
+          break;
+        }
+
+        case "mirror_sketch": {
+          // Mirror across Y axis (X=0 line)
+          if (selected.type === "line" && selected.linePoints && selected.linePoints.length >= 2) {
+            const lp = selected.linePoints;
+            const result = mirrorLine(
+              [lp[0][0], lp[0][2]], [lp[1][0], lp[1][2]],
+              [0, -10], [0, 10] // Mirror about Y axis
+            );
+            cadStore.pushHistory();
+            const SKETCH_Y = 0.02;
+            cadStore.addLine([
+              [result.start[0], SKETCH_Y, result.start[1]],
+              [result.end[0], SKETCH_Y, result.end[1]],
+            ]);
+          }
+          setActiveOp(null);
+          break;
+        }
+
+        case "sketch_fillet": {
+          // Fillet two selected lines
+          const selectedIds = cadStore.selectedIds;
+          if (selectedIds.length >= 2) {
+            const line1 = cadStore.objects.find((o) => o.id === selectedIds[0]);
+            const line2 = cadStore.objects.find((o) => o.id === selectedIds[1]);
+            if (line1?.type === "line" && line2?.type === "line" &&
+                line1.linePoints?.length === 2 && line2.linePoints?.length === 2) {
+              const result = sketchFillet(
+                [line1.linePoints[0][0], line1.linePoints[0][2]],
+                [line1.linePoints[1][0], line1.linePoints[1][2]],
+                [line2.linePoints[0][0], line2.linePoints[0][2]],
+                [line2.linePoints[1][0], line2.linePoints[1][2]],
+                0.3 // Default fillet radius
+              );
+              if (result) {
+                cadStore.pushHistory();
+                const SKETCH_Y = 0.02;
+                // Update line1 with trimmed version
+                cadStore.updateObject(line1.id, {
+                  linePoints: [
+                    [result.trimmedLine1.start[0], SKETCH_Y, result.trimmedLine1.start[1]],
+                    [result.trimmedLine1.end[0], SKETCH_Y, result.trimmedLine1.end[1]],
+                  ],
+                });
+                // Update line2 with trimmed version
+                cadStore.updateObject(line2.id, {
+                  linePoints: [
+                    [result.trimmedLine2.start[0], SKETCH_Y, result.trimmedLine2.start[1]],
+                    [result.trimmedLine2.end[0], SKETCH_Y, result.trimmedLine2.end[1]],
+                  ],
+                });
+                // Add fillet arc
+                const arcCenter: [number, number, number] = [result.arc.center[0], SKETCH_Y, result.arc.center[1]];
+                const arcStart: [number, number, number] = [
+                  result.arc.center[0] + Math.cos(result.arc.startAngle) * result.arc.radius,
+                  SKETCH_Y,
+                  result.arc.center[1] + Math.sin(result.arc.startAngle) * result.arc.radius,
+                ];
+                const arcEnd: [number, number, number] = [
+                  result.arc.center[0] + Math.cos(result.arc.endAngle) * result.arc.radius,
+                  SKETCH_Y,
+                  result.arc.center[1] + Math.sin(result.arc.endAngle) * result.arc.radius,
+                ];
+                cadStore.addArc([arcStart, arcCenter, arcEnd], result.arc.radius);
+              }
+            }
+          }
+          setActiveOp(null);
+          break;
+        }
+
+        case "sketch_chamfer": {
+          // Chamfer two selected lines
+          const selIds = cadStore.selectedIds;
+          if (selIds.length >= 2) {
+            const line1 = cadStore.objects.find((o) => o.id === selIds[0]);
+            const line2 = cadStore.objects.find((o) => o.id === selIds[1]);
+            if (line1?.type === "line" && line2?.type === "line" &&
+                line1.linePoints?.length === 2 && line2.linePoints?.length === 2) {
+              const result = sketchChamfer(
+                [line1.linePoints[0][0], line1.linePoints[0][2]],
+                [line1.linePoints[1][0], line1.linePoints[1][2]],
+                [line2.linePoints[0][0], line2.linePoints[0][2]],
+                [line2.linePoints[1][0], line2.linePoints[1][2]],
+                0.3 // Default chamfer distance
+              );
+              if (result) {
+                cadStore.pushHistory();
+                const SKETCH_Y = 0.02;
+                cadStore.updateObject(line1.id, {
+                  linePoints: [
+                    [result.trimmedLine1.start[0], SKETCH_Y, result.trimmedLine1.start[1]],
+                    [result.trimmedLine1.end[0], SKETCH_Y, result.trimmedLine1.end[1]],
+                  ],
+                });
+                cadStore.updateObject(line2.id, {
+                  linePoints: [
+                    [result.trimmedLine2.start[0], SKETCH_Y, result.trimmedLine2.start[1]],
+                    [result.trimmedLine2.end[0], SKETCH_Y, result.trimmedLine2.end[1]],
+                  ],
+                });
+                cadStore.addLine([
+                  [result.chamferLine.start[0], SKETCH_Y, result.chamferLine.start[1]],
+                  [result.chamferLine.end[0], SKETCH_Y, result.chamferLine.end[1]],
+                ]);
+              }
+            }
+          }
+          setActiveOp(null);
+          break;
+        }
+
+        case "move_entities": {
+          // Move selected entity by a small offset (visual feedback would need more UI)
+          if (selected.type === "line" && selected.linePoints && selected.linePoints.length >= 2) {
+            cadStore.pushHistory();
+            const lp = selected.linePoints;
+            cadStore.updateObject(selected.id, {
+              linePoints: lp.map((p) => [p[0] + 0.5, p[1], p[2] + 0.5] as [number, number, number]),
+            });
+          }
+          setActiveOp(null);
+          break;
+        }
+
+        default:
+          // For dimension and other ops, leave the op active for user interaction
+          break;
+      }
     },
-    [activeOp]
+    [activeOp, setActiveTool],
   );
 
   const handlePlaneChange = useCallback(

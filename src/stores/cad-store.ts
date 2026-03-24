@@ -1419,7 +1419,7 @@ const createGeo = (obj: CadObject): THREE.BufferGeometry => {
     const { objects } = get();
     const sketch = objects.find((o) => o.id === sketchId);
     if (!sketch) return;
-    if (!["rectangle", "circle", "polygon", "line"].includes(sketch.type) && !sketch.isProfile) return;
+    if (!["rectangle", "circle", "polygon", "line", "ellipse", "slot"].includes(sketch.type) && !sketch.isProfile) return;
     get().pushHistory();
 
     let geo: THREE.BufferGeometry | null = null;
@@ -1470,6 +1470,126 @@ const createGeo = (obj: CadObject): THREE.BufferGeometry => {
       shape.closePath();
       geo = new THREE.ExtrudeGeometry(shape, { depth: distance, bevelEnabled: false });
       geo.rotateX(-Math.PI / 2);
+    } else if (sketch.type === "ellipse" && sketch.ellipseCenter && sketch.ellipseRx && sketch.ellipseRy) {
+      const shape = new THREE.Shape();
+      const segments = 64;
+      for (let i = 0; i <= segments; i++) {
+        const angle = (i / segments) * Math.PI * 2;
+        const x = sketch.ellipseCenter[0] + Math.cos(angle) * sketch.ellipseRx;
+        const z = sketch.ellipseCenter[2] + Math.sin(angle) * sketch.ellipseRy;
+        if (i === 0) shape.moveTo(x, z);
+        else shape.lineTo(x, z);
+      }
+      shape.closePath();
+      geo = new THREE.ExtrudeGeometry(shape, { depth: distance, bevelEnabled: false });
+      geo.rotateX(-Math.PI / 2);
+    } else if (sketch.type === "slot" && sketch.slotCenter1 && sketch.slotCenter2 && sketch.slotWidth) {
+      const c1 = sketch.slotCenter1;
+      const c2 = sketch.slotCenter2;
+      const hw = sketch.slotWidth / 2;
+      const dx = c2[0] - c1[0];
+      const dz = c2[2] - c1[2];
+      const len = Math.sqrt(dx * dx + dz * dz);
+      if (len > 1e-10) {
+        const nx = -dz / len * hw;
+        const nz = dx / len * hw;
+        const shape = new THREE.Shape();
+        shape.moveTo(c1[0] + nx, c1[2] + nz);
+        shape.lineTo(c2[0] + nx, c2[2] + nz);
+        // Right semicircle
+        const angle2 = Math.atan2(nz, nx);
+        for (let i = 0; i <= 16; i++) {
+          const a = angle2 - Math.PI * (i / 16);
+          shape.lineTo(c2[0] + Math.cos(a) * hw, c2[2] + Math.sin(a) * hw);
+        }
+        shape.lineTo(c1[0] - nx, c1[2] - nz);
+        // Left semicircle
+        for (let i = 0; i <= 16; i++) {
+          const a = angle2 + Math.PI + Math.PI * (i / 16);
+          shape.lineTo(c1[0] + Math.cos(a) * hw, c1[2] + Math.sin(a) * hw);
+        }
+        shape.closePath();
+        geo = new THREE.ExtrudeGeometry(shape, { depth: distance, bevelEnabled: false });
+        geo.rotateX(-Math.PI / 2);
+      }
+    } else if (sketch.type === "line" && sketch.sketchId) {
+      // Check if this line is part of a closed loop in the sketch
+      const sketchEntities = objects.filter(o => o.sketchId === sketch.sketchId && o.type === "line" && o.linePoints && o.linePoints.length >= 2);
+      if (sketchEntities.length >= 3) {
+        // Try to find a closed loop starting from this line
+        const EPS = 1e-4;
+        const nearEqual = (a: [number, number, number], b: [number, number, number]) =>
+          Math.abs(a[0] - b[0]) < EPS && Math.abs(a[1] - b[1]) < EPS && Math.abs(a[2] - b[2]) < EPS;
+
+        const used = new Set<string>();
+        const chain: [number, number, number][] = [];
+        let current = sketch;
+        chain.push(current.linePoints![0]);
+        chain.push(current.linePoints![1]);
+        used.add(current.id);
+        let currentEnd = current.linePoints![1];
+
+        let found = true;
+        while (found) {
+          found = false;
+          for (const ent of sketchEntities) {
+            if (used.has(ent.id)) continue;
+            const lp = ent.linePoints!;
+            if (nearEqual(lp[0], currentEnd)) {
+              chain.push(lp[1]);
+              currentEnd = lp[1];
+              used.add(ent.id);
+              found = true;
+              break;
+            } else if (nearEqual(lp[1], currentEnd)) {
+              chain.push(lp[0]);
+              currentEnd = lp[0];
+              used.add(ent.id);
+              found = true;
+              break;
+            }
+          }
+        }
+
+        // Check if closed
+        if (chain.length >= 4 && nearEqual(currentEnd, chain[0])) {
+          const shape = new THREE.Shape();
+          const sp = sketchP;
+          if (sp === "xz") {
+            shape.moveTo(chain[0][0], chain[0][2]);
+            for (let i = 1; i < chain.length - 1; i++) {
+              shape.lineTo(chain[i][0], chain[i][2]);
+            }
+          } else if (sp === "xy") {
+            shape.moveTo(chain[0][0], chain[0][1]);
+            for (let i = 1; i < chain.length - 1; i++) {
+              shape.lineTo(chain[i][0], chain[i][1]);
+            }
+          } else {
+            shape.moveTo(chain[0][1], chain[0][2]);
+            for (let i = 1; i < chain.length - 1; i++) {
+              shape.lineTo(chain[i][1], chain[i][2]);
+            }
+          }
+          shape.closePath();
+          geo = new THREE.ExtrudeGeometry(shape, { depth: distance, bevelEnabled: false });
+          if (sp === "xz") geo.rotateX(-Math.PI / 2);
+          else if (sp === "yz") geo.rotateY(Math.PI / 2);
+        }
+      }
+    } else if (sketch.isProfile) {
+      // Generic profile with polygon points
+      if (sketch.polygonPoints && sketch.polygonPoints.length >= 3) {
+        const shape = new THREE.Shape();
+        const pts = sketch.polygonPoints;
+        shape.moveTo(pts[0][0], pts[0][2]);
+        for (let i = 1; i < pts.length; i++) {
+          shape.lineTo(pts[i][0], pts[i][2]);
+        }
+        shape.closePath();
+        geo = new THREE.ExtrudeGeometry(shape, { depth: distance, bevelEnabled: false });
+        geo.rotateX(-Math.PI / 2);
+      }
     }
 
     if (!geo) return;

@@ -24,7 +24,7 @@ import ConstraintIndicators from "@/components/cad/ConstraintIndicators";
 import SmartDimensions from "@/components/cad/SmartDimensions";
 import ViewportContextMenu from "@/components/cad/ViewportContextMenu";
 
-const SKETCH_TOOLS: ToolId[] = ["line", "arc", "circle", "rectangle", "polygon", "spline", "ellipse", "construction_line"];
+const SKETCH_TOOLS: ToolId[] = ["line", "arc", "circle", "rectangle", "polygon", "spline", "ellipse", "construction_line", "arc_3point", "arc_tangent", "circle_3point", "center_rectangle", "slot", "point", "centerline"];
 const SKETCH_Y = 0.02;
 
 /* ── Snap helper ── */
@@ -506,6 +506,122 @@ function CadEllipse({ obj }: { obj: CadObject }) {
   );
 }
 
+/* ── Sketch Point object ── */
+function CadPoint({ obj }: { obj: CadObject }) {
+  const selectedId = useCadStore((s) => s.selectedId);
+  const selectObject = useCadStore((s) => s.selectObject);
+  const activeTool = useCadStore((s) => s.activeTool);
+  const isSelected = selectedId === obj.id;
+
+  if (!obj.pointPosition) return null;
+  if (obj.visible === false) return null;
+
+  return (
+    <mesh
+      position={obj.pointPosition}
+      onClick={(e) => {
+        if (activeTool !== "select") return;
+        e.stopPropagation();
+        selectObject(obj.id);
+      }}
+    >
+      <sphereGeometry args={[0.06, 16, 16]} />
+      <meshBasicMaterial color={isSelected ? "#7dc4e0" : "#ffff00"} />
+    </mesh>
+  );
+}
+
+/* ── Sketch Slot object ── */
+function CadSlot({ obj }: { obj: CadObject }) {
+  const selectedId = useCadStore((s) => s.selectedId);
+  const selectObject = useCadStore((s) => s.selectObject);
+  const activeTool = useCadStore((s) => s.activeTool);
+  const isSelected = selectedId === obj.id;
+
+  const slotPoints = useMemo(() => {
+    if (!obj.slotCenter1 || !obj.slotCenter2 || !obj.slotWidth) return [];
+    const c1 = obj.slotCenter1;
+    const c2 = obj.slotCenter2;
+    const hw = obj.slotWidth / 2;
+    const dx = c2[0] - c1[0];
+    const dz = c2[2] - c1[2];
+    const len = Math.sqrt(dx * dx + dz * dz);
+    if (len < 1e-10) return [];
+    const nx = -dz / len * hw;
+    const nz = dx / len * hw;
+
+    // Two straight sides
+    const pts: [number, number, number][] = [];
+    // Top side
+    pts.push([c1[0] + nx, SKETCH_Y, c1[2] + nz]);
+    pts.push([c2[0] + nx, SKETCH_Y, c2[2] + nz]);
+    // Right semicircle
+    const segments = 16;
+    const angle2 = Math.atan2(nz, nx);
+    for (let i = 0; i <= segments; i++) {
+      const a = angle2 - Math.PI * (i / segments);
+      pts.push([c2[0] + Math.cos(a) * hw, SKETCH_Y, c2[2] + Math.sin(a) * hw]);
+    }
+    // Bottom side (reverse)
+    pts.push([c1[0] - nx, SKETCH_Y, c1[2] - nz]);
+    // Left semicircle
+    for (let i = 0; i <= segments; i++) {
+      const a = angle2 + Math.PI + Math.PI * (i / segments);
+      pts.push([c1[0] + Math.cos(a) * hw, SKETCH_Y, c1[2] + Math.sin(a) * hw]);
+    }
+    return pts;
+  }, [obj.slotCenter1, obj.slotCenter2, obj.slotWidth]);
+
+  if (slotPoints.length < 4) return null;
+  if (obj.visible === false) return null;
+
+  return (
+    <group
+      onClick={(e) => {
+        if (activeTool !== "select") return;
+        e.stopPropagation();
+        selectObject(obj.id);
+      }}
+    >
+      <Line
+        points={slotPoints}
+        color={isSelected ? "#7dc4e0" : obj.color}
+        lineWidth={isSelected ? 2.5 : 1.5}
+      />
+    </group>
+  );
+}
+
+/* ── Sketch Centerline object ── */
+function CadCenterline({ obj }: { obj: CadObject }) {
+  const selectedId = useCadStore((s) => s.selectedId);
+  const selectObject = useCadStore((s) => s.selectObject);
+  const activeTool = useCadStore((s) => s.activeTool);
+  const isSelected = selectedId === obj.id;
+
+  if (!obj.centerlinePoints || obj.centerlinePoints.length < 2) return null;
+  if (obj.visible === false) return null;
+
+  return (
+    <group
+      onClick={(e) => {
+        if (activeTool !== "select") return;
+        e.stopPropagation();
+        selectObject(obj.id);
+      }}
+    >
+      <Line
+        points={obj.centerlinePoints}
+        color={isSelected ? "#7dc4e0" : "#ff6600"}
+        lineWidth={isSelected ? 2 : 1}
+        dashed
+        dashSize={0.2}
+        gapSize={0.15}
+      />
+    </group>
+  );
+}
+
 /* ── Transform wrapper for selected object ── */
 function SelectedTransform() {
   const selectedId = useCadStore((s) => s.selectedId);
@@ -739,6 +855,12 @@ function SketchDrawTools() {
   const gridSize = useCadStore((s) => s.gridSize);
   const objects = useCadStore((s) => s.objects);
   const isConstructionMode = useCadStore((s) => s.isConstructionMode);
+  const addPolygon = useCadStore((s) => s.addPolygon);
+  const addEllipse = useCadStore((s) => s.addEllipse);
+  const addPoint = useCadStore((s) => s.addPoint);
+  const addSlot = useCadStore((s) => s.addSlot);
+  const addCenterline = useCadStore((s) => s.addCenterline);
+  const addCenterRectangle = useCadStore((s) => s.addCenterRectangle);
   const setSketchDrawState = useCadStore((s) => s.setSketchDrawState);
 
   const plane = sketchPlane || "xz";
@@ -946,6 +1068,121 @@ function SketchDrawTools() {
         setClickPoints([]);
         setPreviewPoint(null);
       }
+    } else if (activeTool === "center_rectangle") {
+      // Center rectangle: click center, then corner
+      if (clickPoints.length === 0) {
+        setClickPoints([p]);
+      } else {
+        const center = clickPoints[0];
+        const halfW = Math.abs(p[0] - center[0]);
+        const halfD = Math.abs(p[2] - center[2]);
+        if (halfW > 0.05 && halfD > 0.05) {
+          const store = useCadStore.getState();
+          store.addCenterRectangle(center, halfW, halfD);
+        }
+        setClickPoints([]);
+        setPreviewPoint(null);
+      }
+    } else if (activeTool === "arc_3point") {
+      // 3-point arc: click start, midpoint, end
+      const newPoints = [...clickPoints, p];
+      if (newPoints.length < 3) {
+        setClickPoints(newPoints);
+      } else {
+        const arcPts = computeArcThrough3Points(newPoints[0], newPoints[1], newPoints[2]);
+        const radius = arcPts.length > 0
+          ? Math.sqrt(
+              Math.pow(arcPts[0][0] - arcPts[Math.floor(arcPts.length / 2)][0], 2) +
+              Math.pow(arcPts[0][2] - arcPts[Math.floor(arcPts.length / 2)][2], 2)
+            ) / 2
+          : 1;
+        addArc(newPoints, radius);
+        setClickPoints([]);
+        setPreviewPoint(null);
+      }
+    } else if (activeTool === "arc_tangent") {
+      // Tangent arc: click start (should snap to line endpoint), then end
+      if (clickPoints.length === 0) {
+        setClickPoints([p]);
+      } else {
+        // Create an arc from the start to end, using a midpoint offset
+        const start = clickPoints[0];
+        const end = p;
+        const mid: [number, number, number] = [
+          (start[0] + end[0]) / 2 + (end[2] - start[2]) * 0.3,
+          SKETCH_Y,
+          (start[2] + end[2]) / 2 - (end[0] - start[0]) * 0.3,
+        ];
+        addArc([start, mid, end], 1);
+        setClickPoints([]);
+        setPreviewPoint(null);
+      }
+    } else if (activeTool === "circle_3point") {
+      // 3-point circle: click 3 points on circumference
+      const newPoints = [...clickPoints, p];
+      if (newPoints.length < 3) {
+        setClickPoints(newPoints);
+      } else {
+        // Calculate center and radius from 3 points
+        const [p1, p2, p3] = newPoints;
+        const ax = p1[0], az = p1[2];
+        const bx = p2[0], bz = p2[2];
+        const cx = p3[0], cz = p3[2];
+        const D = 2 * (ax * (bz - cz) + bx * (cz - az) + cx * (az - bz));
+        if (Math.abs(D) > 1e-10) {
+          const ux = ((ax*ax + az*az)*(bz - cz) + (bx*bx + bz*bz)*(cz - az) + (cx*cx + cz*cz)*(az - bz)) / D;
+          const uz = ((ax*ax + az*az)*(cx - bx) + (bx*bx + bz*bz)*(ax - cx) + (cx*cx + cz*cz)*(bx - ax)) / D;
+          const center: [number, number, number] = [ux, SKETCH_Y, uz];
+          const radius = Math.sqrt((ux - ax)**2 + (uz - az)**2);
+          if (radius > 0.05) {
+            addCircle(center, radius);
+          }
+        }
+        setClickPoints([]);
+        setPreviewPoint(null);
+      }
+    } else if (activeTool === "slot") {
+      // Slot: click center1, center2, then set width (use fixed width for now)
+      if (clickPoints.length === 0) {
+        setClickPoints([p]);
+      } else {
+        const store = useCadStore.getState();
+        const slotWidth = 0.5; // Default slot width
+        store.addSlot(clickPoints[0], p, slotWidth);
+        setClickPoints([]);
+        setPreviewPoint(null);
+      }
+    } else if (activeTool === "point") {
+      // Construction/reference point
+      const store = useCadStore.getState();
+      store.addPoint(p);
+      setClickPoints([]);
+      setPreviewPoint(null);
+    } else if (activeTool === "centerline") {
+      // Centerline: dashed construction line
+      if (clickPoints.length === 0) {
+        setClickPoints([p]);
+      } else {
+        const store = useCadStore.getState();
+        store.addCenterline([clickPoints[0], p]);
+        setClickPoints([]);
+        setPreviewPoint(null);
+      }
+    } else if (activeTool === "spline") {
+      // Spline: click multiple control points, double-click or Escape to finish
+      // For now, add points on each click, finish after 4 points
+      const newPoints = [...clickPoints, p];
+      if (newPoints.length >= 4) {
+        addLine([newPoints[0], newPoints[newPoints.length - 1]]);
+        // Create line segments through control points
+        for (let i = 0; i < newPoints.length - 1; i++) {
+          addLine([newPoints[i], newPoints[i + 1]]);
+        }
+        setClickPoints([]);
+        setPreviewPoint(null);
+      } else {
+        setClickPoints(newPoints);
+      }
     }
   };
 
@@ -1080,6 +1317,85 @@ function SketchDrawTools() {
           <Line points={[center, previewPoint]} color="#ff6600" lineWidth={1} dashed dashSize={0.1} gapSize={0.1} />
         </>
       );
+    }
+
+    if (activeTool === "center_rectangle") {
+      const center = clickPoints[0];
+      const halfW = Math.abs(previewPoint[0] - center[0]);
+      const halfD = Math.abs(previewPoint[2] - center[2]);
+      const pts: [number, number, number][] = [
+        [center[0] - halfW, SKETCH_Y, center[2] - halfD],
+        [center[0] + halfW, SKETCH_Y, center[2] - halfD],
+        [center[0] + halfW, SKETCH_Y, center[2] + halfD],
+        [center[0] - halfW, SKETCH_Y, center[2] + halfD],
+        [center[0] - halfW, SKETCH_Y, center[2] - halfD],
+      ];
+      return (
+        <>
+          <Line points={pts} color="#ffaa00" lineWidth={2} dashed dashSize={0.15} gapSize={0.1} />
+          <mesh position={center}>
+            <sphereGeometry args={[0.05, 8, 8]} />
+            <meshBasicMaterial color="#ffaa00" />
+          </mesh>
+        </>
+      );
+    }
+
+    if (activeTool === "slot") {
+      return (
+        <Line
+          points={[clickPoints[0], previewPoint]}
+          color="#ff8800"
+          lineWidth={2}
+          dashed
+          dashSize={0.15}
+          gapSize={0.1}
+        />
+      );
+    }
+
+    if (activeTool === "centerline") {
+      return (
+        <Line
+          points={[clickPoints[0], previewPoint]}
+          color="#ff6600"
+          lineWidth={1.5}
+          dashed
+          dashSize={0.2}
+          gapSize={0.15}
+        />
+      );
+    }
+
+    if (activeTool === "arc_3point" || activeTool === "arc_tangent" || activeTool === "circle_3point") {
+      if (clickPoints.length === 1) {
+        return (
+          <Line
+            points={[clickPoints[0], previewPoint]}
+            color="#ff00ff"
+            lineWidth={1}
+            dashed
+            dashSize={0.15}
+            gapSize={0.1}
+          />
+        );
+      }
+      if (clickPoints.length === 2 && (activeTool === "arc_3point" || activeTool === "circle_3point")) {
+        const arcPreview = computeArcThrough3Points(clickPoints[0], clickPoints[1], previewPoint);
+        if (arcPreview.length > 1) {
+          return (
+            <Line
+              points={arcPreview}
+              color="#ff00ff"
+              lineWidth={2}
+              dashed
+              dashSize={0.15}
+              gapSize={0.1}
+            />
+          );
+        }
+      }
+      return null;
     }
 
     return null;
@@ -1698,77 +2014,12 @@ export default function Viewport3D({ mode }: Viewport3DProps) {
               return <CadPolygon key={obj.id} obj={obj} />;
             case "ellipse":
               return <CadEllipse key={obj.id} obj={obj} />;
-            case "centerline":
-              // Render centerline as dashed line (construction geometry)
-              return obj.centerlinePoints && obj.centerlinePoints.length >= 2 ? (
-                <group key={obj.id}>
-                  <Line
-                    points={obj.centerlinePoints}
-                    color="#ff6600"
-                    lineWidth={1}
-                    dashed
-                    dashSize={0.15}
-                    gapSize={0.08}
-                  />
-                  {obj.centerlinePoints.map((pt, i) => (
-                    <mesh key={i} position={pt}>
-                      <boxGeometry args={[0.04, 0.04, 0.04]} />
-                      <meshBasicMaterial color="#ff6600" />
-                    </mesh>
-                  ))}
-                </group>
-              ) : null;
             case "point":
-              // Render as cross marker
-              return obj.pointPosition ? (
-                <group key={obj.id}>
-                  <mesh position={obj.pointPosition}>
-                    <sphereGeometry args={[0.05, 8, 8]} />
-                    <meshBasicMaterial color="#ffff00" />
-                  </mesh>
-                  {/* Cross lines */}
-                  <Line points={[[obj.pointPosition[0]-0.08, obj.pointPosition[1], obj.pointPosition[2]], [obj.pointPosition[0]+0.08, obj.pointPosition[1], obj.pointPosition[2]]]} color="#ffff00" lineWidth={1.5} />
-                  <Line points={[[obj.pointPosition[0], obj.pointPosition[1], obj.pointPosition[2]-0.08], [obj.pointPosition[0], obj.pointPosition[1], obj.pointPosition[2]+0.08]]} color="#ffff00" lineWidth={1.5} />
-                </group>
-              ) : null;
+              return <CadPoint key={obj.id} obj={obj} />;
             case "slot":
-              // Render slot as two semicircles connected by lines
-              return obj.slotCenter1 && obj.slotCenter2 && obj.slotWidth ? (() => {
-                const c1 = obj.slotCenter1!;
-                const c2 = obj.slotCenter2!;
-                const w = obj.slotWidth! / 2;
-                const dx = c2[0] - c1[0];
-                const dz = c2[2] - c1[2];
-                const len = Math.sqrt(dx*dx + dz*dz);
-                if (len < 0.001) return null;
-                const nx = -dz / len * w;
-                const nz = dx / len * w;
-                const pts: [number, number, number][] = [];
-                // Top line
-                pts.push([c1[0]+nx, SKETCH_Y, c1[2]+nz]);
-                pts.push([c2[0]+nx, SKETCH_Y, c2[2]+nz]);
-                // Semicircle at c2
-                for (let i = 0; i <= 16; i++) {
-                  const a = Math.atan2(nz, nx) + Math.PI / 2 + (i / 16) * Math.PI;
-                  pts.push([c2[0] + Math.cos(a) * w, SKETCH_Y, c2[2] + Math.sin(a) * w]);
-                }
-                // Bottom line (reversed)
-                pts.push([c2[0]-nx, SKETCH_Y, c2[2]-nz]);
-                pts.push([c1[0]-nx, SKETCH_Y, c1[2]-nz]);
-                // Semicircle at c1
-                for (let i = 0; i <= 16; i++) {
-                  const a = Math.atan2(nz, nx) - Math.PI / 2 + (i / 16) * Math.PI;
-                  pts.push([c1[0] + Math.cos(a) * w, SKETCH_Y, c1[2] + Math.sin(a) * w]);
-                }
-                pts.push(pts[0]); // close
-                return (
-                  <group key={obj.id}>
-                    <Line points={pts} color={obj.color} lineWidth={1.5} />
-                    <mesh position={c1}><boxGeometry args={[0.04, 0.04, 0.04]} /><meshBasicMaterial color="#ff8800" /></mesh>
-                    <mesh position={c2}><boxGeometry args={[0.04, 0.04, 0.04]} /><meshBasicMaterial color="#ff8800" /></mesh>
-                  </group>
-                );
-              })() : null;
+              return <CadSlot key={obj.id} obj={obj} />;
+            case "centerline":
+              return <CadCenterline key={obj.id} obj={obj} />;
             default:
               return <CadMesh key={obj.id} obj={obj} />;
           }
