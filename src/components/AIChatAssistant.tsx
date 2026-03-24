@@ -40,24 +40,147 @@ export default function AIChatAssistant({ isOpen, onClose }: { isOpen: boolean; 
     setInput('');
     setIsTyping(true);
 
-    // Simulate AI response (replace with actual API call)
+    // Parse and execute CAD commands
     setTimeout(() => {
-      const responses: Record<string, string> = {
-        gear: 'I can generate a parametric gear for you. To create a gear with 24 teeth and 50mm pitch diameter, I would use the involute profile equation. The module would be m = 50/24 = 2.08mm. Shall I generate the KCL code and 3D model?',
-        bracket: 'For a mounting bracket, I will create an L-shaped profile with configurable dimensions, fillet radii, and hole patterns. What material and load requirements do you have?',
-        simulation: 'I can set up a simulation for your model. Supported analysis types include: Static Stress (FEA), Thermal Analysis, CFD Flow, Modal Analysis, and Fatigue. Which type would you like?',
-        export: 'ShilpaSutra supports export to: STEP, STL, OBJ, IGES, GLTF, PLY, 3MF, BREP, PARASOLID, and DXF formats. Which format do you need?',
-      };
-      const lc = userMsg.content.toLowerCase();
-      let reply = 'I understand your request. Let me analyze it and provide the best approach for your CAD design. Could you provide more specific dimensions or constraints?';
-      if (lc.includes('gear')) reply = responses.gear;
-      else if (lc.includes('bracket') || lc.includes('mount')) reply = responses.bracket;
-      else if (lc.includes('simulat') || lc.includes('fea') || lc.includes('cfd')) reply = responses.simulation;
-      else if (lc.includes('export') || lc.includes('step') || lc.includes('stl')) reply = responses.export;
+      const lc = userMsg.content.toLowerCase().trim();
+      const store = (window as any).__cadStore || null;
+      let reply = '';
+
+      try {
+        // Import store dynamically to avoid SSR issues
+        const { useCadStore } = require('@/stores/cad-store');
+        const cadStore = useCadStore.getState();
+
+        // ── Extrude command ──
+        const extrudeMatch = lc.match(/extrude\s+(\d+(?:\.\d+)?)\s*(mm|cm|m)?/);
+        if (extrudeMatch) {
+          const dist = parseFloat(extrudeMatch[1]) / 10; // mm to scene units
+          const result = cadStore.aiExtrude(dist);
+          if (result) {
+            reply = `Extruded selected sketch profile by ${extrudeMatch[1]}${extrudeMatch[2] || 'mm'}. Created solid body in Feature Tree.`;
+          } else {
+            reply = 'No valid sketch profile selected. Please select a rectangle or circle first, then try again.';
+          }
+        }
+        // ── Fillet command ──
+        else if (lc.match(/fillet\s+(\d+(?:\.\d+)?)\s*(mm|cm|m)?/)) {
+          const match = lc.match(/fillet\s+(\d+(?:\.\d+)?)\s*(mm|cm|m)?/)!;
+          const radius = parseFloat(match[1]);
+          const success = cadStore.aiFilletSelected(radius);
+          reply = success
+            ? `Applied ${radius}mm fillet to selected solid. Edges rounded.`
+            : 'Cannot fillet: select a solid body (box, cylinder, etc.) first.';
+        }
+        // ── Chamfer command ──
+        else if (lc.match(/chamfer\s+(\d+(?:\.\d+)?)\s*(mm|cm|m)?/)) {
+          const match = lc.match(/chamfer\s+(\d+(?:\.\d+)?)\s*(mm|cm|m)?/)!;
+          const distance = parseFloat(match[1]);
+          const success = cadStore.aiChamferSelected(distance);
+          reply = success
+            ? `Applied ${distance}mm chamfer to selected solid.`
+            : 'Cannot chamfer: select a solid body first.';
+        }
+        // ── Mirror command ──
+        else if (lc.match(/mirror\s+(xy|xz|yz)/)) {
+          const match = lc.match(/mirror\s+(xy|xz|yz)/)!;
+          const plane = match[1] as 'xy' | 'xz' | 'yz';
+          const ids = cadStore.aiMirror(plane);
+          reply = ids.length > 0
+            ? `Mirrored selected object across ${plane.toUpperCase()} plane.`
+            : 'No object selected to mirror.';
+        }
+        // ── Rotate command ──
+        else if (lc.match(/rotate\s+(-?\d+(?:\.\d+)?)\s*(x|y|z)?/)) {
+          const match = lc.match(/rotate\s+(-?\d+(?:\.\d+)?)\s*(x|y|z)?/)!;
+          const angle = parseFloat(match[1]);
+          const axis = (match[2] || 'y') as 'x' | 'y' | 'z';
+          const success = cadStore.aiRotate(angle, axis);
+          reply = success
+            ? `Rotated selected object ${angle}° around ${axis.toUpperCase()} axis.`
+            : 'No object selected to rotate.';
+        }
+        // ── Scale command ──
+        else if (lc.match(/scale\s+(\d+(?:\.\d+)?)/)) {
+          const match = lc.match(/scale\s+(\d+(?:\.\d+)?)/)!;
+          const factor = parseFloat(match[1]);
+          const success = cadStore.aiScale(factor);
+          reply = success
+            ? `Scaled selected object by factor ${factor}.`
+            : 'No object selected to scale.';
+        }
+        // ── Add hole command ──
+        else if (lc.match(/(?:add\s+)?hole\s+(\d+(?:\.\d+)?)\s*(mm|cm|m)?/)) {
+          const match = lc.match(/(?:add\s+)?hole\s+(\d+(?:\.\d+)?)\s*(mm|cm|m)?/)!;
+          const diameter = parseFloat(match[1]);
+          const id = cadStore.aiAddHole(diameter, diameter * 2);
+          reply = id
+            ? `Added ${diameter}mm hole to selected solid.`
+            : 'No object selected. Select a solid first.';
+        }
+        // ── Shell command ──
+        else if (lc.match(/shell\s+(\d+(?:\.\d+)?)\s*(mm|cm|m)?/)) {
+          const match = lc.match(/shell\s+(\d+(?:\.\d+)?)\s*(mm|cm|m)?/)!;
+          const thickness = parseFloat(match[1]);
+          const success = cadStore.aiShell(thickness);
+          reply = success
+            ? `Applied shell with ${thickness}mm wall thickness.`
+            : 'Cannot shell: select a solid body first.';
+        }
+        // ── Create gear command ──
+        else if (lc.match(/gear\s+(\d+)\s*(?:teeth|t)/)) {
+          const match = lc.match(/gear\s+(\d+)\s*(?:teeth|t)(?:\s+(?:module|m)\s*(\d+(?:\.\d+)?))?(?:\s+(?:width|w)\s*(\d+(?:\.\d+)?))?/)!;
+          const teeth = parseInt(match[1]);
+          const mod = parseFloat(match[2] || '2');
+          const width = parseFloat(match[3] || '10');
+          cadStore.aiCreateGear(teeth, mod, width);
+          reply = `Created ${teeth}-tooth gear (module ${mod}, width ${width}mm).`;
+        }
+        // ── Add primitive shapes ──
+        else if (lc.match(/(?:add|create)\s+(box|cube|cylinder|sphere|cone)/)) {
+          const match = lc.match(/(?:add|create)\s+(box|cube|cylinder|sphere|cone)/)!;
+          const type = match[1] === 'cube' ? 'box' : match[1] as any;
+          cadStore.addObject(type);
+          reply = `Created a ${match[1]} in the scene. You can modify its properties in the Property Panel.`;
+        }
+        // ── Delete selected ──
+        else if (lc.match(/delete|remove/)) {
+          const sel = cadStore.getSelected();
+          if (sel) {
+            cadStore.deleteSelected();
+            reply = `Deleted ${sel.name}.`;
+          } else {
+            reply = 'No object selected to delete.';
+          }
+        }
+        // ── Undo ──
+        else if (lc.match(/\bundo\b/)) {
+          cadStore.undo();
+          reply = 'Undone last action.';
+        }
+        // ── Default response ──
+        else {
+          reply = `I can execute these commands on your scene:\n` +
+            `• "extrude 10mm" - Extrude selected sketch\n` +
+            `• "fillet 2mm" - Round edges of selected solid\n` +
+            `• "chamfer 1mm" - Bevel edges\n` +
+            `• "mirror XZ" - Mirror across plane\n` +
+            `• "rotate 45 Y" - Rotate around axis\n` +
+            `• "scale 1.5" - Scale selected object\n` +
+            `• "add hole 5mm" - Subtract hole from solid\n` +
+            `• "shell 2mm" - Hollow out solid\n` +
+            `• "gear 24 teeth" - Create gear\n` +
+            `• "add box/cylinder/sphere" - Create primitive\n` +
+            `• "delete" - Remove selected\n` +
+            `Try a command!`;
+        }
+      } catch (err) {
+        reply = 'Error executing command. Please try again.';
+        console.warn('[AI Assistant] Error:', err);
+      }
 
       setMessages(prev => [...prev, { id: (Date.now() + 1).toString(), role: 'assistant', content: reply, timestamp: new Date() }]);
       setIsTyping(false);
-    }, 1500);
+    }, 300);
   };
 
   if (!isOpen) return null;

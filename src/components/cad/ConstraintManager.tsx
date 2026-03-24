@@ -7,6 +7,11 @@ import {
 } from "@/stores/constraint-store";
 import { useCadStore } from "@/stores/cad-store";
 import {
+  buildConstraintEntityIds,
+  extractPoints,
+  solveAndMapBack,
+} from "@/lib/constraint-solver";
+import {
   Link2, ArrowRight, ArrowDown, Circle, Equal,
   Lock, Unlock, Trash2, Eye, EyeOff, ChevronDown, ChevronRight,
   Minus, RotateCw, Maximize2, FlipHorizontal,
@@ -609,11 +614,53 @@ export default function ConstraintManager() {
   const handleAddConstraint = useCallback(
     (type: ConstraintType) => {
       if (entitySelection.length < getMinEntities(type)) return;
-      addConstraint({
-        type,
-        entityIds: entitySelection,
-        ...(isDimensional(type) ? { value: 0, targetValue: 0 } : {}),
-      });
+
+      // Get the actual CadObjects for selected IDs
+      const store = useCadStore.getState();
+      const selectedObjects = entitySelection
+        .map((id) => store.objects.find((o) => o.id === id))
+        .filter(Boolean) as import("@/stores/cad-store").CadObject[];
+
+      // Build proper point IDs using the constraint solver bridge
+      const pointIds = buildConstraintEntityIds(type, selectedObjects);
+      if (!pointIds || pointIds.length === 0) {
+        // Fallback to raw entity IDs if bridge can't determine point IDs
+        addConstraint({
+          type,
+          entityIds: entitySelection,
+          ...(isDimensional(type) ? { value: 0, targetValue: 0 } : {}),
+        });
+      } else {
+        addConstraint({
+          type,
+          entityIds: pointIds,
+          ...(isDimensional(type) ? { value: 0, targetValue: 0 } : {}),
+        });
+      }
+
+      // Run the constraint solver and update geometry
+      const constraintStore = useConstraintStore.getState();
+      const cadStore = useCadStore.getState();
+      const activeSketchId = cadStore.activeSketchId;
+      const sketchEntities = activeSketchId
+        ? cadStore.objects.filter((o) => o.sketchId === activeSketchId)
+        : selectedObjects;
+
+      if (sketchEntities.length > 0) {
+        const result = solveAndMapBack(
+          sketchEntities,
+          constraintStore.constraints,
+          (positions) => constraintStore.solveConstraints(positions)
+        );
+
+        // Write solved positions back to CadObjects
+        if (result.success || result.iterations > 0) {
+          result.updatedEntities.forEach((updates, entityId) => {
+            cadStore.updateObject(entityId, updates);
+          });
+        }
+      }
+
       setAddMenuOpen(false);
     },
     [entitySelection, addConstraint],
@@ -628,6 +675,27 @@ export default function ConstraintManager() {
           ? { value: s.targetValue, targetValue: s.targetValue }
           : {}),
       });
+
+      // Run solver after applying suggestion
+      const constraintStore = useConstraintStore.getState();
+      const cadStore = useCadStore.getState();
+      const activeSketchId = cadStore.activeSketchId;
+      const sketchEntities = activeSketchId
+        ? cadStore.objects.filter((o) => o.sketchId === activeSketchId)
+        : [];
+
+      if (sketchEntities.length > 0) {
+        const result = solveAndMapBack(
+          sketchEntities,
+          constraintStore.constraints,
+          (positions) => constraintStore.solveConstraints(positions)
+        );
+        if (result.success || result.iterations > 0) {
+          result.updatedEntities.forEach((updates, entityId) => {
+            cadStore.updateObject(entityId, updates);
+          });
+        }
+      }
     },
     [addConstraint],
   );
@@ -635,6 +703,27 @@ export default function ConstraintManager() {
   const handleValueSave = useCallback(
     (id: string, value: number) => {
       updateConstraint(id, { targetValue: value, value });
+
+      // Run solver after value change (Smart Dimension)
+      const constraintStore = useConstraintStore.getState();
+      const cadStore = useCadStore.getState();
+      const activeSketchId = cadStore.activeSketchId;
+      const sketchEntities = activeSketchId
+        ? cadStore.objects.filter((o) => o.sketchId === activeSketchId)
+        : [];
+
+      if (sketchEntities.length > 0) {
+        const result = solveAndMapBack(
+          sketchEntities,
+          constraintStore.constraints,
+          (positions) => constraintStore.solveConstraints(positions)
+        );
+        if (result.success || result.iterations > 0) {
+          result.updatedEntities.forEach((updates, entityId) => {
+            cadStore.updateObject(entityId, updates);
+          });
+        }
+      }
     },
     [updateConstraint],
   );
