@@ -62,6 +62,11 @@ export default function CommandBar() {
         e.preventDefault();
         setIsOpen(prev => !prev);
       }
+      // Also support Ctrl+Shift+P (VS Code style)
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'P') {
+        e.preventDefault();
+        setIsOpen(prev => !prev);
+      }
       if (e.key === 'Escape') setIsOpen(false);
     };
     window.addEventListener('keydown', handler);

@@ -2,7 +2,8 @@
 import React, { useState, useCallback, useRef, Component, type ErrorInfo, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import { useCadStore } from "@/stores/cad-store";
-import { Package } from "lucide-react";
+import { Package, History } from "lucide-react";
+import type { SelectionFilterType } from "@/components/cad/SelectionFilter";
 
 /* ── Error Boundary to prevent full-page crashes ── */
 class ViewportErrorBoundary extends Component<
@@ -56,94 +57,34 @@ const Viewport3D = dynamic(() => import("@/components/Viewport3D"), {
   ),
 });
 
-const RibbonToolbar = dynamic(
-  () => import("@/components/cad/RibbonToolbar"),
-  { ssr: false }
-);
+const RibbonToolbar = dynamic(() => import("@/components/cad/RibbonToolbar"), { ssr: false });
+const FeatureTree = dynamic(() => import("@/components/cad/FeatureTree"), { ssr: false });
+const PropertyPanel = dynamic(() => import("@/components/cad/PropertyPanel"), { ssr: false });
+const DesignerCommandBar = dynamic(() => import("@/components/cad/DesignerCommandBar"), { ssr: false });
+const AIChatSidebar = dynamic(() => import("@/components/AIChatSidebar"), { ssr: false });
+const AIChatAssistantEnhanced = dynamic(() => import("@/components/AIChatAssistantEnhanced"), { ssr: false });
+const EdgeSelector = dynamic(() => import("@/components/cad/EdgeSelector"), { ssr: false });
+const ShellDraftPanel = dynamic(() => import("@/components/cad/ShellDraftPanel"), { ssr: false });
+const PatternDialog = dynamic(() => import("@/components/cad/PatternDialog"), { ssr: false });
+const HistoryTimeline = dynamic(() => import("@/components/cad/HistoryTimeline"), { ssr: false });
+const SketchToolbar = dynamic(() => import("@/components/cad/SketchToolbar"), { ssr: false });
+const SketchOverlay = dynamic(() => import("@/components/cad/SketchOverlay"), { ssr: false });
+const ExtrudeDialog = dynamic(() => import("@/components/cad/ExtrudeDialog"), { ssr: false });
+const RevolveDialog = dynamic(() => import("@/components/cad/RevolveDialog"), { ssr: false });
+const ComponentsPanel = dynamic(() => import("@/components/cad/ComponentsPanel"), { ssr: false });
+const ParametricPanel = dynamic(() => import("@/components/cad/ParametricPanel"), { ssr: false });
+const MassPropertiesDialog = dynamic(() => import("@/components/cad/MassPropertiesDialog"), { ssr: false });
+const AnimationTimeline = dynamic(() => import("@/components/cad/AnimationTimeline"), { ssr: false });
 
-const FeatureTree = dynamic(
-  () => import("@/components/cad/FeatureTree"),
-  { ssr: false }
-);
-
-const PropertyPanel = dynamic(
-  () => import("@/components/cad/PropertyPanel"),
-  { ssr: false }
-);
-
-const DesignerCommandBar = dynamic(
-  () => import("@/components/cad/DesignerCommandBar"),
-  { ssr: false }
-);
-
-const AIChatSidebar = dynamic(() => import("@/components/AIChatSidebar"), {
-  ssr: false,
-});
-
-const AIChatAssistantEnhanced = dynamic(
-  () => import("@/components/AIChatAssistantEnhanced"),
-  { ssr: false }
-);
-
-const EdgeSelector = dynamic(
-  () => import("@/components/cad/EdgeSelector"),
-  { ssr: false }
-);
-
-const ShellDraftPanel = dynamic(
-  () => import("@/components/cad/ShellDraftPanel"),
-  { ssr: false }
-);
-
-const PatternDialog = dynamic(
-  () => import("@/components/cad/PatternDialog"),
-  { ssr: false }
-);
-
-const HistoryTimeline = dynamic(
-  () => import("@/components/cad/HistoryTimeline"),
-  { ssr: false }
-);
-
-const SketchToolbar = dynamic(
-  () => import("@/components/cad/SketchToolbar"),
-  { ssr: false }
-);
-
-const SketchOverlay = dynamic(
-  () => import("@/components/cad/SketchOverlay"),
-  { ssr: false }
-);
-
-const ExtrudeDialog = dynamic(
-  () => import("@/components/cad/ExtrudeDialog"),
-  { ssr: false }
-);
-
-const RevolveDialog = dynamic(
-  () => import("@/components/cad/RevolveDialog"),
-  { ssr: false }
-);
-
-const ComponentsPanel = dynamic(
-  () => import("@/components/cad/ComponentsPanel"),
-  { ssr: false }
-);
-
-const ParametricPanel = dynamic(
-  () => import("@/components/cad/ParametricPanel"),
-  { ssr: false }
-);
-
-const MassPropertiesDialog = dynamic(
-  () => import("@/components/cad/MassPropertiesDialog"),
-  { ssr: false }
-);
-
-const AnimationTimeline = dynamic(
-  () => import("@/components/cad/AnimationTimeline"),
-  { ssr: false }
-);
+// New Phase 4 components
+const NavigationCube = dynamic(() => import("@/components/cad/NavigationCube"), { ssr: false });
+const SelectionFilter = dynamic(() => import("@/components/cad/SelectionFilter"), { ssr: false });
+const UndoHistoryPanel = dynamic(() => import("@/components/cad/UndoHistoryPanel"), { ssr: false });
+const HoleWizardDialog = dynamic(() => import("@/components/cad/HoleWizardDialog"), { ssr: false });
+const ReferenceGeometryPanel = dynamic(() => import("@/components/cad/ReferenceGeometryPanel"), { ssr: false });
+const ConfigurationManager = dynamic(() => import("@/components/cad/ConfigurationManager"), { ssr: false });
+const AppearanceEditor = dynamic(() => import("@/components/cad/AppearanceEditor"), { ssr: false });
+const SketchGrid = dynamic(() => import("@/components/cad/SketchGrid"), { ssr: false });
 
 export default function DesignerPage() {
   const activeTool = useCadStore((s) => s.activeTool);
@@ -167,7 +108,18 @@ export default function DesignerPage() {
   const [showMassProps, setShowMassProps] = useState(false);
   const [rightTab, setRightTab] = useState<"properties" | "components">("properties");
 
-  const sketchTools = ["line", "arc", "circle", "rectangle", "polygon", "spline", "ellipse", "construction_line"];
+  // New Phase 4 state
+  const [showUndoHistory, setShowUndoHistory] = useState(false);
+  const [showHoleWizard, setShowHoleWizard] = useState(false);
+  const [showRefGeometry, setShowRefGeometry] = useState(false);
+  const [showConfigManager, setShowConfigManager] = useState(false);
+  const [showAppearance, setShowAppearance] = useState(false);
+  const [selectionFilters, setSelectionFilters] = useState<Set<SelectionFilterType>>(
+    () => new Set<SelectionFilterType>(["vertex", "edge", "face", "body", "component"])
+  );
+
+  const sketchTools = ["line", "arc", "circle", "rectangle", "polygon", "spline", "ellipse", "construction_line",
+    "arc_3point", "arc_tangent", "circle_3point", "center_rectangle", "slot", "point", "centerline"];
   const isSketchMode = sketchTools.includes(activeTool) || !!sketchPlane;
 
   const handleCloseOperation = useCallback(() => {
@@ -177,11 +129,32 @@ export default function DesignerPage() {
   const handleExtrude = useCallback(() => setShowExtrudeDialog(true), []);
   const handleRevolve = useCallback(() => setShowRevolveDialog(true), []);
   const handleMassProps = useCallback(() => setShowMassProps(true), []);
+  const handleRefGeometry = useCallback(() => setShowRefGeometry(true), []);
+  const handleAppearance = useCallback(() => setShowAppearance(true), []);
+  const handleConfigManager = useCallback(() => setShowConfigManager(true), []);
+  const handleHoleWizard = useCallback(() => setShowHoleWizard(true), []);
+
+  const handleToggleFilter = useCallback((filter: SelectionFilterType) => {
+    setSelectionFilters((prev) => {
+      const next = new Set(prev);
+      if (next.has(filter)) next.delete(filter);
+      else next.add(filter);
+      return next;
+    });
+  }, []);
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-[#0d1117]">
       {/* Ribbon Toolbar (top) */}
-      <RibbonToolbar onExtrude={handleExtrude} onRevolve={handleRevolve} onMassProps={handleMassProps} />
+      <RibbonToolbar
+        onExtrude={handleExtrude}
+        onRevolve={handleRevolve}
+        onMassProps={handleMassProps}
+        onRefGeometry={handleRefGeometry}
+        onAppearance={handleAppearance}
+        onConfigManager={handleConfigManager}
+        onHoleWizard={handleHoleWizard}
+      />
 
       {/* Main workspace area */}
       <div className="flex-1 flex overflow-hidden">
@@ -195,6 +168,11 @@ export default function DesignerPage() {
               <Viewport3D />
             </ViewportErrorBoundary>
 
+            {/* Sketch Grid (SVG overlay for grid lines) */}
+            <ViewportErrorBoundary fallback={null}>
+              <SketchGrid width={1920} height={1080} />
+            </ViewportErrorBoundary>
+
             {/* Professional sketch overlay (crosshair, dimensions, snap, dynamic input) */}
             <ViewportErrorBoundary fallback={null}>
               <SketchOverlay containerRef={viewportRef} />
@@ -202,6 +180,11 @@ export default function DesignerPage() {
 
             {/* Sketch Toolbar (floating, top center) */}
             <SketchToolbar visible={isSketchMode} />
+
+            {/* Navigation Cube (top right) - only when not in sketch mode and no measure */}
+            {!measureResult && !isSketchMode && (
+              <NavigationCube />
+            )}
 
             {/* Status overlay - top left (below sketch toolbar area) */}
             <div className={`absolute left-3 flex items-center gap-1.5 pointer-events-none z-[5] ${isSketchMode ? "top-[72px]" : "top-3"}`}>
@@ -265,6 +248,9 @@ export default function DesignerPage() {
               )}
             </div>
 
+            {/* Selection Filter (bottom left, above sketch plane selector) */}
+            <SelectionFilter activeFilters={selectionFilters} onToggle={handleToggleFilter} />
+
             {/* Measurement overlay - top right */}
             {measureResult && (
               <div className="absolute top-3 right-3 bg-[#0d1117]/90 border border-yellow-500/30 rounded-xl p-3.5 pointer-events-auto z-10 backdrop-blur-md shadow-2xl shadow-black/30 animate-scale-in">
@@ -289,9 +275,24 @@ export default function DesignerPage() {
             {/* Parametric Panel */}
             {parametricOpen && <ParametricPanel onClose={() => setParametricOpen(false)} />}
 
-            {/* AI + Parametric toggle buttons - top right */}
-            {!measureResult && (
-              <div className="absolute top-3 right-3 flex items-center gap-1 z-10 pointer-events-auto">
+            {/* AI + Parametric + History toggle buttons - top right */}
+            {!measureResult && isSketchMode && (
+              <div className="absolute top-[72px] right-3 flex items-center gap-1 z-10 pointer-events-auto">
+                <button onClick={() => setShowUndoHistory(!showUndoHistory)}
+                  className={`p-1.5 rounded-md text-[10px] transition-all duration-150 backdrop-blur-md shadow-panel ${showUndoHistory ? "bg-[#00D4FF]/20 text-[#00D4FF] border border-[#00D4FF]/30" : "text-slate-400 hover:text-white bg-[#0d1117]/80 hover:bg-[#21262d] border border-[#21262d]"}`}
+                  title="Undo History">
+                  <History size={12} />
+                </button>
+              </div>
+            )}
+
+            {!measureResult && !isSketchMode && (
+              <div className="absolute top-[92px] right-3 flex items-center gap-1 z-10 pointer-events-auto">
+                <button onClick={() => setShowUndoHistory(!showUndoHistory)}
+                  className={`px-2 py-1 rounded-md text-[10px] font-semibold transition-all duration-150 backdrop-blur-md shadow-panel ${showUndoHistory ? "bg-[#00D4FF]/20 text-[#00D4FF] border border-[#00D4FF]/30" : "text-slate-400 hover:text-white bg-[#0d1117]/80 hover:bg-[#21262d] border border-[#21262d]"}`}
+                  title="Undo History">
+                  Hist
+                </button>
                 <button onClick={() => setParametricOpen(!parametricOpen)}
                   className={`px-2.5 py-1 rounded-md text-[10px] font-semibold transition-all duration-150 backdrop-blur-md shadow-panel ${parametricOpen ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" : "text-slate-400 hover:text-white bg-[#0d1117]/80 hover:bg-[#21262d] border border-[#21262d]"}`}>
                   Param
@@ -319,6 +320,11 @@ export default function DesignerPage() {
                   AI
                 </button>
               </div>
+            )}
+
+            {/* Undo History Panel */}
+            {showUndoHistory && (
+              <UndoHistoryPanel onClose={() => setShowUndoHistory(false)} />
             )}
 
             {/* Operation dialogs (floating over viewport) */}
@@ -354,6 +360,26 @@ export default function DesignerPage() {
             {/* Mass Properties Dialog */}
             {showMassProps && (
               <MassPropertiesDialog onClose={() => setShowMassProps(false)} />
+            )}
+
+            {/* Hole Wizard Dialog */}
+            {showHoleWizard && (
+              <HoleWizardDialog onClose={() => setShowHoleWizard(false)} />
+            )}
+
+            {/* Reference Geometry Panel */}
+            {showRefGeometry && (
+              <ReferenceGeometryPanel onClose={() => setShowRefGeometry(false)} />
+            )}
+
+            {/* Configuration Manager */}
+            {showConfigManager && (
+              <ConfigurationManager onClose={() => setShowConfigManager(false)} />
+            )}
+
+            {/* Appearance Editor */}
+            {showAppearance && (
+              <AppearanceEditor onClose={() => setShowAppearance(false)} />
             )}
 
             {/* History Timeline (floating, bottom right) */}

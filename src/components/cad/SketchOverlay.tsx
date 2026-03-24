@@ -5,7 +5,19 @@ import { useConstraintStore } from "@/stores/constraint-store";
 
 const SKETCH_TOOLS: ToolId[] = [
   "line", "arc", "circle", "rectangle", "polygon", "spline", "ellipse", "construction_line",
+  "arc_3point", "arc_tangent", "circle_3point", "center_rectangle", "slot", "point", "centerline",
 ];
+
+/** Constraint color coding for sketch entities (SolidWorks-style):
+ *  Blue = under-constrained, Green = fully constrained, Black/White = fixed/over-constrained
+ */
+function getEntityColor(constraintStatus: string): string {
+  switch (constraintStatus) {
+    case "fully": return "#22c55e"; // Green - fully constrained
+    case "over": return "#ef4444"; // Red - over-constrained
+    default: return "#3b82f6"; // Blue - under-constrained
+  }
+}
 
 interface SketchOverlayProps {
   containerRef: React.RefObject<HTMLDivElement | null>;
@@ -602,6 +614,25 @@ function SketchOverlayInner({ containerRef }: SketchOverlayProps) {
                 <span style={{ color: dofStatus.color }} className="font-semibold">{dofStatus.label}</span>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Sketch entity color coding indicator ── */}
+      {isSketchMode && sketchEntityCount > 0 && (
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 pointer-events-none">
+          <div className="flex items-center gap-3 bg-[#0d1117]/70 rounded-full px-3 py-0.5 backdrop-blur-sm border border-[#1a2233]">
+            <div className="flex items-center gap-1">
+              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getEntityColor(constraintStatus) }} />
+              <span className="text-[7px] font-mono" style={{ color: getEntityColor(constraintStatus) }}>
+                {constraintStatus === "fully" ? "FULLY CONSTRAINED" : constraintStatus === "over" ? "OVER-CONSTRAINED" : "UNDER-CONSTRAINED"}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 text-[7px] text-slate-600">
+              <span className="flex items-center gap-0.5"><span className="w-1.5 h-1.5 rounded-full bg-[#3b82f6]" />Under</span>
+              <span className="flex items-center gap-0.5"><span className="w-1.5 h-1.5 rounded-full bg-[#22c55e]" />Full</span>
+              <span className="flex items-center gap-0.5"><span className="w-1.5 h-1.5 rounded-full bg-[#ef4444]" />Over</span>
+            </div>
           </div>
         </div>
       )}
