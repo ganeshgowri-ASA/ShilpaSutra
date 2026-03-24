@@ -93,6 +93,20 @@ const tabs: { id: RibbonTab; label: string }[] = [
   { id: "inspect", label: "Inspect" },
   { id: "view", label: "View" },
   { id: "ai", label: "AI" },
+  { id: "constraints", label: "Constraints" },
+];
+
+const constraintTools: ToolButton[] = [
+  { id: "select", icon: <MousePointer2 size={ICON_SIZE} />, label: "Select", shortcut: "Esc" },
+  { id: "measure", icon: <Ruler size={ICON_SIZE} />, label: "Dimension" },
+  { id: "select", icon: <Lock size={ICON_SIZE} />, label: "Fix" },
+  { id: "select", icon: <Minus size={ICON_SIZE} />, label: "Horizontal" },
+  { id: "select", icon: <ArrowRight size={ICON_SIZE} />, label: "Vertical" },
+  { id: "select", icon: <Grid3X3 size={ICON_SIZE} />, label: "Parallel" },
+  { id: "select", icon: <Crosshair size={ICON_SIZE} />, label: "Perpend." },
+  { id: "select", icon: <CircleDot size={ICON_SIZE} />, label: "Coincident" },
+  { id: "select", icon: <Combine size={ICON_SIZE} />, label: "Equal" },
+  { id: "select", icon: <FlipHorizontal size={ICON_SIZE} />, label: "Symmetric" },
 ];
 
 function getToolsForTab(tab: RibbonTab): ToolButton[] {
@@ -102,6 +116,7 @@ function getToolsForTab(tab: RibbonTab): ToolButton[] {
     case "modify": return modifyTools;
     case "inspect": return inspectTools;
     case "ai": return aiTools;
+    case "constraints": return constraintTools;
     default: return [];
   }
 }
@@ -116,7 +131,7 @@ const cameraViews = [
   { label: "Iso", shortcut: "0" },
 ];
 
-export default function RibbonToolbar({ onExtrude, onRevolve }: { onExtrude?: () => void; onRevolve?: () => void } = {}) {
+export default function RibbonToolbar({ onExtrude, onRevolve, onMassProps }: { onExtrude?: () => void; onRevolve?: () => void; onMassProps?: () => void } = {}) {
   const router = useRouter();
   const saveProject = useCallback(() => {
     const state = useCadStore.getState();
@@ -228,6 +243,10 @@ export default function RibbonToolbar({ onExtrude, onRevolve }: { onExtrude?: ()
         onRevolve?.();
         return;
       }
+      if (id === "mass_properties") {
+        onMassProps?.();
+        return;
+      }
       // Boolean CSG operations
       if (id === "boolean_union") {
         const ids = selectedIds.length >= 2 ? selectedIds : selectedId ? [selectedId] : [];
@@ -254,7 +273,7 @@ export default function RibbonToolbar({ onExtrude, onRevolve }: { onExtrude?: ()
       }
       setActiveTool(id as ToolId);
     },
-    [setActiveTool, setActiveOperation, addObject, booleanUnion, booleanSubtract, booleanIntersect, selectedId, selectedIds, onExtrude, onRevolve, router]
+    [setActiveTool, setActiveOperation, addObject, booleanUnion, booleanSubtract, booleanIntersect, selectedId, selectedIds, onExtrude, onRevolve, onMassProps, router]
   );
 
   const handleTabDoubleClick = useCallback(() => {

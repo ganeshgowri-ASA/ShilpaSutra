@@ -285,6 +285,8 @@ interface CadState {
   addArc: (points: [number, number, number][], radius: number) => string;
   addCircle: (center: [number, number, number], radius: number) => string;
   addRectangle: (corner1: [number, number, number], corner2: [number, number, number]) => string;
+  addPolygon: (points: [number, number, number][], sides: number) => string;
+  addEllipse: (center: [number, number, number], rx: number, ry: number) => string;
   addGeneratedObject: (obj: Partial<CadObject> & { type: CadObject["type"]; name: string }) => string;
   selectObject: (id: string | null) => void;
   toggleSelectObject: (id: string) => void;
@@ -452,6 +454,7 @@ export const useCadStore = create<CadState>((set, get) => ({
       sketchPlane: plane,
       activeRibbonTab: "sketch",
       activeSketchId: sketchId,
+      activeTool: "line",
     });
     // Add sketch group to feature history
     get().addFeature({
@@ -494,7 +497,7 @@ export const useCadStore = create<CadState>((set, get) => ({
         },
       }));
     }
-    set({ sketchPlane: null, activeTool: "select", activeSketchId: null });
+    set({ sketchPlane: null, activeTool: "select", activeSketchId: null, activeRibbonTab: "solid" });
   },
   setAutoConstraints: (v) => set({ autoConstraints: v }),
   setActiveOperation: (op) => set({ activeOperation: op }),
@@ -911,6 +914,81 @@ export const useCadStore = create<CadState>((set, get) => ({
     return id;
   },
 
+  addPolygon: (points, sides) => {
+    get().pushHistory();
+    const id = `obj_${++idCounter}_${Date.now()}`;
+    const count = get().objects.filter((o) => o.type === "polygon").length;
+    const obj: CadObject = {
+      id,
+      type: "polygon",
+      name: `Polygon ${count + 1}`,
+      position: [0, 0, 0],
+      rotation: [0, 0, 0],
+      scale: [1, 1, 1],
+      dimensions: { width: 0, height: 0, depth: 0 },
+      material: "Steel (AISI 1045)",
+      color: "#ff6600",
+      visible: true,
+      locked: false,
+      opacity: 1,
+      metalness: 0,
+      roughness: 1,
+      polygonPoints: points,
+      polygonSides: sides,
+      isProfile: true,
+      sketchId: get().activeSketchId || undefined,
+      sketchPlane: get().sketchPlane || undefined,
+    };
+    set((s) => ({ objects: [...s.objects, obj], selectedId: id, selectedIds: [id] }));
+    get().addFeature({
+      id: `feat_${id}`,
+      type: "polygon",
+      name: obj.name,
+      objectId: id,
+      visible: true,
+      locked: false,
+    });
+    return id;
+  },
+
+  addEllipse: (center, rx, ry) => {
+    get().pushHistory();
+    const id = `obj_${++idCounter}_${Date.now()}`;
+    const count = get().objects.filter((o) => o.type === "ellipse").length;
+    const obj: CadObject = {
+      id,
+      type: "ellipse",
+      name: `Ellipse ${count + 1}`,
+      position: [0, 0, 0],
+      rotation: [0, 0, 0],
+      scale: [1, 1, 1],
+      dimensions: { width: rx * 2, height: 0, depth: ry * 2 },
+      material: "Steel (AISI 1045)",
+      color: "#9966ff",
+      visible: true,
+      locked: false,
+      opacity: 1,
+      metalness: 0,
+      roughness: 1,
+      ellipseCenter: center,
+      ellipseRx: rx,
+      ellipseRy: ry,
+      isProfile: true,
+      sketchId: get().activeSketchId || undefined,
+      sketchPlane: get().sketchPlane || undefined,
+    };
+    set((s) => ({ objects: [...s.objects, obj], selectedId: id, selectedIds: [id] }));
+    get().addFeature({
+      id: `feat_${id}`,
+      type: "ellipse",
+      name: obj.name,
+      objectId: id,
+      visible: true,
+      locked: false,
+    });
+    return id;
+  },
+
   addGeneratedObject: (partial) => {
     get().pushHistory();
     const id = `obj_${++idCounter}_${Date.now()}`;
@@ -1281,24 +1359,55 @@ const createGeo = (obj: CadObject): THREE.BufferGeometry => {
     const { objects } = get();
     const sketch = objects.find((o) => o.id === sketchId);
     if (!sketch) return;
-    if (!["rectangle", "circle"].includes(sketch.type)) return;
+    if (!["rectangle", "circle", "polygon", "line"].includes(sketch.type) && !sketch.isProfile) return;
     get().pushHistory();
 
-let geo: THREE.BufferGeometry | null = null;
+    let geo: THREE.BufferGeometry | null = null;
+    const sketchP = sketch.sketchPlane || "xz";
 
     if (sketch.type === "rectangle" && sketch.rectCorners) {
       const [c1, c2] = sketch.rectCorners;
       const shape = new THREE.Shape();
-      shape.moveTo(c1[0], c1[2]);
-      shape.lineTo(c2[0], c1[2]);
-      shape.lineTo(c2[0], c2[2]);
-      shape.lineTo(c1[0], c2[2]);
+      if (sketchP === "xy") {
+        shape.moveTo(c1[0], c1[1]);
+        shape.lineTo(c2[0], c1[1]);
+        shape.lineTo(c2[0], c2[1]);
+        shape.lineTo(c1[0], c2[1]);
+      } else if (sketchP === "yz") {
+        shape.moveTo(c1[1], c1[2]);
+        shape.lineTo(c2[1], c1[2]);
+        shape.lineTo(c2[1], c2[2]);
+        shape.lineTo(c1[1], c2[2]);
+      } else {
+        shape.moveTo(c1[0], c1[2]);
+        shape.lineTo(c2[0], c1[2]);
+        shape.lineTo(c2[0], c2[2]);
+        shape.lineTo(c1[0], c2[2]);
+      }
       shape.closePath();
       geo = new THREE.ExtrudeGeometry(shape, { depth: distance, bevelEnabled: false });
-      geo.rotateX(-Math.PI / 2);
+      if (sketchP === "xz") geo.rotateX(-Math.PI / 2);
+      else if (sketchP === "yz") geo.rotateY(Math.PI / 2);
     } else if (sketch.type === "circle" && sketch.circleCenter && sketch.circleRadius) {
       const shape = new THREE.Shape();
-      shape.absarc(sketch.circleCenter[0], sketch.circleCenter[2], sketch.circleRadius, 0, Math.PI * 2, false);
+      if (sketchP === "xy") {
+        shape.absarc(sketch.circleCenter[0], sketch.circleCenter[1], sketch.circleRadius, 0, Math.PI * 2, false);
+      } else if (sketchP === "yz") {
+        shape.absarc(sketch.circleCenter[1], sketch.circleCenter[2], sketch.circleRadius, 0, Math.PI * 2, false);
+      } else {
+        shape.absarc(sketch.circleCenter[0], sketch.circleCenter[2], sketch.circleRadius, 0, Math.PI * 2, false);
+      }
+      geo = new THREE.ExtrudeGeometry(shape, { depth: distance, bevelEnabled: false });
+      if (sketchP === "xz") geo.rotateX(-Math.PI / 2);
+      else if (sketchP === "yz") geo.rotateY(Math.PI / 2);
+    } else if (sketch.type === "polygon" && sketch.polygonPoints && sketch.polygonPoints.length >= 3) {
+      const shape = new THREE.Shape();
+      const pts = sketch.polygonPoints;
+      shape.moveTo(pts[0][0], pts[0][2]);
+      for (let i = 1; i < pts.length; i++) {
+        shape.lineTo(pts[i][0], pts[i][2]);
+      }
+      shape.closePath();
       geo = new THREE.ExtrudeGeometry(shape, { depth: distance, bevelEnabled: false });
       geo.rotateX(-Math.PI / 2);
     }
@@ -1315,6 +1424,10 @@ let geo: THREE.BufferGeometry | null = null;
 
     const id = `obj_${++idCounter}_${Date.now()}`;
     const count = get().objects.filter((o) => o.featureType === "extrude").length;
+    // Find the parent sketch group for proper hierarchy
+    const parentSketchId = sketch.sketchId;
+    const parentFeature = parentSketchId ? get().featureHistory.find(f => f.id === parentSketchId) : null;
+
     const newObj: CadObject = {
       id, type: "mesh", name: `Extrude ${count + 1}`,
       position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
@@ -1323,13 +1436,34 @@ let geo: THREE.BufferGeometry | null = null;
       visible: true, locked: false, opacity: 1, metalness: 0.4, roughness: 0.5,
       meshVertices: vertices, meshIndices: indices,
       featureType: "extrude",
-      featureParams: { sketchId, distance, sketchType: sketch.type },
+      featureParams: { sketchId, distance, sketchType: sketch.type, parentSketchId },
     };
+    // Hide sketch entities (they're consumed by the extrude) but keep them in the tree
+    const sketchEntities = parentSketchId ? objects.filter(o => o.sketchId === parentSketchId) : [sketch];
+    const hiddenIds = new Set(sketchEntities.map(o => o.id));
+
     set((s) => ({
-      objects: [...s.objects.filter((o) => o.id !== sketchId), newObj],
-      featureHistory: [...s.featureHistory.filter((f) => f.objectId !== sketchId),
-        { id: `feat_${id}`, type: "extrude", name: newObj.name, objectId: id, children: [], expanded: true, visible: true, locked: false }],
-      selectedId: id, selectedIds: [id],
+      objects: [
+        ...s.objects.map(o => hiddenIds.has(o.id) ? { ...o, visible: false } : o),
+        newObj,
+      ],
+      featureHistory: [
+        ...s.featureHistory,
+        {
+          id: `feat_${id}`,
+          type: "extrude",
+          name: newObj.name,
+          objectId: id,
+          parentId: parentSketchId || undefined,
+          children: [],
+          expanded: true,
+          visible: true,
+          locked: false,
+          params: { distance, sketchType: sketch.type },
+        },
+      ],
+      selectedId: id,
+      selectedIds: [id],
     }));
     geo.dispose();
   },
@@ -1339,7 +1473,7 @@ let geo: THREE.BufferGeometry | null = null;
     const { objects } = get();
     const sketch = objects.find((o) => o.id === sketchId);
     if (!sketch) return;
-    if (!["rectangle", "circle"].includes(sketch.type)) return;
+    if (!["rectangle", "circle", "polygon"].includes(sketch.type) && !sketch.isProfile) return;
     get().pushHistory();
 
 const phiLength = (angle * Math.PI) / 180;
@@ -1394,11 +1528,32 @@ const phiLength = (angle * Math.PI) / 180;
       featureType: "revolve",
       featureParams: { sketchId, angle, sketchType: sketch.type },
     };
+    const parentSketchId = sketch.sketchId;
+    const sketchEntities2 = parentSketchId ? objects.filter(o => o.sketchId === parentSketchId) : [sketch];
+    const hiddenIds2 = new Set(sketchEntities2.map(o => o.id));
+
     set((s) => ({
-      objects: [...s.objects.filter((o) => o.id !== sketchId), newObj],
-      featureHistory: [...s.featureHistory.filter((f) => f.objectId !== sketchId),
-        { id: `feat_${id}`, type: "revolve", name: newObj.name, objectId: id, children: [], expanded: true, visible: true, locked: false }],
-      selectedId: id, selectedIds: [id],
+      objects: [
+        ...s.objects.map(o => hiddenIds2.has(o.id) ? { ...o, visible: false } : o),
+        newObj,
+      ],
+      featureHistory: [
+        ...s.featureHistory,
+        {
+          id: `feat_${id}`,
+          type: "revolve",
+          name: newObj.name,
+          objectId: id,
+          parentId: parentSketchId || undefined,
+          children: [],
+          expanded: true,
+          visible: true,
+          locked: false,
+          params: { angle, sketchType: sketch.type },
+        },
+      ],
+      selectedId: id,
+      selectedIds: [id],
     }));
     geo.dispose();
   },

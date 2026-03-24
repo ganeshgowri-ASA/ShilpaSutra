@@ -420,6 +420,16 @@ function interpretCommand(
     let name = "Generated Part";
     let dims = { width: 2, height: 2, depth: 2 };
 
+    // Parse dimension patterns like "50x30x20" or "50 x 30 x 20" or "50mm x 30mm x 20mm"
+    const dimMatch = lower.match(/(\d+(?:\.\d+)?)\s*(?:mm|cm)?\s*[x×]\s*(\d+(?:\.\d+)?)\s*(?:mm|cm)?\s*[x×]\s*(\d+(?:\.\d+)?)/);
+    if (dimMatch) {
+      const dw = parseFloat(dimMatch[1]) / 10;
+      const dh = parseFloat(dimMatch[2]) / 10;
+      const dd = parseFloat(dimMatch[3]) / 10;
+      dims = { width: dw, height: dh, depth: dd };
+      steps.push(`Parsed dimensions: ${dimMatch[1]}×${dimMatch[2]}×${dimMatch[3]}mm`);
+    }
+
     if (lower.includes("gear") || lower.includes("spur")) {
       const teeth = parseInt(lower.match(/(\d+)\s*teeth/)?.[1] || "20");
       type = "cylinder";
