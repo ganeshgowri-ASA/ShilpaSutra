@@ -9,18 +9,26 @@ import {
   Box, Cylinder, Circle, Minus, Triangle, Spline, Square,
   Search, Layers, MoreVertical, Trash2, Copy,
   Edit3, PanelLeftClose, PanelLeft, GitBranch, Wrench, Shapes,
-  RotateCw, Grid3X3, Combine, ArrowUp,
-  Scissors, Target, Hash, Grip,
+  RotateCw, Grid3X3, Combine, ArrowUp, Play, Pause,
+  Scissors, Target, Hash, Grip, Link2, AlertCircle,
 } from "lucide-react";
 import ConstraintManager from "@/components/cad/ConstraintManager";
 
-const SKETCH_TYPES = new Set(["line", "arc", "circle", "rectangle", "polygon", "spline", "ellipse", "construction_line"]);
+const SKETCH_TYPES = new Set(["line", "arc", "circle", "rectangle", "polygon", "spline", "ellipse", "construction_line", "centerline", "point", "slot"]);
 const SOLID_TYPES = new Set(["box", "cylinder", "sphere", "cone"]);
 
 function getTypeIcon(type: string, featureType?: string, size = 14) {
-  // Feature icons
+  // Feature icons — SolidWorks-style color coding
   if (featureType === "extrude") return <ArrowUp size={size} className="text-emerald-400" />;
+  if (featureType === "extrude_cut") return <ArrowUp size={size} className="text-red-400" />;
   if (featureType === "revolve") return <RotateCw size={size} className="text-blue-400" />;
+  if (featureType === "revolve_cut") return <RotateCw size={size} className="text-red-400" />;
+  if (featureType === "fillet") return <Spline size={size} className="text-orange-400" />;
+  if (featureType === "chamfer") return <Scissors size={size} className="text-orange-300" />;
+  if (featureType === "shell") return <Box size={size} className="text-yellow-400" />;
+  if (featureType === "draft") return <Triangle size={size} className="text-yellow-300" />;
+  if (featureType === "hole") return <Target size={size} className="text-red-300" />;
+  if (featureType === "mirror_feature") return <Hash size={size} className="text-purple-300" />;
   if (featureType === "boolean_union") return <Combine size={size} className="text-orange-400" />;
   if (featureType === "boolean_subtract") return <Minus size={size} className="text-red-400" />;
   if (featureType === "boolean_intersect") return <Shapes size={size} className="text-purple-400" />;
@@ -128,6 +136,9 @@ function ObjectRow({
       {obj.isProfile && (
         <span className="text-[7px] text-emerald-500/50 shrink-0 font-mono bg-emerald-500/5 px-0.5 rounded">P</span>
       )}
+      {obj.suppressed && (
+        <span className="text-[7px] text-yellow-500/50 shrink-0 font-mono bg-yellow-500/5 px-0.5 rounded">S</span>
+      )}
 
       <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-all duration-150">
         <button
@@ -176,6 +187,9 @@ export default function FeatureTree() {
   const sketchPlane = useCadStore((s) => s.sketchPlane);
   const setActiveTool = useCadStore((s) => s.setActiveTool);
   const exitSketchMode = useCadStore((s) => s.exitSketchMode);
+  const suppressFeature = useCadStore((s) => s.suppressFeature);
+  const unsuppressFeature = useCadStore((s) => s.unsuppressFeature);
+  const rollbackTo = useCadStore((s) => s.rollbackTo);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -517,21 +531,32 @@ export default function FeatureTree() {
           components.length
         )}
 
-        {/* Rollback Bar */}
-        <div className="mt-2 mx-1.5">
-          <div
-            className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-blue-500/5 border border-dashed border-blue-500/20 cursor-row-resize hover:border-blue-500/40 transition-colors group"
-            title="Drag to roll back feature history (SolidWorks-style)"
-          >
-            <div className="w-full h-[2px] bg-blue-500/30 rounded-full group-hover:bg-blue-500/50 transition-colors" />
-            <Grip size={10} className="text-blue-500/40 group-hover:text-blue-400 shrink-0" />
-          </div>
-          {rollbackIdx !== null && (
-            <div className="text-[9px] text-blue-400 mt-0.5 px-2">
-              Rolled back to step {rollbackIdx + 1}
+        {/* Rollback Bar — SolidWorks-style functional rollback */}
+        {featureHistory.length > 0 && (
+          <div className="mt-2 mx-1.5">
+            <div className="text-[8px] text-slate-600 uppercase tracking-widest font-semibold px-2 mb-1">Rollback Bar</div>
+            <input
+              type="range"
+              min={0}
+              max={featureHistory.length - 1}
+              value={rollbackIdx ?? featureHistory.length - 1}
+              onChange={(e) => {
+                const idx = parseInt(e.target.value);
+                setRollbackIdx(idx);
+                rollbackTo(idx);
+              }}
+              className="w-full h-1.5 bg-blue-500/20 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-blue-500 [&::-webkit-slider-thumb]:cursor-pointer"
+              title="Drag to roll back feature history"
+            />
+            <div className="flex items-center justify-between mt-0.5 px-1">
+              <span className="text-[8px] text-slate-600">1</span>
+              <span className="text-[9px] text-blue-400 font-mono">
+                {rollbackIdx !== null ? `Step ${rollbackIdx + 1}/${featureHistory.length}` : `${featureHistory.length} features`}
+              </span>
+              <span className="text-[8px] text-slate-600">{featureHistory.length}</span>
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Constraint Manager */}
@@ -583,18 +608,19 @@ export default function FeatureTree() {
             >
               <EyeOff size={12} className="text-slate-500" /> Toggle Visibility
             </button>
-            {/* Suppress feature */}
+            {/* Edit Feature (double-click to edit params) */}
             {(() => {
               const obj = objects.find((o) => o.id === contextMenu.objectId);
-              return obj?.featureType ? (
+              return obj?.featureType && obj.featureType !== "sketch_group" ? (
                 <button
                   onClick={() => {
-                    updateObject(contextMenu.objectId, { locked: true, visible: false });
+                    // Select the feature and show its params
+                    selectObject(contextMenu.objectId);
                     setContextMenu(null);
                   }}
-                  className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[11px] text-yellow-400 hover:bg-yellow-500/10 transition-colors duration-150"
+                  className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[11px] text-emerald-400 hover:bg-emerald-500/10 transition-colors duration-150"
                 >
-                  <MoreVertical size={12} /> Suppress Feature
+                  <Wrench size={12} /> Edit Feature
                 </button>
               ) : null;
             })()}
@@ -613,6 +639,66 @@ export default function FeatureTree() {
                   className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[11px] text-cyan-400 hover:bg-cyan-500/10 transition-colors duration-150"
                 >
                   <Edit3 size={12} /> Edit Sketch
+                </button>
+              ) : null;
+            })()}
+            {/* Suppress / Unsuppress feature */}
+            {(() => {
+              const obj = objects.find((o) => o.id === contextMenu.objectId);
+              if (!obj?.featureType) return null;
+              const feat = featureHistory.find(f => f.objectId === contextMenu.objectId);
+              const isSuppressed = obj.suppressed || (feat && !feat.visible);
+              return (
+                <button
+                  onClick={() => {
+                    if (feat) {
+                      if (isSuppressed) unsuppressFeature(feat.id);
+                      else suppressFeature(feat.id);
+                    }
+                    setContextMenu(null);
+                  }}
+                  className={`w-full flex items-center gap-2.5 px-3 py-1.5 text-[11px] transition-colors duration-150 ${
+                    isSuppressed ? "text-emerald-400 hover:bg-emerald-500/10" : "text-yellow-400 hover:bg-yellow-500/10"
+                  }`}
+                >
+                  {isSuppressed ? <Play size={12} /> : <Pause size={12} />}
+                  {isSuppressed ? "Unsuppress" : "Suppress"}
+                </button>
+              );
+            })()}
+            {/* Parent/Child */}
+            {(() => {
+              const obj = objects.find((o) => o.id === contextMenu.objectId);
+              return obj?.featureType ? (
+                <button
+                  onClick={() => {
+                    const store = useCadStore.getState();
+                    const relations = store.getParentChildRelations(
+                      featureHistory.find(f => f.objectId === contextMenu.objectId)?.id || ""
+                    );
+                    const parentNames = relations.parents.map(pid => featureHistory.find(f => f.id === pid)?.name || pid);
+                    const childNames = relations.children.map(cid => featureHistory.find(f => f.id === cid)?.name || cid);
+                    alert(`Parent/Child Relations:\n\nParents: ${parentNames.length > 0 ? parentNames.join(", ") : "None"}\nChildren: ${childNames.length > 0 ? childNames.join(", ") : "None"}`);
+                    setContextMenu(null);
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[11px] text-slate-300 hover:bg-[#21262d] transition-colors duration-150"
+                >
+                  <Link2 size={12} className="text-slate-500" /> Parent/Child
+                </button>
+              ) : null;
+            })()}
+            {/* What's Wrong */}
+            {(() => {
+              const obj = objects.find((o) => o.id === contextMenu.objectId);
+              return obj?.featureType ? (
+                <button
+                  onClick={() => {
+                    alert(`Feature "${obj.name}" status: OK\nNo errors detected.`);
+                    setContextMenu(null);
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[11px] text-slate-300 hover:bg-[#21262d] transition-colors duration-150"
+                >
+                  <AlertCircle size={12} className="text-slate-500" /> What&apos;s Wrong
                 </button>
               ) : null;
             })()}

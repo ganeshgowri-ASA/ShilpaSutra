@@ -46,9 +46,12 @@ const solidTools: ToolButton[] = [
   { id: "sphere", icon: <CircleDot size={ICON_SIZE} />, label: "Sphere" },
   { id: "cone", icon: <Triangle size={ICON_SIZE} />, label: "Cone" },
   { id: "extrude", icon: <Layers size={ICON_SIZE} />, label: "Extrude", shortcut: "E" },
+  { id: "extrude_cut", icon: <Layers size={ICON_SIZE} />, label: "Ext.Cut" },
   { id: "revolve", icon: <RotateCw size={ICON_SIZE} />, label: "Revolve" },
+  { id: "revolve_cut", icon: <RotateCw size={ICON_SIZE} />, label: "Rev.Cut" },
   { id: "loft", icon: <Layers size={ICON_SIZE} />, label: "Loft" },
   { id: "sweep", icon: <ArrowRight size={ICON_SIZE} />, label: "Sweep" },
+  { id: "hole_wizard", icon: <CircleDot size={ICON_SIZE} />, label: "Hole Wiz" },
   { id: "boolean_union", icon: <Combine size={ICON_SIZE} />, label: "Union" },
   { id: "boolean_subtract", icon: <Minus size={ICON_SIZE} />, label: "Subtract" },
   { id: "boolean_intersect", icon: <Merge size={ICON_SIZE} />, label: "Intersect" },
@@ -75,6 +78,7 @@ const inspectTools: ToolButton[] = [
   { id: "measure_angle", icon: <Crosshair size={ICON_SIZE} />, label: "Angle" },
   { id: "section_view", icon: <ScanLine size={ICON_SIZE} />, label: "Section" },
   { id: "mass_properties", icon: <Weight size={ICON_SIZE} />, label: "Mass Props" },
+  { id: "interference_check", icon: <Crosshair size={ICON_SIZE} />, label: "Interfer." },
 ];
 
 const aiTools: ToolButton[] = [

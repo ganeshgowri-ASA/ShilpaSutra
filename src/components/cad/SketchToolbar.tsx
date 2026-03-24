@@ -12,12 +12,19 @@ import {
 export type SketchEntity =
   | "line"
   | "arc"
+  | "arc_3point"
+  | "arc_tangent"
   | "circle"
+  | "circle_3point"
   | "rectangle"
+  | "center_rectangle"
   | "polygon"
   | "spline"
   | "ellipse"
   | "construction_line"
+  | "centerline"
+  | "point"
+  | "slot"
   | "fillet_sketch"
   | "chamfer_sketch";
 
@@ -28,7 +35,12 @@ export type SketchOperation =
   | "mirror_sketch"
   | "dimension"
   | "sketch_fillet"
-  | "sketch_chamfer";
+  | "sketch_chamfer"
+  | "move_entities"
+  | "copy_entities"
+  | "rotate_entities"
+  | "linear_sketch_pattern"
+  | "circular_sketch_pattern";
 
 export type SnapMode =
   | "endpoint"
@@ -54,14 +66,19 @@ const sketchEntities: {
 }[] = [
   { id: "line", icon: <Pencil size={14} />, label: "Line", toolId: "line", shortcut: "L" },
   { id: "arc", icon: <Spline size={14} />, label: "Arc", toolId: "arc", shortcut: "A" },
+  { id: "arc_3point", icon: <Spline size={14} />, label: "3P Arc", toolId: "arc_3point" },
+  { id: "arc_tangent", icon: <Spline size={14} />, label: "Tan Arc", toolId: "arc_tangent" },
   { id: "circle", icon: <Circle size={14} />, label: "Circle", toolId: "circle", shortcut: "C" },
+  { id: "circle_3point", icon: <Circle size={14} />, label: "3P Circle", toolId: "circle_3point" },
   { id: "rectangle", icon: <Square size={14} />, label: "Rect", toolId: "rectangle", shortcut: "R" },
+  { id: "center_rectangle", icon: <Square size={14} />, label: "C.Rect", toolId: "center_rectangle" },
   { id: "polygon", icon: <Pentagon size={14} />, label: "Polygon", toolId: "polygon" },
   { id: "spline", icon: <Spline size={14} />, label: "Spline", toolId: "spline" },
-  { id: "ellipse", icon: <Ellipsis size={14} />, label: "Ellipse", toolId: "circle" },
-  { id: "construction_line", icon: <Construction size={14} />, label: "Constr.", toolId: "line" },
-  { id: "fillet_sketch", icon: <CornerDownRight size={14} />, label: "Fillet", toolId: "fillet" },
-  { id: "chamfer_sketch", icon: <Octagon size={14} />, label: "Chamfer", toolId: "chamfer" },
+  { id: "ellipse", icon: <Ellipsis size={14} />, label: "Ellipse", toolId: "ellipse" },
+  { id: "slot", icon: <Minus size={14} />, label: "Slot", toolId: "slot" },
+  { id: "point", icon: <Octagon size={14} />, label: "Point", toolId: "point" },
+  { id: "centerline", icon: <Construction size={14} />, label: "C.Line", toolId: "centerline" },
+  { id: "construction_line", icon: <Construction size={14} />, label: "Constr.", toolId: "construction_line" },
 ];
 
 const sketchOperations: {
@@ -77,6 +94,10 @@ const sketchOperations: {
   { id: "dimension", icon: <RulerIcon size={14} />, label: "Dimension", shortcut: "D" },
   { id: "sketch_fillet", icon: <CornerDownRight size={14} />, label: "Sk.Fillet" },
   { id: "sketch_chamfer", icon: <Octagon size={14} />, label: "Sk.Chamfer" },
+  { id: "move_entities", icon: <ArrowRight size={14} />, label: "Move" },
+  { id: "rotate_entities", icon: <ArrowRight size={14} />, label: "Rotate" },
+  { id: "linear_sketch_pattern", icon: <Grid3X3 size={14} />, label: "Lin.Pat" },
+  { id: "circular_sketch_pattern", icon: <Grid3X3 size={14} />, label: "Cir.Pat" },
 ];
 
 const snapModes: { id: SnapMode; label: string }[] = [
@@ -199,7 +220,7 @@ export default function SketchToolbar({ visible, onSelectPlane }: SketchToolbarP
     });
   }, []);
 
-  const sketchTools: ToolId[] = ["line", "arc", "circle", "rectangle", "polygon", "spline"];
+  const sketchTools: ToolId[] = ["line", "arc", "arc_3point", "arc_tangent", "circle", "circle_3point", "rectangle", "center_rectangle", "polygon", "spline", "ellipse", "slot", "point", "centerline", "construction_line"];
   const isInSketchMode = sketchTools.includes(activeTool);
 
   if (!visible && !isInSketchMode) return null;
