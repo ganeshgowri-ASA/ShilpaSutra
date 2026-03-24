@@ -1,8 +1,9 @@
 "use client";
 import { usePathname } from "next/navigation";
 import { AboutButton } from "./AboutDialog";
-import { Keyboard, Grid3X3, MousePointer2 } from "lucide-react";
+import { Keyboard, Grid3X3, MousePointer2, Sun, Moon, Monitor } from "lucide-react";
 import { useCadStore } from "@/stores/cad-store";
+import { useSettingsStore } from "@/stores/settings-store";
 
 const contextHelp: Record<string, string> = {
   "/": "Dashboard - View projects, activity, and quick actions",
@@ -23,6 +24,10 @@ const contextHelp: Record<string, string> = {
   "/settings": "Settings - Preferences, themes, AI configuration, and account",
 };
 
+const precisionLabels: Record<number, string> = {
+  0: "0", 1: "0.0", 2: "0.00", 3: "0.000", 4: "0.0000",
+};
+
 function DesignerStatusInfo() {
   const activeTool = useCadStore((s) => s.activeTool);
   const snapGrid = useCadStore((s) => s.snapGrid);
@@ -31,13 +36,16 @@ function DesignerStatusInfo() {
   const selectedIds = useCadStore((s) => s.selectedIds);
   const selectedId = useCadStore((s) => s.selectedId);
   const cursorPosition = useCadStore((s) => s.cursorPosition);
+  const sketchPlane = useCadStore((s) => s.sketchPlane);
+  const viewMode = useCadStore((s) => s.viewMode);
 
   const selCount = selectedIds.length > 0 ? selectedIds.length : selectedId ? 1 : 0;
   const toolLabel = activeTool
     .replace(/_/g, " ")
     .replace(/\b\w/g, (c) => c.toUpperCase());
 
-  const fmt = (n: number) => n.toFixed(1);
+  const precision = 1;
+  const fmt = (n: number) => n.toFixed(precision);
 
   return (
     <span className="text-[9px] font-mono flex items-center gap-0">
@@ -55,11 +63,49 @@ function DesignerStatusInfo() {
         {snapGrid ? "SNAP" : "snap"}
       </span>
       <span className="text-slate-600 mx-2">|</span>
-      <span className="text-slate-400 uppercase">{unit}</span>
+      <span className="text-slate-400 uppercase font-semibold">{unit}</span>
+      <span className="text-slate-600 mx-1">·</span>
+      <span className="text-slate-500">{precisionLabels[precision] || "0.0"}</span>
       <span className="text-slate-600 mx-2">|</span>
       <span className="text-slate-500">{objects.length} objs</span>
       {selCount > 0 && <span className="text-[#4a9eff] ml-1">({selCount} sel)</span>}
+      {sketchPlane && (
+        <>
+          <span className="text-slate-600 mx-2">|</span>
+          <span className={
+            sketchPlane === "xy" ? "text-indigo-400" :
+            sketchPlane === "xz" ? "text-green-400" : "text-red-400"
+          }>Sketch:{sketchPlane.toUpperCase()}</span>
+        </>
+      )}
+      <span className="text-slate-600 mx-2">|</span>
+      <span className="text-slate-500 capitalize">{viewMode}</span>
     </span>
+  );
+}
+
+function ThemeToggle() {
+  const theme = useSettingsStore((s) => s.theme);
+  const update = useSettingsStore((s) => s.update);
+
+  const nextTheme = () => {
+    const cycle: Record<string, "dark" | "light" | "system"> = {
+      dark: "light", light: "system", system: "dark",
+    };
+    update({ theme: cycle[theme] || "dark" });
+  };
+
+  return (
+    <button
+      onClick={nextTheme}
+      className="flex items-center gap-1 text-[9px] text-slate-500 hover:text-slate-300 transition-colors px-1 py-0.5 rounded hover:bg-[#21262d]"
+      title={`Theme: ${theme} (click to cycle)`}
+    >
+      {theme === "dark" && <Moon size={9} />}
+      {theme === "light" && <Sun size={9} />}
+      {theme === "system" && <Monitor size={9} />}
+      <span className="capitalize">{theme}</span>
+    </button>
   );
 }
 
@@ -93,15 +139,19 @@ export default function StatusBar() {
             <span className="text-slate-500">Del</span> Remove
             <span className="text-[#21262d] mx-0.5">|</span>
             <span className="text-slate-500">F</span> Fit
+            <span className="text-[#21262d] mx-0.5">|</span>
+            <span className="text-slate-500">?</span> Keys
           </span>
         )}
+        <div className="w-px h-3.5 bg-[#21262d]" />
+        <ThemeToggle />
         <div className="w-px h-3.5 bg-[#21262d]" />
         <span className="flex items-center gap-1.5">
           <span className="w-1.5 h-1.5 rounded-full bg-green-400 pulse-ring" />
           <span className="text-[9px] text-green-500/80 font-medium">Online</span>
         </span>
         <div className="w-px h-3.5 bg-[#21262d]" />
-        <span className="text-[9px] text-slate-600 font-mono font-medium">v2.0</span>
+        <span className="text-[9px] text-slate-600 font-mono font-medium">v2.1</span>
         <AboutButton />
       </div>
     </div>

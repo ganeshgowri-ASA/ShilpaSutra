@@ -79,6 +79,9 @@ const inspectTools: ToolButton[] = [
   { id: "section_view", icon: <ScanLine size={ICON_SIZE} />, label: "Section" },
   { id: "mass_properties", icon: <Weight size={ICON_SIZE} />, label: "Mass Props" },
   { id: "interference_check", icon: <Crosshair size={ICON_SIZE} />, label: "Interfer." },
+  { id: "ref_geometry", icon: <Axis3D size={ICON_SIZE} />, label: "Ref.Geo" },
+  { id: "appearance_editor", icon: <Sun size={ICON_SIZE} />, label: "Appear." },
+  { id: "config_manager", icon: <Layers size={ICON_SIZE} />, label: "Config" },
 ];
 
 const aiTools: ToolButton[] = [
@@ -135,7 +138,7 @@ const cameraViews = [
   { label: "Iso", shortcut: "0" },
 ];
 
-export default function RibbonToolbar({ onExtrude, onRevolve, onMassProps }: { onExtrude?: () => void; onRevolve?: () => void; onMassProps?: () => void } = {}) {
+export default function RibbonToolbar({ onExtrude, onRevolve, onMassProps, onRefGeometry, onAppearance, onConfigManager, onHoleWizard }: { onExtrude?: () => void; onRevolve?: () => void; onMassProps?: () => void; onRefGeometry?: () => void; onAppearance?: () => void; onConfigManager?: () => void; onHoleWizard?: () => void } = {}) {
   const router = useRouter();
   const saveProject = useCallback(() => {
     const state = useCadStore.getState();
@@ -251,6 +254,22 @@ export default function RibbonToolbar({ onExtrude, onRevolve, onMassProps }: { o
         onMassProps?.();
         return;
       }
+      if (id === "ref_geometry") {
+        onRefGeometry?.();
+        return;
+      }
+      if (id === "appearance_editor") {
+        onAppearance?.();
+        return;
+      }
+      if (id === "config_manager") {
+        onConfigManager?.();
+        return;
+      }
+      if (id === "hole_wizard") {
+        onHoleWizard?.();
+        return;
+      }
       // Boolean CSG operations
       if (id === "boolean_union") {
         const ids = selectedIds.length >= 2 ? selectedIds : selectedId ? [selectedId] : [];
@@ -277,7 +296,7 @@ export default function RibbonToolbar({ onExtrude, onRevolve, onMassProps }: { o
       }
       setActiveTool(id as ToolId);
     },
-    [setActiveTool, setActiveOperation, addObject, booleanUnion, booleanSubtract, booleanIntersect, selectedId, selectedIds, onExtrude, onRevolve, onMassProps, router]
+    [setActiveTool, setActiveOperation, addObject, booleanUnion, booleanSubtract, booleanIntersect, selectedId, selectedIds, onExtrude, onRevolve, onMassProps, onRefGeometry, onAppearance, onConfigManager, onHoleWizard, router]
   );
 
   const handleTabDoubleClick = useCallback(() => {

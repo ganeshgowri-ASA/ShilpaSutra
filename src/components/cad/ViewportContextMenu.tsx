@@ -3,6 +3,8 @@ import { useEffect, useRef } from "react";
 import { useCadStore } from "@/stores/cad-store";
 import {
   Copy, Clipboard, Trash2, CopyPlus, EyeOff, Eye, Settings2,
+  Scissors, ArrowRight, FlipHorizontal, Minus, Ruler, Pencil, RotateCw,
+  Layers, Palette, Lock,
 } from "lucide-react";
 
 interface ContextMenuProps {
@@ -90,7 +92,75 @@ export default function ViewportContextMenu({ x, y, onClose }: ContextMenuProps)
     onClose();
   };
 
+  const sketchPlane = useCadStore((s) => s.sketchPlane);
+  const activeTool = useCadStore((s) => s.activeTool);
+  const setActiveTool = useCadStore((s) => s.setActiveTool);
+  const enterSketchMode = useCadStore((s) => s.enterSketchMode);
+
+  const isSketchMode = !!sketchPlane;
+  const sketchTools = ["line", "arc", "circle", "rectangle", "polygon", "spline", "ellipse", "construction_line"];
+  const isDrawing = sketchTools.includes(activeTool);
+
+  const handleSetTool = (tool: string) => {
+    setActiveTool(tool as import("@/stores/cad-store").ToolId);
+    onClose();
+  };
+
   const menuItems = [
+    ...(isSketchMode ? [
+      // Sketch-specific context menu items
+      {
+        label: "Trim",
+        icon: <Scissors size={13} />,
+        shortcut: "T",
+        action: () => handleSetTool("trim"),
+        disabled: false,
+      },
+      {
+        label: "Extend",
+        icon: <ArrowRight size={13} />,
+        shortcut: "X",
+        action: () => handleSetTool("extend"),
+        disabled: false,
+      },
+      {
+        label: "Offset",
+        icon: <Minus size={13} />,
+        shortcut: "O",
+        action: () => handleSetTool("offset"),
+        disabled: false,
+      },
+      {
+        label: "Mirror",
+        icon: <FlipHorizontal size={13} />,
+        shortcut: "M",
+        action: () => handleSetTool("mirror_sketch"),
+        disabled: false,
+      },
+      {
+        label: "Dimension",
+        icon: <Ruler size={13} />,
+        shortcut: "D",
+        action: () => handleSetTool("measure"),
+        disabled: false,
+      },
+      { type: "separator" as const },
+      {
+        label: "Construction Line",
+        icon: <Pencil size={13} />,
+        shortcut: "",
+        action: () => handleSetTool("construction_line"),
+        disabled: false,
+      },
+      {
+        label: "Sketch Fillet",
+        icon: <RotateCw size={13} />,
+        shortcut: "",
+        action: () => handleSetTool("sketch_fillet"),
+        disabled: false,
+      },
+      { type: "separator" as const },
+    ] : []),
     {
       label: "Copy",
       icon: <Copy size={13} />,
@@ -129,6 +199,33 @@ export default function ViewportContextMenu({ x, y, onClose }: ContextMenuProps)
       action: handleToggleVisible,
       disabled: !hasSelection,
     },
+    ...(!isSketchMode ? [
+      {
+        label: "Extrude",
+        icon: <Layers size={13} />,
+        shortcut: "E",
+        action: () => handleSetTool("extrude"),
+        disabled: !hasSelection,
+      },
+      {
+        label: "Appearance",
+        icon: <Palette size={13} />,
+        shortcut: "",
+        action: () => {
+          useCadStore.getState().setPropertyPanelCollapsed(false);
+          onClose();
+        },
+        disabled: !hasSelection,
+      },
+      {
+        label: "Fix Position",
+        icon: <Lock size={13} />,
+        shortcut: "",
+        action: () => { onClose(); },
+        disabled: !hasSelection,
+      },
+    ] : []),
+    { type: "separator" as const },
     {
       label: "Properties",
       icon: <Settings2 size={13} />,
@@ -139,6 +236,16 @@ export default function ViewportContextMenu({ x, y, onClose }: ContextMenuProps)
       },
       disabled: !hasSelection,
     },
+    ...(!isSketchMode && !sketchPlane ? [
+      { type: "separator" as const },
+      {
+        label: "Enter Sketch (XZ)",
+        icon: <Pencil size={13} />,
+        shortcut: "",
+        action: () => { enterSketchMode("xz"); onClose(); },
+        disabled: false,
+      },
+    ] : []),
   ];
 
   return (
