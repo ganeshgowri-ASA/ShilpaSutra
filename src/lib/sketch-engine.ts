@@ -12,12 +12,18 @@ const EPS = 1e-10;
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface SketchEntity2D {
-  type: 'line' | 'arc' | 'circle';
+  type: 'line' | 'arc' | 'circle' | 'ellipse' | 'parabola' | 'construction';
   points?: [number, number][];   // for lines: [start, end]
-  center?: [number, number];     // for arc/circle
+  center?: [number, number];     // for arc/circle/ellipse
   radius?: number;               // for arc/circle
   startAngle?: number;           // for arc (radians)
   endAngle?: number;             // for arc (radians)
+  rx?: number;                   // for ellipse: semi-major
+  ry?: number;                   // for ellipse: semi-minor
+  rotation?: number;             // for ellipse: rotation in radians
+  focus?: [number, number];      // for parabola: focal point
+  vertex?: [number, number];     // for parabola: vertex
+  isConstruction?: boolean;      // construction geometry flag
 }
 
 export interface TrimResult {
@@ -644,7 +650,8 @@ export function circleFrom3Points(
  */
 export function createSlotProfile(
   center1: [number, number], center2: [number, number],
-  width: number
+  width: number,
+  slotType: 'straight' | 'arc' = 'straight'
 ): {
   lines: { start: [number, number]; end: [number, number] }[];
   arcs: { center: [number, number]; radius: number; startAngle: number; endAngle: number }[];
@@ -707,4 +714,494 @@ export function createSlotProfile(
       },
     ],
   };
+}
+
+// ─── 12. Ellipse ──────────────────────────────────────────────────────────────
+
+/**
+ * Create points on an ellipse for rendering.
+ * Returns an array of [x,y] points around the ellipse.
+ */
+export function createEllipsePoints(
+  center: [number, number],
+  rx: number,
+  ry: number,
+  rotation: number = 0,
+  segments: number = 64
+): [number, number][] {
+  const points: [number, number][] = [];
+  const cos = Math.cos(rotation);
+  const sin = Math.sin(rotation);
+
+  for (let i = 0; i <= segments; i++) {
+    const angle = (2 * Math.PI * i) / segments;
+    const px = rx * Math.cos(angle);
+    const py = ry * Math.sin(angle);
+    // Rotate by ellipse rotation
+    points.push([
+      center[0] + px * cos - py * sin,
+      center[1] + px * sin + py * cos,
+    ]);
+  }
+  return points;
+}
+
+/**
+ * Check if a point is on an ellipse (within tolerance).
+ */
+export function pointOnEllipse(
+  point: [number, number],
+  center: [number, number],
+  rx: number,
+  ry: number,
+  tolerance: number = 0.01
+): boolean {
+  if (rx < EPS || ry < EPS) return false;
+  const dx = point[0] - center[0];
+  const dy = point[1] - center[1];
+  const val = (dx * dx) / (rx * rx) + (dy * dy) / (ry * ry);
+  return Math.abs(val - 1.0) < tolerance;
+}
+
+// ─── 13. Parabola ─────────────────────────────────────────────────────────────
+
+/**
+ * Create points on a parabola for rendering.
+ * Parabola defined by vertex and focus. Equation: (y-k)^2 = 4p(x-h) where p = dist(vertex, focus).
+ */
+export function createParabolaPoints(
+  vertex: [number, number],
+  focus: [number, number],
+  tMin: number = -5,
+  tMax: number = 5,
+  segments: number = 64
+): [number, number][] {
+  const points: [number, number][] = [];
+  const dx = focus[0] - vertex[0];
+  const dy = focus[1] - vertex[1];
+  const p = Math.sqrt(dx * dx + dy * dy);
+  if (p < EPS) return points;
+
+  // Direction from vertex to focus
+  const angle = Math.atan2(dy, dx);
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+
+  for (let i = 0; i <= segments; i++) {
+    const t = tMin + (tMax - tMin) * (i / segments);
+    // Parabola in local coords: x = t^2/(4p), y = t
+    const lx = (t * t) / (4 * p);
+    const ly = t;
+    // Rotate to world coords
+    points.push([
+      vertex[0] + lx * cos - ly * sin,
+      vertex[1] + lx * sin + ly * cos,
+    ]);
+  }
+  return points;
+}
+
+// ─── 14. 3-Point Arc ──────────────────────────────────────────────────────────
+
+/**
+ * Create an arc passing through three points.
+ * Returns the arc center, radius, and start/end angles, or null if collinear.
+ */
+export function arcFrom3Points(
+  p1: [number, number],
+  p2: [number, number],
+  p3: [number, number]
+): { center: [number, number]; radius: number; startAngle: number; endAngle: number } | null {
+  const circle = circleFrom3Points(p1, p2, p3);
+  if (!circle) return null;
+
+  const startAngle = Math.atan2(p1[1] - circle.center[1], p1[0] - circle.center[0]);
+  const midAngle = Math.atan2(p2[1] - circle.center[1], p2[0] - circle.center[0]);
+  const endAngle = Math.atan2(p3[1] - circle.center[1], p3[0] - circle.center[0]);
+
+  // Determine arc direction: if midpoint is in the CCW arc from start to end, use that direction
+  const normalizedMid = normalizeAngle(midAngle - startAngle);
+  const normalizedEnd = normalizeAngle(endAngle - startAngle);
+
+  if (normalizedMid <= normalizedEnd) {
+    return { center: circle.center, radius: circle.radius, startAngle, endAngle };
+  }
+  // Reverse: go the other way
+  return { center: circle.center, radius: circle.radius, startAngle: endAngle, endAngle: startAngle };
+}
+
+// ─── 15. Tangent Arc ──────────────────────────────────────────────────────────
+
+/**
+ * Create an arc tangent to a line at a given point, ending at another point.
+ * The arc starts tangent to the line direction at startPoint.
+ */
+export function tangentArc(
+  lineStart: [number, number],
+  lineEnd: [number, number],
+  tangentPoint: [number, number],
+  endPoint: [number, number]
+): { center: [number, number]; radius: number; startAngle: number; endAngle: number } | null {
+  // Line direction at tangent point
+  const lineDir = normalize(sub(lineEnd, lineStart));
+  // Perpendicular to line (candidate center directions)
+  const perp: [number, number] = [-lineDir[1], lineDir[0]];
+
+  // The center lies on the line through tangentPoint perpendicular to lineDir
+  // and equidistant from tangentPoint and endPoint (perpendicular bisector)
+  const mid = scale(add(tangentPoint, endPoint), 0.5);
+  const chordDir = sub(endPoint, tangentPoint);
+  const chordPerp: [number, number] = [-chordDir[1], chordDir[0]];
+
+  // Intersect: tangentPoint + t*perp = mid + s*chordPerp
+  const center = lineLineIntersection(
+    tangentPoint, add(tangentPoint, perp),
+    mid, add(mid, chordPerp)
+  );
+  if (!center) return null;
+
+  const radius = dist(center, tangentPoint);
+  const startAngle = Math.atan2(tangentPoint[1] - center[1], tangentPoint[0] - center[0]);
+  const endAngle = Math.atan2(endPoint[1] - center[1], endPoint[0] - center[0]);
+
+  return { center, radius, startAngle, endAngle };
+}
+
+// ─── 16. Center Rectangle ────────────────────────────────────────────────────
+
+/**
+ * Create a rectangle from its center point and half-extents.
+ * Returns four corners in order: TL, TR, BR, BL.
+ */
+export function createCenterRectangle(
+  center: [number, number],
+  halfWidth: number,
+  halfHeight: number
+): [number, number][] {
+  return [
+    [center[0] - halfWidth, center[1] + halfHeight],
+    [center[0] + halfWidth, center[1] + halfHeight],
+    [center[0] + halfWidth, center[1] - halfHeight],
+    [center[0] - halfWidth, center[1] - halfHeight],
+  ];
+}
+
+// ─── 17. Power Trim ──────────────────────────────────────────────────────────
+
+/**
+ * Power trim: trim all entities that a drag path crosses.
+ * For each entity, check if the drag path intersects it, and if so, trim
+ * at the intersection point nearest the drag path.
+ * Returns a list of trimmed entity IDs and their remaining segments.
+ */
+export function powerTrim(
+  dragPath: [number, number][],
+  entities: (SketchEntity2D & { id: string })[]
+): { id: string; remainingSegments: { start: [number, number]; end: [number, number] }[] }[] {
+  const results: { id: string; remainingSegments: { start: [number, number]; end: [number, number] }[] }[] = [];
+
+  if (dragPath.length < 2) return results;
+
+  for (const entity of entities) {
+    if (entity.type !== 'line' || !entity.points || entity.points.length < 2) continue;
+
+    // Check each segment of the drag path for intersection with this entity
+    let intersects = false;
+    let bestClickPoint: [number, number] = dragPath[0];
+
+    for (let i = 0; i < dragPath.length - 1; i++) {
+      const ix = lineLineIntersection(
+        dragPath[i], dragPath[i + 1],
+        entity.points[0], entity.points[1]
+      );
+      if (ix) {
+        // Check if intersection is on both segments
+        const tDrag = paramOnSegment(ix, dragPath[i], dragPath[i + 1]);
+        const tEntity = paramOnSegment(ix, entity.points[0], entity.points[1]);
+        if (tDrag >= -EPS && tDrag <= 1 + EPS && tEntity >= -EPS && tEntity <= 1 + EPS) {
+          intersects = true;
+          bestClickPoint = ix;
+          break;
+        }
+      }
+    }
+
+    if (intersects) {
+      // Find other entities to trim against (all except current)
+      const others = entities.filter((e) => e.id !== entity.id);
+      const result = trimLine(
+        entity.points[0], entity.points[1],
+        bestClickPoint,
+        others
+      );
+      if (result.success) {
+        results.push({ id: entity.id, remainingSegments: result.remainingSegments });
+      }
+    }
+  }
+
+  return results;
+}
+
+// ─── 18. Split Entity ────────────────────────────────────────────────────────
+
+/**
+ * Split a line at a specific point into two segments.
+ * Returns two line segments, or null if the point is not on the line.
+ */
+export function splitLine(
+  lineStart: [number, number],
+  lineEnd: [number, number],
+  splitPoint: [number, number]
+): { seg1: { start: [number, number]; end: [number, number] }; seg2: { start: [number, number]; end: [number, number] } } | null {
+  const t = paramOnSegment(splitPoint, lineStart, lineEnd);
+  if (t < EPS || t > 1 - EPS) return null; // Point not on segment interior
+
+  const point: [number, number] = [
+    lineStart[0] + t * (lineEnd[0] - lineStart[0]),
+    lineStart[1] + t * (lineEnd[1] - lineStart[1]),
+  ];
+
+  return {
+    seg1: { start: [...lineStart], end: point },
+    seg2: { start: point, end: [...lineEnd] },
+  };
+}
+
+// ─── 19. Convert Entities ────────────────────────────────────────────────────
+
+/**
+ * Convert a 3D edge to 2D sketch entities by projecting onto a sketch plane.
+ * This is a utility for "Convert Entities" tool that projects 3D edges onto
+ * the active sketch plane.
+ */
+export function projectToSketchPlane(
+  points3D: [number, number, number][],
+  plane: 'xy' | 'xz' | 'yz'
+): [number, number][] {
+  return points3D.map((p) => {
+    switch (plane) {
+      case 'xy': return [p[0], p[1]] as [number, number];
+      case 'xz': return [p[0], p[2]] as [number, number];
+      case 'yz': return [p[1], p[2]] as [number, number];
+    }
+  });
+}
+
+// ─── 20. Offset Entities ─────────────────────────────────────────────────────
+
+/**
+ * Offset a chain of connected line segments by a given distance.
+ * Returns the offset polyline.
+ */
+export function offsetPolyline(
+  points: [number, number][],
+  distance: number
+): [number, number][] {
+  if (points.length < 2) return [...points.map(p => [...p] as [number, number])];
+
+  const result: [number, number][] = [];
+
+  for (let i = 0; i < points.length; i++) {
+    if (i === 0) {
+      // First point: offset perpendicular to first segment
+      const d = sub(points[1], points[0]);
+      const len = length(d);
+      if (len < EPS) { result.push([...points[0]]); continue; }
+      const n: [number, number] = [-d[1] / len, d[0] / len];
+      result.push(add(points[0], scale(n, distance)));
+    } else if (i === points.length - 1) {
+      // Last point: offset perpendicular to last segment
+      const d = sub(points[i], points[i - 1]);
+      const len = length(d);
+      if (len < EPS) { result.push([...points[i]]); continue; }
+      const n: [number, number] = [-d[1] / len, d[0] / len];
+      result.push(add(points[i], scale(n, distance)));
+    } else {
+      // Middle point: bisector of the two adjacent segments
+      const d1 = normalize(sub(points[i], points[i - 1]));
+      const d2 = normalize(sub(points[i + 1], points[i]));
+      const n1: [number, number] = [-d1[1], d1[0]];
+      const n2: [number, number] = [-d2[1], d2[0]];
+      const bisector = normalize(add(n1, n2));
+      // Miter length = distance / cos(half-angle)
+      const dotVal = dot(n1, bisector);
+      const miterLen = Math.abs(dotVal) > EPS ? distance / dotVal : distance;
+      result.push(add(points[i], scale(bisector, miterLen)));
+    }
+  }
+
+  return result;
+}
+
+// ─── 21. Mirror Entities ─────────────────────────────────────────────────────
+
+/**
+ * Mirror a set of 2D points about an axis defined by two points.
+ * Returns the mirrored points.
+ */
+export function mirrorEntities(
+  points: [number, number][],
+  axisStart: [number, number],
+  axisEnd: [number, number]
+): [number, number][] {
+  return points.map((p) => mirrorPoint(p, axisStart, axisEnd));
+}
+
+/**
+ * Mirror an arc about an axis.
+ */
+export function mirrorArc(
+  center: [number, number],
+  radius: number,
+  startAngle: number,
+  endAngle: number,
+  axisStart: [number, number],
+  axisEnd: [number, number]
+): { center: [number, number]; radius: number; startAngle: number; endAngle: number } {
+  const newCenter = mirrorPoint(center, axisStart, axisEnd);
+
+  // Mirror the start and end angle points
+  const startPt: [number, number] = [
+    center[0] + radius * Math.cos(startAngle),
+    center[1] + radius * Math.sin(startAngle),
+  ];
+  const endPt: [number, number] = [
+    center[0] + radius * Math.cos(endAngle),
+    center[1] + radius * Math.sin(endAngle),
+  ];
+
+  const mirStart = mirrorPoint(startPt, axisStart, axisEnd);
+  const mirEnd = mirrorPoint(endPt, axisStart, axisEnd);
+
+  const newStartAngle = Math.atan2(mirStart[1] - newCenter[1], mirStart[0] - newCenter[0]);
+  const newEndAngle = Math.atan2(mirEnd[1] - newCenter[1], mirEnd[0] - newCenter[0]);
+
+  // Mirror reverses arc direction
+  return { center: newCenter, radius, startAngle: newEndAngle, endAngle: newStartAngle };
+}
+
+// ─── 22. Text on Sketch ──────────────────────────────────────────────────────
+
+/**
+ * Generate outline points for text characters on a sketch plane.
+ * Returns polyline segments for each character (simplified block font).
+ */
+export function createSketchText(
+  text: string,
+  origin: [number, number],
+  charHeight: number = 1.0,
+  charSpacing: number = 0.6
+): { start: [number, number]; end: [number, number] }[] {
+  const segments: { start: [number, number]; end: [number, number] }[] = [];
+  const charWidth = charHeight * 0.6;
+  let xOffset = 0;
+
+  for (const char of text.toUpperCase()) {
+    const cx = origin[0] + xOffset;
+    const cy = origin[1];
+    const w = charWidth;
+    const h = charHeight;
+
+    // Simplified block-letter segments for common characters
+    const charSegments = getCharSegments(char, cx, cy, w, h);
+    segments.push(...charSegments);
+    xOffset += charWidth + charSpacing * charHeight * 0.3;
+  }
+
+  return segments;
+}
+
+function getCharSegments(
+  char: string,
+  x: number, y: number,
+  w: number, h: number
+): { start: [number, number]; end: [number, number] }[] {
+  const segs: { start: [number, number]; end: [number, number] }[] = [];
+  const l = x, r = x + w, b = y, t = y + h, m = y + h / 2, cx = x + w / 2;
+
+  switch (char) {
+    case 'A':
+      segs.push({ start: [l, b], end: [cx, t] }, { start: [cx, t], end: [r, b] }, { start: [l + w * 0.15, m], end: [r - w * 0.15, m] });
+      break;
+    case 'B':
+      segs.push({ start: [l, b], end: [l, t] }, { start: [l, t], end: [r - w * 0.15, t] }, { start: [r - w * 0.15, t], end: [r, t - h * 0.1] }, { start: [r, t - h * 0.1], end: [r, m + h * 0.05] }, { start: [r, m + h * 0.05], end: [l, m] }, { start: [l, m], end: [r, m - h * 0.05] }, { start: [r, m - h * 0.05], end: [r, b + h * 0.1] }, { start: [r, b + h * 0.1], end: [l, b] });
+      break;
+    case 'C':
+      segs.push({ start: [r, t], end: [l, t] }, { start: [l, t], end: [l, b] }, { start: [l, b], end: [r, b] });
+      break;
+    case 'D':
+      segs.push({ start: [l, b], end: [l, t] }, { start: [l, t], end: [r - w * 0.2, t] }, { start: [r - w * 0.2, t], end: [r, m] }, { start: [r, m], end: [r - w * 0.2, b] }, { start: [r - w * 0.2, b], end: [l, b] });
+      break;
+    case 'E':
+      segs.push({ start: [r, t], end: [l, t] }, { start: [l, t], end: [l, b] }, { start: [l, b], end: [r, b] }, { start: [l, m], end: [r - w * 0.2, m] });
+      break;
+    case 'F':
+      segs.push({ start: [r, t], end: [l, t] }, { start: [l, t], end: [l, b] }, { start: [l, m], end: [r - w * 0.2, m] });
+      break;
+    case 'H':
+      segs.push({ start: [l, b], end: [l, t] }, { start: [r, b], end: [r, t] }, { start: [l, m], end: [r, m] });
+      break;
+    case 'I':
+      segs.push({ start: [cx, b], end: [cx, t] }, { start: [l + w * 0.2, t], end: [r - w * 0.2, t] }, { start: [l + w * 0.2, b], end: [r - w * 0.2, b] });
+      break;
+    case 'L':
+      segs.push({ start: [l, t], end: [l, b] }, { start: [l, b], end: [r, b] });
+      break;
+    case 'M':
+      segs.push({ start: [l, b], end: [l, t] }, { start: [l, t], end: [cx, m] }, { start: [cx, m], end: [r, t] }, { start: [r, t], end: [r, b] });
+      break;
+    case 'N':
+      segs.push({ start: [l, b], end: [l, t] }, { start: [l, t], end: [r, b] }, { start: [r, b], end: [r, t] });
+      break;
+    case 'O':
+      segs.push({ start: [l, b], end: [l, t] }, { start: [l, t], end: [r, t] }, { start: [r, t], end: [r, b] }, { start: [r, b], end: [l, b] });
+      break;
+    case 'P':
+      segs.push({ start: [l, b], end: [l, t] }, { start: [l, t], end: [r, t] }, { start: [r, t], end: [r, m] }, { start: [r, m], end: [l, m] });
+      break;
+    case 'R':
+      segs.push({ start: [l, b], end: [l, t] }, { start: [l, t], end: [r, t] }, { start: [r, t], end: [r, m] }, { start: [r, m], end: [l, m] }, { start: [cx, m], end: [r, b] });
+      break;
+    case 'S':
+      segs.push({ start: [r, t], end: [l, t] }, { start: [l, t], end: [l, m] }, { start: [l, m], end: [r, m] }, { start: [r, m], end: [r, b] }, { start: [r, b], end: [l, b] });
+      break;
+    case 'T':
+      segs.push({ start: [l, t], end: [r, t] }, { start: [cx, t], end: [cx, b] });
+      break;
+    case 'U':
+      segs.push({ start: [l, t], end: [l, b] }, { start: [l, b], end: [r, b] }, { start: [r, b], end: [r, t] });
+      break;
+    case 'V':
+      segs.push({ start: [l, t], end: [cx, b] }, { start: [cx, b], end: [r, t] });
+      break;
+    case 'W':
+      segs.push({ start: [l, t], end: [l + w * 0.25, b] }, { start: [l + w * 0.25, b], end: [cx, m] }, { start: [cx, m], end: [r - w * 0.25, b] }, { start: [r - w * 0.25, b], end: [r, t] });
+      break;
+    case 'X':
+      segs.push({ start: [l, t], end: [r, b] }, { start: [r, t], end: [l, b] });
+      break;
+    case 'Y':
+      segs.push({ start: [l, t], end: [cx, m] }, { start: [r, t], end: [cx, m] }, { start: [cx, m], end: [cx, b] });
+      break;
+    case 'Z':
+      segs.push({ start: [l, t], end: [r, t] }, { start: [r, t], end: [l, b] }, { start: [l, b], end: [r, b] });
+      break;
+    case '0': case 'G': case 'J': case 'K': case 'Q':
+      segs.push({ start: [l, b], end: [l, t] }, { start: [l, t], end: [r, t] }, { start: [r, t], end: [r, b] }, { start: [r, b], end: [l, b] });
+      break;
+    case '1':
+      segs.push({ start: [cx, b], end: [cx, t] });
+      break;
+    case ' ':
+      break;
+    case '-':
+      segs.push({ start: [l + w * 0.1, m], end: [r - w * 0.1, m] });
+      break;
+    default:
+      // Fallback: draw a small box
+      segs.push({ start: [l, b], end: [l, t] }, { start: [l, t], end: [r, t] }, { start: [r, t], end: [r, b] }, { start: [r, b], end: [l, b] });
+      break;
+  }
+  return segs;
 }

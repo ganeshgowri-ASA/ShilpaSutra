@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import ConstraintManager from "@/components/cad/ConstraintManager";
 
-const SKETCH_TYPES = new Set(["line", "arc", "circle", "rectangle", "polygon", "spline", "ellipse", "construction_line", "centerline", "point", "slot"]);
+const SKETCH_TYPES = new Set(["line", "arc", "circle", "rectangle", "polygon", "spline", "ellipse", "construction_line", "centerline", "point", "slot", "parabola"]);
 const SOLID_TYPES = new Set(["box", "cylinder", "sphere", "cone"]);
 
 function getTypeIcon(type: string, featureType?: string, size = 14) {
@@ -79,6 +79,10 @@ function ObjectRow({
   onRename,
   setEditingId,
   updateObject,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  isDragOver,
 }: {
   obj: CadObject;
   isSelected: boolean;
@@ -92,19 +96,30 @@ function ObjectRow({
   onRename: (id: string) => void;
   setEditingId: (id: string | null) => void;
   updateObject: (id: string, updates: Partial<CadObject>) => void;
+  onDragStart?: (e: React.DragEvent, id: string) => void;
+  onDragOver?: (e: React.DragEvent, id: string) => void;
+  onDrop?: (e: React.DragEvent, id: string) => void;
+  isDragOver?: boolean;
 }) {
   const paramSummary = getFeatureParamsSummary(obj);
   return (
     <div
+      draggable
       onClick={(e) => onSelect(obj.id, e)}
       onDoubleClick={() => onDoubleClick(obj)}
       onContextMenu={(e) => onContextMenu(e, obj.id)}
+      onDragStart={(e) => onDragStart?.(e, obj.id)}
+      onDragOver={(e) => { e.preventDefault(); onDragOver?.(e, obj.id); }}
+      onDrop={(e) => onDrop?.(e, obj.id)}
       className={`flex items-center gap-1.5 px-2 py-1.5 rounded-md cursor-pointer group transition-all duration-150 ${
         isSelected
           ? "bg-[#00D4FF]/10 text-[#00D4FF] shadow-[inset_0_0_0_1px_rgba(0,212,255,0.15)]"
           : "text-slate-400 hover:bg-[#21262d]/50 hover:text-slate-300"
-      }`}
+      } ${isDragOver ? "border-t-2 border-[#00D4FF]" : ""}`}
     >
+      <span className="shrink-0 cursor-grab opacity-0 group-hover:opacity-40 transition-opacity">
+        <Grip size={8} className="text-slate-500" />
+      </span>
       <span className={`shrink-0 ${isSelected ? "text-[#00D4FF]" : "text-slate-500"}`}>
         {getTypeIcon(obj.type, obj.featureType)}
       </span>
@@ -202,6 +217,8 @@ export default function FeatureTree() {
   const [componentsExpanded, setComponentsExpanded] = useState(true);
   const [rollbackIdx, setRollbackIdx] = useState<number | null>(null);
   const [planeVisibility, setPlaneVisibility] = useState({ xy: true, xz: true, yz: true });
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [dragSourceId, setDragSourceId] = useState<string | null>(null);
 
   const editInputRef = useRef<HTMLInputElement>(null);
 
@@ -266,6 +283,35 @@ export default function FeatureTree() {
     [objects]
   );
 
+  const handleDragStart = useCallback((e: React.DragEvent, id: string) => {
+    setDragSourceId(id);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", id);
+  }, []);
+
+  const handleDragOver = useCallback((_e: React.DragEvent, id: string) => {
+    setDragOverId(id);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent, targetId: string) => {
+    e.preventDefault();
+    const sourceId = e.dataTransfer.getData("text/plain");
+    if (sourceId && sourceId !== targetId) {
+      const sourceIdx = objects.findIndex((o) => o.id === sourceId);
+      const targetIdx = objects.findIndex((o) => o.id === targetId);
+      if (sourceIdx >= 0 && targetIdx >= 0) {
+        // Also reorder in featureHistory if applicable
+        const feat = featureHistory.find((f) => f.objectId === sourceId);
+        if (feat) {
+          const store = useCadStore.getState();
+          store.reorderFeature(feat.id, targetIdx);
+        }
+      }
+    }
+    setDragOverId(null);
+    setDragSourceId(null);
+  }, [objects, featureHistory]);
+
   const commonRowProps = {
     editingId,
     editName,
@@ -275,6 +321,9 @@ export default function FeatureTree() {
     onRename: handleRename,
     setEditingId,
     updateObject,
+    onDragStart: handleDragStart,
+    onDragOver: handleDragOver,
+    onDrop: handleDrop,
   };
 
   const renderSection = (
@@ -308,6 +357,7 @@ export default function FeatureTree() {
                 isSelected={isSelected}
                 onSelect={handleClick}
                 onContextMenu={handleContextMenu}
+                isDragOver={dragOverId === obj.id}
                 {...commonRowProps}
               />
             );
@@ -465,6 +515,7 @@ export default function FeatureTree() {
                         isSelected={isSelected}
                         onSelect={handleClick}
                         onContextMenu={handleContextMenu}
+                        isDragOver={dragOverId === obj.id}
                         {...commonRowProps}
                       />
                     );
@@ -481,6 +532,7 @@ export default function FeatureTree() {
                         isSelected={isSelected}
                         onSelect={handleClick}
                         onContextMenu={handleContextMenu}
+                        isDragOver={dragOverId === featObj.id}
                         {...commonRowProps}
                       />
                     );

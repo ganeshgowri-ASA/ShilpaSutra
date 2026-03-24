@@ -25,14 +25,22 @@ export type SketchEntity =
   | "centerline"
   | "point"
   | "slot"
+  | "slot_arc"
+  | "parabola"
+  | "sketch_text"
   | "fillet_sketch"
   | "chamfer_sketch";
 
 export type SketchOperation =
   | "trim"
+  | "power_trim"
   | "extend"
   | "offset"
+  | "offset_entities"
+  | "convert_entities"
   | "mirror_sketch"
+  | "mirror_entities"
+  | "split_entities"
   | "dimension"
   | "sketch_fillet"
   | "sketch_chamfer"
@@ -75,7 +83,10 @@ const sketchEntities: {
   { id: "polygon", icon: <Pentagon size={14} />, label: "Polygon", toolId: "polygon" },
   { id: "spline", icon: <Spline size={14} />, label: "Spline", toolId: "spline" },
   { id: "ellipse", icon: <Ellipsis size={14} />, label: "Ellipse", toolId: "ellipse" },
+  { id: "parabola", icon: <Spline size={14} />, label: "Parabola", toolId: "parabola" },
   { id: "slot", icon: <Minus size={14} />, label: "Slot", toolId: "slot" },
+  { id: "slot_arc", icon: <Minus size={14} />, label: "Arc Slot", toolId: "slot_arc" },
+  { id: "sketch_text", icon: <Hash size={14} />, label: "Text", toolId: "sketch_text" },
   { id: "point", icon: <Octagon size={14} />, label: "Point", toolId: "point" },
   { id: "centerline", icon: <Construction size={14} />, label: "C.Line", toolId: "centerline" },
   { id: "construction_line", icon: <Construction size={14} />, label: "Constr.", toolId: "construction_line" },
@@ -88,9 +99,14 @@ const sketchOperations: {
   shortcut?: string;
 }[] = [
   { id: "trim", icon: <Scissors size={14} />, label: "Trim", shortcut: "T" },
+  { id: "power_trim", icon: <Scissors size={14} />, label: "P.Trim" },
   { id: "extend", icon: <ArrowRight size={14} />, label: "Extend", shortcut: "X" },
+  { id: "split_entities", icon: <Scissors size={14} />, label: "Split" },
   { id: "offset", icon: <Minus size={14} />, label: "Offset", shortcut: "O" },
+  { id: "offset_entities", icon: <Minus size={14} />, label: "Off.Ent" },
+  { id: "convert_entities", icon: <ArrowRight size={14} />, label: "Convert" },
   { id: "mirror_sketch", icon: <FlipHorizontal size={14} />, label: "Mirror", shortcut: "M" },
+  { id: "mirror_entities", icon: <FlipHorizontal size={14} />, label: "Mir.Ent" },
   { id: "dimension", icon: <RulerIcon size={14} />, label: "Dimension", shortcut: "D" },
   { id: "sketch_fillet", icon: <CornerDownRight size={14} />, label: "Sk.Fillet" },
   { id: "sketch_chamfer", icon: <Octagon size={14} />, label: "Sk.Chamfer" },
@@ -220,7 +236,7 @@ export default function SketchToolbar({ visible, onSelectPlane }: SketchToolbarP
     });
   }, []);
 
-  const sketchTools: ToolId[] = ["line", "arc", "arc_3point", "arc_tangent", "circle", "circle_3point", "rectangle", "center_rectangle", "polygon", "spline", "ellipse", "slot", "point", "centerline", "construction_line"];
+  const sketchTools: ToolId[] = ["line", "arc", "arc_3point", "arc_tangent", "circle", "circle_3point", "rectangle", "center_rectangle", "polygon", "spline", "ellipse", "parabola", "slot", "slot_arc", "sketch_text", "point", "centerline", "construction_line"];
   const isInSketchMode = sketchTools.includes(activeTool);
 
   if (!visible && !isInSketchMode) return null;

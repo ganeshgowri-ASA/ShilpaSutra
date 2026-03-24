@@ -23,6 +23,7 @@ const ALL_CONSTRAINT_TYPES: ConstraintType[] = [
   "coincident", "parallel", "perpendicular", "tangent", "equal",
   "fix", "horizontal", "vertical", "concentric", "symmetric",
   "distance", "angle", "radius", "diameter", "midpoint",
+  "pierce", "merge", "equal_curvature",
 ];
 
 const DIMENSIONAL_TYPES = new Set<ConstraintType>([
@@ -32,6 +33,7 @@ const DIMENSIONAL_TYPES = new Set<ConstraintType>([
 const GEOMETRIC_TYPES = new Set<ConstraintType>([
   "coincident", "parallel", "perpendicular", "tangent", "equal",
   "fix", "horizontal", "vertical", "concentric", "symmetric", "midpoint",
+  "pierce", "merge", "equal_curvature",
 ]);
 
 const constraintIcons: Record<ConstraintType, React.ReactNode> = {
@@ -50,6 +52,9 @@ const constraintIcons: Record<ConstraintType, React.ReactNode> = {
   radius: <CircleDot size={12} />,
   diameter: <Diameter size={12} />,
   midpoint: <Milestone size={12} />,
+  pierce: <Pencil size={12} />,
+  merge: <Link2 size={12} />,
+  equal_curvature: <RotateCw size={12} />,
 };
 
 const constraintLabels: Record<ConstraintType, string> = {
@@ -68,6 +73,9 @@ const constraintLabels: Record<ConstraintType, string> = {
   radius: "Radius",
   diameter: "Diameter",
   midpoint: "Midpoint",
+  pierce: "Pierce",
+  merge: "Merge",
+  equal_curvature: "Equal Curvature",
 };
 
 const constraintDescriptions: Record<ConstraintType, string> = {
@@ -86,6 +94,9 @@ const constraintDescriptions: Record<ConstraintType, string> = {
   radius: "Set the radius of a circle or arc",
   diameter: "Set the diameter of a circle or arc",
   midpoint: "Constrain a point to the midpoint of a segment",
+  pierce: "Constrain a point to lie on a line or edge",
+  merge: "Merge two points into a single point",
+  equal_curvature: "Force two curves to have equal curvature at a junction",
 };
 
 const dimensionalUnits: Record<string, string> = {
