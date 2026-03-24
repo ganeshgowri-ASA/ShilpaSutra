@@ -63,11 +63,19 @@ export type FeatureType =
   | "extrude"
   | "revolve"
   | "linear_pattern"
-  | "circular_pattern";
+  | "circular_pattern"
+  | "fillet"
+  | "chamfer"
+  | "shell"
+  | "mirror_feature"
+  | "loft"
+  | "sweep"
+  | "sketch_group"
+  | "component";
 
 export interface CadObject {
   id: string;
-  type: "box" | "cylinder" | "sphere" | "cone" | "line" | "arc" | "circle" | "rectangle" | "mesh";
+  type: "box" | "cylinder" | "sphere" | "cone" | "line" | "arc" | "circle" | "rectangle" | "polygon" | "ellipse" | "spline" | "mesh";
   name: string;
   position: [number, number, number];
   rotation: [number, number, number];
@@ -98,6 +106,22 @@ export interface CadObject {
   featureType?: FeatureType;
   featureParams?: Record<string, unknown>;
   sketchPlane?: "xy" | "xz" | "yz";
+  // Sketch profile grouping
+  sketchId?: string; // ID of parent sketch group this entity belongs to
+  isProfile?: boolean; // Whether this is a closed profile suitable for extrude
+  isConstruction?: boolean; // Construction geometry (reference only, not solid)
+  // Polygon-specific
+  polygonPoints?: [number, number, number][];
+  polygonSides?: number;
+  // Component metadata
+  componentType?: string; // e.g., "hex_bolt", "spur_gear"
+  componentParams?: Record<string, number>;
+  // Spline-specific
+  splinePoints?: [number, number, number][];
+  // Ellipse-specific
+  ellipseCenter?: [number, number, number];
+  ellipseRx?: number;
+  ellipseRy?: number;
 }
 
 export interface FeatureNode {
@@ -110,6 +134,8 @@ export interface FeatureNode {
   visible: boolean;
   locked: boolean;
   expanded: boolean;
+  params?: Record<string, unknown>;
+  sketchStatus?: "editing" | "locked";
 }
 
 export interface Measurement {
@@ -196,6 +222,13 @@ interface CadState {
   // Sketch mode
   sketchPlane: "xy" | "xz" | "yz" | null;
   autoConstraints: boolean;
+
+  // Sketch profiles
+  activeSketchId: string | null;
+  sketchProfiles: Record<string, string[]>; // sketchId -> objectIds[]
+
+  // Rollback
+  rollbackIndex: number | null;
 
   // Active operation dialogs
   activeOperation: "fillet" | "chamfer" | "shell" | "draft" | "linear_pattern" | "circular_pattern" | "mirror" | "path_pattern" | null;
@@ -294,6 +327,25 @@ interface CadState {
   extrudeFromSketch: (sketchId: string, distance: number) => void;
   revolveFromSketch: (sketchId: string, angle: number) => void;
 
+  // Sketch profile management
+  createSketchGroup: (plane: "xy" | "xz" | "yz") => string;
+  exitAndLockSketch: () => void;
+  getSketchProfiles: (sketchId: string) => CadObject[];
+
+  // Enhanced extrude supporting polygon/line profiles
+  extrudeProfile: (sketchId: string, distance: number, direction: "normal" | "reverse" | "midplane" | "both") => void;
+
+  // AI scene bridge
+  aiExtrude: (distance: number) => string | null;
+  aiAddHole: (diameter: number, depth: number) => string | null;
+  aiFilletSelected: (radius: number) => boolean;
+  aiChamferSelected: (distance: number) => boolean;
+  aiMirror: (plane: "xy" | "xz" | "yz") => string[];
+  aiRotate: (angleDeg: number, axis: "x" | "y" | "z") => boolean;
+  aiScale: (factor: number) => boolean;
+  aiCreateGear: (teeth: number, module_: number, width: number) => string;
+  aiShell: (thickness: number) => boolean;
+
   // Command
   executeCommand: (cmd: string) => void;
 }
@@ -349,6 +401,11 @@ export const useCadStore = create<CadState>((set, get) => ({
   sketchPlane: null,
   autoConstraints: true,
 
+  // Sketch profiles
+  activeSketchId: null,
+  sketchProfiles: {},
+  rollbackIndex: null,
+
   // Active operation
   activeOperation: null,
 
@@ -389,8 +446,56 @@ export const useCadStore = create<CadState>((set, get) => ({
   setPropertyPanelCollapsed: (v) => set({ propertyPanelCollapsed: v }),
   setCameraView: (view) => set({ cameraView: view }),
   setSketchPlane: (plane) => set({ sketchPlane: plane }),
-  enterSketchMode: (plane) => set({ sketchPlane: plane, activeRibbonTab: "sketch" }),
-  exitSketchMode: () => set({ sketchPlane: null, activeTool: "select" }),
+  enterSketchMode: (plane) => {
+    const sketchId = `sketch_${Date.now()}`;
+    set({
+      sketchPlane: plane,
+      activeRibbonTab: "sketch",
+      activeSketchId: sketchId,
+    });
+    // Add sketch group to feature history
+    get().addFeature({
+      id: sketchId,
+      type: "sketch_group",
+      name: `Sketch ${get().featureHistory.filter(f => f.type === "sketch_group").length + 1}`,
+      objectId: sketchId,
+      visible: true,
+      locked: false,
+    });
+    // Update feature with sketch status
+    set((s) => ({
+      featureHistory: s.featureHistory.map(f =>
+        f.id === sketchId ? { ...f, sketchStatus: "editing" as const, params: { plane } } : f
+      ),
+    }));
+  },
+  exitSketchMode: () => {
+    const { activeSketchId, objects, featureHistory } = get();
+    if (activeSketchId) {
+      // Find sketch entities created during this sketch session
+      const sketchEntities = objects.filter(o => o.sketchId === activeSketchId);
+      const entityCount = sketchEntities.length;
+      // Check for closed profiles
+      const hasClosedProfile = sketchEntities.some(o =>
+        o.type === "rectangle" || o.type === "circle" ||
+        (o.type === "polygon" && o.polygonPoints && o.polygonPoints.length >= 3) ||
+        o.isProfile
+      );
+      // Update sketch group in feature history
+      set((s) => ({
+        featureHistory: s.featureHistory.map(f =>
+          f.id === activeSketchId
+            ? { ...f, sketchStatus: "locked" as const, params: { ...((f.params as Record<string, unknown>) || {}), entityCount, hasClosedProfile } }
+            : f
+        ),
+        sketchProfiles: {
+          ...s.sketchProfiles,
+          [activeSketchId]: sketchEntities.map(o => o.id),
+        },
+      }));
+    }
+    set({ sketchPlane: null, activeTool: "select", activeSketchId: null });
+  },
   setAutoConstraints: (v) => set({ autoConstraints: v }),
   setActiveOperation: (op) => set({ activeOperation: op }),
   setShowHistoryTimeline: (v) => set({ showHistoryTimeline: v }),
@@ -680,6 +785,8 @@ export const useCadStore = create<CadState>((set, get) => ({
       metalness: 0,
       roughness: 1,
       linePoints: points,
+      sketchId: get().activeSketchId || undefined,
+      sketchPlane: get().sketchPlane || undefined,
     };
     set((s) => ({ objects: [...s.objects, obj], selectedId: id, selectedIds: [id] }));
     get().addFeature({
@@ -714,6 +821,8 @@ export const useCadStore = create<CadState>((set, get) => ({
       roughness: 1,
       arcPoints: points,
       arcRadius: radius,
+      sketchId: get().activeSketchId || undefined,
+      sketchPlane: get().sketchPlane || undefined,
     };
     set((s) => ({ objects: [...s.objects, obj], selectedId: id, selectedIds: [id] }));
     get().addFeature({
@@ -748,6 +857,8 @@ export const useCadStore = create<CadState>((set, get) => ({
       roughness: 1,
       circleCenter: center,
       circleRadius: radius,
+      sketchId: get().activeSketchId || undefined,
+      sketchPlane: get().sketchPlane || undefined,
     };
     set((s) => ({ objects: [...s.objects, obj], selectedId: id, selectedIds: [id] }));
     get().addFeature({
@@ -785,6 +896,8 @@ export const useCadStore = create<CadState>((set, get) => ({
       metalness: 0,
       roughness: 1,
       rectCorners: [corner1, corner2],
+      sketchId: get().activeSketchId || undefined,
+      sketchPlane: get().sketchPlane || undefined,
     };
     set((s) => ({ objects: [...s.objects, obj], selectedId: id, selectedIds: [id] }));
     get().addFeature({
@@ -1288,5 +1401,334 @@ const phiLength = (angle * Math.PI) / 180;
       selectedId: id, selectedIds: [id],
     }));
     geo.dispose();
+  },
+
+  // ── Sketch profile management ──
+  createSketchGroup: (plane) => {
+    const sketchId = `sketch_${Date.now()}`;
+    get().addFeature({
+      id: sketchId,
+      type: "sketch_group",
+      name: `Sketch ${get().featureHistory.filter(f => f.type === "sketch_group").length + 1}`,
+      objectId: sketchId,
+      visible: true,
+      locked: false,
+    });
+    set({ activeSketchId: sketchId });
+    return sketchId;
+  },
+
+  exitAndLockSketch: () => {
+    get().exitSketchMode();
+  },
+
+  getSketchProfiles: (sketchId) => {
+    const { objects, sketchProfiles } = get();
+    const ids = sketchProfiles[sketchId] || [];
+    return objects.filter(o => ids.includes(o.id));
+  },
+
+  // ── Enhanced extrude with direction modes ──
+  extrudeProfile: (sketchId, distance, direction) => {
+    const { objects } = get();
+    // Find closed profiles in the sketch
+    const sketchEntities = objects.filter(o => o.sketchId === sketchId || o.id === sketchId);
+    const profile = sketchEntities.find(o =>
+      o.type === "rectangle" || o.type === "circle" || o.isProfile
+    );
+    if (!profile) {
+      // Try finding any selected sketch entity
+      const sel = get().getSelected();
+      if (sel && (sel.type === "rectangle" || sel.type === "circle")) {
+        get().extrudeFromSketch(sel.id, direction === "midplane" ? distance / 2 : distance);
+        return;
+      }
+      return;
+    }
+    const actualDistance = direction === "midplane" ? distance / 2 : distance;
+    get().extrudeFromSketch(profile.id, actualDistance);
+  },
+
+  // ── AI Scene Bridge Methods ──
+  aiExtrude: (distance) => {
+    const selected = get().getSelected();
+    if (!selected) return null;
+    if (selected.type === "rectangle" || selected.type === "circle") {
+      get().extrudeFromSketch(selected.id, distance);
+      return get().selectedId;
+    }
+    return null;
+  },
+
+  aiAddHole: (diameter, depth) => {
+    const selected = get().getSelected();
+    if (!selected) return null;
+    get().pushHistory();
+    const radius = diameter / 2 / 10; // Convert mm to scene units
+    const id = get().addGeneratedObject({
+      type: "cylinder",
+      name: `Hole D${diameter}`,
+      dimensions: { width: radius, height: depth / 10, depth: radius },
+      position: [...selected.position] as [number, number, number],
+      color: "#333333",
+      featureType: "boolean_subtract" as const,
+      featureParams: { diameter, depth, parentId: selected.id },
+    });
+    return id;
+  },
+
+  aiFilletSelected: (radius) => {
+    const selected = get().getSelected();
+    if (!selected || ["line", "arc", "circle", "rectangle"].includes(selected.type)) return false;
+    get().pushHistory();
+    // Generate filleted geometry using Three.js rounded box approximation
+    const w = selected.dimensions.width;
+    const h = selected.dimensions.height;
+    const d = selected.dimensions.depth;
+    const r = Math.min(radius / 10, Math.min(w, h, d) / 2.5);
+
+    // Create a rounded box shape
+    const shape = new THREE.Shape();
+    shape.moveTo(-w/2 + r, -d/2);
+    shape.lineTo(w/2 - r, -d/2);
+    shape.quadraticCurveTo(w/2, -d/2, w/2, -d/2 + r);
+    shape.lineTo(w/2, d/2 - r);
+    shape.quadraticCurveTo(w/2, d/2, w/2 - r, d/2);
+    shape.lineTo(-w/2 + r, d/2);
+    shape.quadraticCurveTo(-w/2, d/2, -w/2, d/2 - r);
+    shape.lineTo(-w/2, -d/2 + r);
+    shape.quadraticCurveTo(-w/2, -d/2, -w/2 + r, -d/2);
+
+    const geo = new THREE.ExtrudeGeometry(shape, { depth: h, bevelEnabled: false });
+    geo.rotateX(-Math.PI / 2);
+    geo.translate(0, h/2, 0);
+    geo.computeVertexNormals();
+
+    const pos = geo.attributes.position;
+    const vertices: number[] = [];
+    for (let i = 0; i < pos.count; i++) vertices.push(pos.getX(i), pos.getY(i), pos.getZ(i));
+    const idx = geo.index;
+    const indices: number[] = [];
+    if (idx) { for (let i = 0; i < idx.count; i++) indices.push(idx.getX(i)); }
+    else { for (let i = 0; i < pos.count; i++) indices.push(i); }
+
+    get().updateObject(selected.id, {
+      type: "mesh",
+      meshVertices: vertices,
+      meshIndices: indices,
+      name: `${selected.name} (R${radius} fillet)`,
+      featureType: "fillet" as FeatureType,
+      featureParams: { radius, originalType: selected.type },
+    });
+    geo.dispose();
+    return true;
+  },
+
+  aiChamferSelected: (distance) => {
+    const selected = get().getSelected();
+    if (!selected || ["line", "arc", "circle", "rectangle"].includes(selected.type)) return false;
+    get().pushHistory();
+    const w = selected.dimensions.width;
+    const h = selected.dimensions.height;
+    const d = selected.dimensions.depth;
+    const c = Math.min(distance / 10, Math.min(w, h, d) / 2.5);
+
+    const shape = new THREE.Shape();
+    shape.moveTo(-w/2 + c, -d/2);
+    shape.lineTo(w/2 - c, -d/2);
+    shape.lineTo(w/2, -d/2 + c);
+    shape.lineTo(w/2, d/2 - c);
+    shape.lineTo(w/2 - c, d/2);
+    shape.lineTo(-w/2 + c, d/2);
+    shape.lineTo(-w/2, d/2 - c);
+    shape.lineTo(-w/2, -d/2 + c);
+    shape.closePath();
+
+    const geo = new THREE.ExtrudeGeometry(shape, { depth: h, bevelEnabled: false });
+    geo.rotateX(-Math.PI / 2);
+    geo.translate(0, h/2, 0);
+    geo.computeVertexNormals();
+
+    const pos = geo.attributes.position;
+    const vertices: number[] = [];
+    for (let i = 0; i < pos.count; i++) vertices.push(pos.getX(i), pos.getY(i), pos.getZ(i));
+    const idx = geo.index;
+    const indices: number[] = [];
+    if (idx) { for (let i = 0; i < idx.count; i++) indices.push(idx.getX(i)); }
+    else { for (let i = 0; i < pos.count; i++) indices.push(i); }
+
+    get().updateObject(selected.id, {
+      type: "mesh",
+      meshVertices: vertices,
+      meshIndices: indices,
+      name: `${selected.name} (${distance}mm chamfer)`,
+      featureType: "chamfer" as FeatureType,
+      featureParams: { distance, originalType: selected.type },
+    });
+    geo.dispose();
+    return true;
+  },
+
+  aiMirror: (plane) => {
+    const selected = get().getSelected();
+    if (!selected) return [];
+    get().pushHistory();
+    const newPos: [number, number, number] = [selected.position[0], selected.position[1], selected.position[2]];
+    if (plane === "yz") newPos[0] = -newPos[0];
+    if (plane === "xy") newPos[2] = -newPos[2];
+    if (plane === "xz") newPos[1] = -newPos[1];
+
+    const id = get().addGeneratedObject({
+      type: selected.type,
+      name: `${selected.name} (mirrored)`,
+      dimensions: { ...selected.dimensions },
+      position: newPos,
+      rotation: [...selected.rotation] as [number, number, number],
+      color: selected.color,
+      material: selected.material,
+      meshVertices: selected.meshVertices ? [...selected.meshVertices] : undefined,
+      meshIndices: selected.meshIndices ? [...selected.meshIndices] : undefined,
+      featureType: "mirror_feature" as FeatureType,
+      featureParams: { plane, sourceId: selected.id },
+    });
+    return [id];
+  },
+
+  aiRotate: (angleDeg, axis) => {
+    const selected = get().getSelected();
+    if (!selected) return false;
+    get().pushHistory();
+    const rad = (angleDeg * Math.PI) / 180;
+    const rot: [number, number, number] = [selected.rotation[0], selected.rotation[1], selected.rotation[2]];
+    if (axis === "x") rot[0] += rad;
+    else if (axis === "y") rot[1] += rad;
+    else rot[2] += rad;
+    get().updateObject(selected.id, { rotation: rot });
+    return true;
+  },
+
+  aiScale: (factor) => {
+    const selected = get().getSelected();
+    if (!selected) return false;
+    get().pushHistory();
+    get().updateObject(selected.id, {
+      dimensions: {
+        width: selected.dimensions.width * factor,
+        height: selected.dimensions.height * factor,
+        depth: selected.dimensions.depth * factor,
+      },
+    });
+    return true;
+  },
+
+  aiCreateGear: (teeth, module_, width) => {
+    get().pushHistory();
+    const pitchRadius = (teeth * module_) / 20; // scene units
+    const outerRadius = pitchRadius * 1.1;
+    const innerRadius = pitchRadius * 0.85;
+    const faceWidth = width / 10;
+
+    // Generate gear tooth profile
+    const shape = new THREE.Shape();
+    const toothCount = teeth;
+    for (let i = 0; i < toothCount; i++) {
+      const a0 = (i / toothCount) * Math.PI * 2;
+      const a1 = ((i + 0.15) / toothCount) * Math.PI * 2;
+      const a2 = ((i + 0.35) / toothCount) * Math.PI * 2;
+      const a3 = ((i + 0.5) / toothCount) * Math.PI * 2;
+      const a4 = ((i + 0.65) / toothCount) * Math.PI * 2;
+      const a5 = ((i + 0.85) / toothCount) * Math.PI * 2;
+      if (i === 0) {
+        shape.moveTo(Math.cos(a0) * innerRadius, Math.sin(a0) * innerRadius);
+      }
+      shape.lineTo(Math.cos(a1) * innerRadius, Math.sin(a1) * innerRadius);
+      shape.lineTo(Math.cos(a2) * outerRadius, Math.sin(a2) * outerRadius);
+      shape.lineTo(Math.cos(a3) * outerRadius, Math.sin(a3) * outerRadius);
+      shape.lineTo(Math.cos(a4) * outerRadius, Math.sin(a4) * outerRadius);
+      shape.lineTo(Math.cos(a5) * innerRadius, Math.sin(a5) * innerRadius);
+    }
+    shape.closePath();
+
+    // Add center hole
+    const holePath = new THREE.Path();
+    const holeRadius = innerRadius * 0.3;
+    holePath.absarc(0, 0, holeRadius, 0, Math.PI * 2, true);
+    shape.holes.push(holePath);
+
+    const geo = new THREE.ExtrudeGeometry(shape, { depth: faceWidth, bevelEnabled: false });
+    geo.rotateX(-Math.PI / 2);
+    geo.computeVertexNormals();
+
+    const pos = geo.attributes.position;
+    const vertices: number[] = [];
+    for (let i = 0; i < pos.count; i++) vertices.push(pos.getX(i), pos.getY(i), pos.getZ(i));
+    const idx = geo.index;
+    const indices: number[] = [];
+    if (idx) { for (let i = 0; i < idx.count; i++) indices.push(idx.getX(i)); }
+    else { for (let i = 0; i < pos.count; i++) indices.push(i); }
+
+    const id = get().addGeneratedObject({
+      type: "mesh",
+      name: `Gear ${teeth}T M${module_}`,
+      dimensions: { width: outerRadius * 2, height: faceWidth, depth: outerRadius * 2 },
+      position: [0, faceWidth / 2, 0],
+      meshVertices: vertices,
+      meshIndices: indices,
+      color: "#b0906a",
+      material: "Steel (AISI 1045)",
+      featureParams: { teeth, module: module_, width },
+    });
+    geo.dispose();
+    return id;
+  },
+
+  aiShell: (thickness) => {
+    const selected = get().getSelected();
+    if (!selected || selected.type === "line" || selected.type === "arc" || selected.type === "circle" || selected.type === "rectangle") return false;
+    get().pushHistory();
+    const t = thickness / 10;
+    const w = selected.dimensions.width;
+    const h = selected.dimensions.height;
+    const d = selected.dimensions.depth;
+
+    // Create outer and inner boxes to simulate shell
+    const outerShape = new THREE.Shape();
+    outerShape.moveTo(-w/2, -d/2);
+    outerShape.lineTo(w/2, -d/2);
+    outerShape.lineTo(w/2, d/2);
+    outerShape.lineTo(-w/2, d/2);
+    outerShape.closePath();
+
+    const innerHole = new THREE.Path();
+    innerHole.moveTo(-w/2 + t, -d/2 + t);
+    innerHole.lineTo(w/2 - t, -d/2 + t);
+    innerHole.lineTo(w/2 - t, d/2 - t);
+    innerHole.lineTo(-w/2 + t, d/2 - t);
+    innerHole.closePath();
+    outerShape.holes.push(innerHole);
+
+    const geo = new THREE.ExtrudeGeometry(outerShape, { depth: h - t, bevelEnabled: false });
+    geo.rotateX(-Math.PI / 2);
+    geo.translate(0, (h - t) / 2, 0);
+    geo.computeVertexNormals();
+
+    const pos = geo.attributes.position;
+    const vertices: number[] = [];
+    for (let i = 0; i < pos.count; i++) vertices.push(pos.getX(i), pos.getY(i), pos.getZ(i));
+    const idx = geo.index;
+    const indices: number[] = [];
+    if (idx) { for (let i = 0; i < idx.count; i++) indices.push(idx.getX(i)); }
+    else { for (let i = 0; i < pos.count; i++) indices.push(i); }
+
+    get().updateObject(selected.id, {
+      type: "mesh",
+      meshVertices: vertices,
+      meshIndices: indices,
+      name: `${selected.name} (shell ${thickness}mm)`,
+      featureType: "shell" as FeatureType,
+      featureParams: { thickness, originalType: selected.type },
+    });
+    geo.dispose();
+    return true;
   },
 }));

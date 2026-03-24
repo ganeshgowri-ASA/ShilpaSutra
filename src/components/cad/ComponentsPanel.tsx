@@ -484,6 +484,8 @@ export default function ComponentsPanel() {
       name: selected.label,
       color: geo.color,
       dimensions: { width: geo.w * 100, height: geo.h * 100, depth: geo.d * 100 },
+      componentType: selected.id,
+      componentParams: { ...params },
     });
     // track recently used
     setRecentIds(prev => {

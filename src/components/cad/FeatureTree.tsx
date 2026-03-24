@@ -10,6 +10,7 @@ import {
   Search, Layers, MoreVertical, Trash2, Copy,
   Edit3, PanelLeftClose, PanelLeft, GitBranch, Wrench, Shapes,
   RotateCw, Grid3X3, Combine, ArrowUp,
+  Scissors, Target, Hash, Grip,
 } from "lucide-react";
 import ConstraintManager from "@/components/cad/ConstraintManager";
 
@@ -121,6 +122,12 @@ function ObjectRow({
       {paramSummary && (
         <span className="text-[8px] text-slate-600 shrink-0 font-mono bg-[#0d1117] px-1 rounded">{paramSummary}</span>
       )}
+      {obj.sketchId && (
+        <span className="text-[7px] text-cyan-500/50 shrink-0 font-mono">S</span>
+      )}
+      {obj.isProfile && (
+        <span className="text-[7px] text-emerald-500/50 shrink-0 font-mono bg-emerald-500/5 px-0.5 rounded">P</span>
+      )}
 
       <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-all duration-150">
         <button
@@ -164,6 +171,7 @@ export default function FeatureTree() {
   const deleteObject = useCadStore((s) => s.deleteObject);
   const featureTreeCollapsed = useCadStore((s) => s.featureTreeCollapsed);
   const setFeatureTreeCollapsed = useCadStore((s) => s.setFeatureTreeCollapsed);
+  const featureHistory = useCadStore((s) => s.featureHistory);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -173,6 +181,8 @@ export default function FeatureTree() {
   const [sketchesExpanded, setSketchesExpanded] = useState(true);
   const [featuresExpanded, setFeaturesExpanded] = useState(true);
   const [bodiesExpanded, setBodiesExpanded] = useState(true);
+  const [componentsExpanded, setComponentsExpanded] = useState(true);
+  const [rollbackIdx, setRollbackIdx] = useState<number | null>(null);
   const [planeVisibility, setPlaneVisibility] = useState({ xy: true, xz: true, yz: true });
 
   const editInputRef = useRef<HTMLInputElement>(null);
@@ -185,6 +195,7 @@ export default function FeatureTree() {
   const sketches = filteredObjects.filter((o) => SKETCH_TYPES.has(o.type));
   const features = filteredObjects.filter((o) => o.type === "mesh" && o.featureType);
   const bodies = filteredObjects.filter((o) => SOLID_TYPES.has(o.type) || (o.type === "mesh" && !o.featureType));
+  const components = filteredObjects.filter((o) => o.componentType);
 
   const handleClick = useCallback(
     (id: string, e: React.MouseEvent) => {
@@ -378,6 +389,47 @@ export default function FeatureTree() {
           )}
         </div>
 
+        {/* Sketch Groups (from feature history) */}
+        {featureHistory.filter(f => f.type === "sketch_group").map((sketchGroup) => {
+          const sketchEntities = objects.filter(o => o.sketchId === sketchGroup.id);
+          const isLocked = (sketchGroup as { sketchStatus?: string }).sketchStatus === "locked";
+          return (
+            <div key={sketchGroup.id} className="mb-0.5">
+              <button
+                onClick={() => setSketchesExpanded(!sketchesExpanded)}
+                className="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-md text-slate-400 hover:bg-[#21262d]/60 transition-all duration-150 group"
+              >
+                <span className="transition-transform duration-150" style={{ transform: sketchesExpanded ? "rotate(90deg)" : "rotate(0deg)" }}>
+                  <ChevronRight size={11} className="text-slate-600 group-hover:text-slate-400" />
+                </span>
+                <GitBranch size={12} className={isLocked ? "text-emerald-400" : "text-cyan-400"} />
+                <span className="text-[11px] font-semibold tracking-wide">{sketchGroup.name}</span>
+                <span className="ml-auto flex items-center gap-1">
+                  {isLocked && <Lock size={8} className="text-emerald-500/60" />}
+                  <span className="text-[8px] text-slate-600 bg-[#0d1117] rounded-full px-1.5 py-0.5 font-mono">{sketchEntities.length}</span>
+                </span>
+              </button>
+              {sketchesExpanded && sketchEntities.length > 0 && (
+                <div className="ml-3 pl-2 border-l border-[#21262d]/60 space-y-px mt-0.5">
+                  {sketchEntities.map((obj) => {
+                    const isSelected = selectedId === obj.id || selectedIds.includes(obj.id);
+                    return (
+                      <ObjectRow
+                        key={obj.id}
+                        obj={obj}
+                        isSelected={isSelected}
+                        onSelect={handleClick}
+                        onContextMenu={handleContextMenu}
+                        {...commonRowProps}
+                      />
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
         {/* Sketches section */}
         {renderSection(
           "Sketches",
@@ -407,6 +459,24 @@ export default function FeatureTree() {
           setBodiesExpanded,
           bodies.length
         )}
+
+        {/* Components section */}
+        {renderSection(
+          "Components",
+          <Shapes size={12} className="text-orange-400" />,
+          components,
+          componentsExpanded,
+          setComponentsExpanded,
+          components.length
+        )}
+
+        {/* Rollback Bar */}
+        <div className="mt-2 mx-1.5">
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-[#0d1117]/50 border border-dashed border-[#30363d] cursor-row-resize hover:border-[#00D4FF]/30 transition-colors group">
+            <Grip size={10} className="text-slate-600 group-hover:text-[#00D4FF]" />
+            <span className="text-[9px] text-slate-600 group-hover:text-slate-400 font-medium">Rollback Bar</span>
+          </div>
+        </div>
       </div>
 
       {/* Constraint Manager */}
@@ -470,6 +540,24 @@ export default function FeatureTree() {
                   className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[11px] text-yellow-400 hover:bg-yellow-500/10 transition-colors duration-150"
                 >
                   <MoreVertical size={12} /> Suppress Feature
+                </button>
+              ) : null;
+            })()}
+            {/* Edit Sketch */}
+            {(() => {
+              const obj = objects.find((o) => o.id === contextMenu.objectId);
+              return obj && SKETCH_TYPES.has(obj.type) ? (
+                <button
+                  onClick={() => {
+                    const store = useCadStore.getState();
+                    const plane = obj.sketchPlane || "xz";
+                    store.enterSketchMode(plane);
+                    store.selectObject(obj.id);
+                    setContextMenu(null);
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-1.5 text-[11px] text-cyan-400 hover:bg-cyan-500/10 transition-colors duration-150"
+                >
+                  <Edit3 size={12} /> Edit Sketch
                 </button>
               ) : null;
             })()}
