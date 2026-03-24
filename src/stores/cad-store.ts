@@ -10,17 +10,26 @@ export type ToolId =
   | "cone"
   | "line"
   | "arc"
+  | "arc_3point"
+  | "arc_tangent"
   | "circle"
+  | "circle_3point"
   | "rectangle"
+  | "center_rectangle"
   | "polygon"
   | "spline"
   | "ellipse"
   | "construction_line"
+  | "centerline"
+  | "point"
+  | "slot"
   | "delete"
   | "measure"
   | "measure_angle"
   | "extrude"
+  | "extrude_cut"
   | "revolve"
+  | "revolve_cut"
   | "loft"
   | "sweep"
   | "boolean_union"
@@ -39,10 +48,19 @@ export type ToolId =
   | "path_pattern"
   | "section_view"
   | "mass_properties"
+  | "hole_wizard"
   | "trim"
   | "extend"
   | "offset"
   | "mirror_sketch"
+  | "sketch_fillet"
+  | "sketch_chamfer"
+  | "move_entities"
+  | "copy_entities"
+  | "rotate_entities"
+  | "linear_sketch_pattern"
+  | "circular_sketch_pattern"
+  | "interference_check"
   | "ai_text_to_cad"
   | "ai_suggest"
   | "ai_optimize"
@@ -61,21 +79,25 @@ export type FeatureType =
   | "boolean_subtract"
   | "boolean_intersect"
   | "extrude"
+  | "extrude_cut"
   | "revolve"
+  | "revolve_cut"
   | "linear_pattern"
   | "circular_pattern"
   | "fillet"
   | "chamfer"
   | "shell"
+  | "draft"
   | "mirror_feature"
   | "loft"
   | "sweep"
+  | "hole"
   | "sketch_group"
   | "component";
 
 export interface CadObject {
   id: string;
-  type: "box" | "cylinder" | "sphere" | "cone" | "line" | "arc" | "circle" | "rectangle" | "polygon" | "ellipse" | "spline" | "mesh";
+  type: "box" | "cylinder" | "sphere" | "cone" | "line" | "arc" | "circle" | "rectangle" | "polygon" | "ellipse" | "spline" | "mesh" | "point" | "slot" | "centerline";
   name: string;
   position: [number, number, number];
   rotation: [number, number, number];
@@ -122,6 +144,19 @@ export interface CadObject {
   ellipseCenter?: [number, number, number];
   ellipseRx?: number;
   ellipseRy?: number;
+  // Point-specific
+  pointPosition?: [number, number, number];
+  // Slot-specific
+  slotCenter1?: [number, number, number];
+  slotCenter2?: [number, number, number];
+  slotWidth?: number;
+  // Centerline-specific (same as line but construction)
+  centerlinePoints?: [number, number, number][];
+  // Suppression state (SolidWorks-style)
+  suppressed?: boolean;
+  // Parent/child dependency tracking
+  parentFeatureId?: string;
+  childFeatureIds?: string[];
 }
 
 export interface FeatureNode {
@@ -347,6 +382,23 @@ interface CadState {
   aiScale: (factor: number) => boolean;
   aiCreateGear: (teeth: number, module_: number, width: number) => string;
   aiShell: (thickness: number) => boolean;
+
+  // New sketch entity methods
+  addPoint: (position: [number, number, number]) => string;
+  addSlot: (center1: [number, number, number], center2: [number, number, number], width: number) => string;
+  addCenterline: (points: [number, number, number][]) => string;
+  addCenterRectangle: (center: [number, number, number], halfW: number, halfD: number) => string;
+
+  // Solid operations
+  extrudeCut: (sketchId: string, distance: number) => void;
+  revolveCut: (sketchId: string, angle: number) => void;
+  holeWizard: (position: [number, number, number], diameter: number, depth: number, holeType: "simple" | "counterbore" | "countersink" | "tapped") => string;
+
+  // Feature tree: suppress/unsuppress
+  suppressFeature: (id: string) => void;
+  unsuppressFeature: (id: string) => void;
+  getParentChildRelations: (id: string) => { parents: string[]; children: string[] };
+  rollbackTo: (index: number) => void;
 
   // Command
   executeCommand: (cmd: string) => void;
@@ -1885,5 +1937,314 @@ const phiLength = (angle * Math.PI) / 180;
     });
     geo.dispose();
     return true;
+  },
+
+  // ── New Sketch Entities ───────────────────────────────────────
+
+  addPoint: (position) => {
+    get().pushHistory();
+    const id = `obj_${++idCounter}_${Date.now()}`;
+    const count = get().objects.filter((o) => o.type === "point").length;
+    const obj: CadObject = {
+      id, type: "point",
+      name: `Point ${count + 1}`,
+      position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
+      dimensions: { width: 0, height: 0, depth: 0 },
+      material: "Steel (AISI 1045)", color: "#ffff00",
+      visible: true, locked: false, opacity: 1, metalness: 0, roughness: 1,
+      pointPosition: position,
+      sketchId: get().activeSketchId || undefined,
+      sketchPlane: get().sketchPlane || undefined,
+    };
+    set((s) => ({ objects: [...s.objects, obj], selectedId: id, selectedIds: [id] }));
+    get().addFeature({ id: `feat_${id}`, type: "point", name: obj.name, objectId: id, visible: true, locked: false });
+    return id;
+  },
+
+  addSlot: (center1, center2, width) => {
+    get().pushHistory();
+    const id = `obj_${++idCounter}_${Date.now()}`;
+    const count = get().objects.filter((o) => o.type === "slot").length;
+    const obj: CadObject = {
+      id, type: "slot",
+      name: `Slot ${count + 1}`,
+      position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
+      dimensions: { width, height: 0, depth: 0 },
+      material: "Steel (AISI 1045)", color: "#ff8800",
+      visible: true, locked: false, opacity: 1, metalness: 0, roughness: 1,
+      slotCenter1: center1, slotCenter2: center2, slotWidth: width,
+      isProfile: true,
+      sketchId: get().activeSketchId || undefined,
+      sketchPlane: get().sketchPlane || undefined,
+    };
+    set((s) => ({ objects: [...s.objects, obj], selectedId: id, selectedIds: [id] }));
+    get().addFeature({ id: `feat_${id}`, type: "slot", name: obj.name, objectId: id, visible: true, locked: false });
+    return id;
+  },
+
+  addCenterline: (points) => {
+    get().pushHistory();
+    const id = `obj_${++idCounter}_${Date.now()}`;
+    const count = get().objects.filter((o) => o.type === "centerline").length;
+    const obj: CadObject = {
+      id, type: "centerline",
+      name: `Centerline ${count + 1}`,
+      position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
+      dimensions: { width: 0, height: 0, depth: 0 },
+      material: "Steel (AISI 1045)", color: "#ff6600",
+      visible: true, locked: false, opacity: 1, metalness: 0, roughness: 1,
+      centerlinePoints: points, isConstruction: true,
+      sketchId: get().activeSketchId || undefined,
+      sketchPlane: get().sketchPlane || undefined,
+    };
+    set((s) => ({ objects: [...s.objects, obj], selectedId: id, selectedIds: [id] }));
+    get().addFeature({ id: `feat_${id}`, type: "centerline", name: obj.name, objectId: id, visible: true, locked: false });
+    return id;
+  },
+
+  addCenterRectangle: (center, halfW, halfD) => {
+    const c1: [number, number, number] = [center[0] - halfW, center[1], center[2] - halfD];
+    const c2: [number, number, number] = [center[0] + halfW, center[1], center[2] + halfD];
+    return get().addRectangle(c1, c2);
+  },
+
+  // ── Extrude Cut (subtract via sketch profile) ────────────────
+
+  extrudeCut: (sketchId, distance) => {
+    const { objects } = get();
+    const sketch = objects.find((o) => o.id === sketchId);
+    if (!sketch) return;
+    get().pushHistory();
+
+    const sketchP = sketch.sketchPlane || "xz";
+    let cutShape: THREE.Shape | null = null;
+
+    if (sketch.type === "circle" && sketch.circleCenter && sketch.circleRadius) {
+      cutShape = new THREE.Shape();
+      if (sketchP === "xz") cutShape.absarc(sketch.circleCenter[0], sketch.circleCenter[2], sketch.circleRadius, 0, Math.PI * 2, false);
+      else if (sketchP === "xy") cutShape.absarc(sketch.circleCenter[0], sketch.circleCenter[1], sketch.circleRadius, 0, Math.PI * 2, false);
+      else cutShape.absarc(sketch.circleCenter[1], sketch.circleCenter[2], sketch.circleRadius, 0, Math.PI * 2, false);
+    } else if (sketch.type === "rectangle" && sketch.rectCorners) {
+      const [c1, c2] = sketch.rectCorners;
+      cutShape = new THREE.Shape();
+      if (sketchP === "xz") { cutShape.moveTo(c1[0], c1[2]); cutShape.lineTo(c2[0], c1[2]); cutShape.lineTo(c2[0], c2[2]); cutShape.lineTo(c1[0], c2[2]); }
+      else if (sketchP === "xy") { cutShape.moveTo(c1[0], c1[1]); cutShape.lineTo(c2[0], c1[1]); cutShape.lineTo(c2[0], c2[1]); cutShape.lineTo(c1[0], c2[1]); }
+      else { cutShape.moveTo(c1[1], c1[2]); cutShape.lineTo(c2[1], c1[2]); cutShape.lineTo(c2[1], c2[2]); cutShape.lineTo(c1[1], c2[2]); }
+      cutShape.closePath();
+    }
+
+    if (!cutShape) return;
+
+    const geo = new THREE.ExtrudeGeometry(cutShape, { depth: distance, bevelEnabled: false });
+    if (sketchP === "xz") geo.rotateX(-Math.PI / 2);
+    else if (sketchP === "yz") geo.rotateY(Math.PI / 2);
+    geo.computeVertexNormals();
+
+    const pos = geo.attributes.position;
+    const vertices: number[] = [];
+    for (let i = 0; i < pos.count; i++) vertices.push(pos.getX(i), pos.getY(i), pos.getZ(i));
+    const idx = geo.index;
+    const indices: number[] = [];
+    if (idx) { for (let i = 0; i < idx.count; i++) indices.push(idx.getX(i)); }
+    else { for (let i = 0; i < pos.count; i++) indices.push(i); }
+
+    const id = `obj_${++idCounter}_${Date.now()}`;
+    const count = get().objects.filter((o) => o.featureType === "extrude_cut").length;
+    const parentSketchId = sketch.sketchId;
+
+    const newObj: CadObject = {
+      id, type: "mesh", name: `Cut-Extrude ${count + 1}`,
+      position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
+      dimensions: { width: 1, height: distance, depth: 1 },
+      material: "Steel (AISI 1045)", color: "#cc3333",
+      visible: true, locked: false, opacity: 1, metalness: 0.4, roughness: 0.5,
+      meshVertices: vertices, meshIndices: indices,
+      featureType: "extrude_cut",
+      featureParams: { sketchId, distance, sketchType: sketch.type, parentSketchId },
+    };
+
+    set((s) => ({
+      objects: [...s.objects, newObj],
+      featureHistory: [...s.featureHistory, {
+        id: `feat_${id}`, type: "extrude_cut", name: newObj.name, objectId: id,
+        parentId: parentSketchId || undefined,
+        children: [], expanded: true, visible: true, locked: false,
+        params: { distance, sketchType: sketch.type },
+      }],
+      selectedId: id, selectedIds: [id],
+    }));
+    geo.dispose();
+  },
+
+  revolveCut: (sketchId, angle) => {
+    // Same as revolveFromSketch but creates a cut feature
+    const { objects } = get();
+    const sketch = objects.find((o) => o.id === sketchId);
+    if (!sketch) return;
+    get().pushHistory();
+
+    const phiLength = (angle * Math.PI) / 180;
+    let geo: THREE.BufferGeometry | null = null;
+
+    if (sketch.type === "rectangle" && sketch.rectCorners) {
+      const [c1, c2] = sketch.rectCorners;
+      const minZ = Math.min(c1[2], c2[2]);
+      const maxZ = Math.max(c1[2], c2[2]);
+      const maxX = Math.max(Math.abs(c1[0]), Math.abs(c2[0]));
+      const minX = Math.min(Math.abs(c1[0]), Math.abs(c2[0]));
+      const points: THREE.Vector2[] = [
+        new THREE.Vector2(minX, minZ), new THREE.Vector2(maxX, minZ),
+        new THREE.Vector2(maxX, maxZ), new THREE.Vector2(minX, maxZ),
+      ];
+      geo = new THREE.LatheGeometry(points, 32, 0, phiLength);
+    }
+
+    if (!geo) return;
+    geo.computeVertexNormals();
+    const pos = geo.attributes.position;
+    const vertices: number[] = [];
+    for (let i = 0; i < pos.count; i++) vertices.push(pos.getX(i), pos.getY(i), pos.getZ(i));
+    const idx = geo.index;
+    const indices: number[] = [];
+    if (idx) { for (let i = 0; i < idx.count; i++) indices.push(idx.getX(i)); }
+    else { for (let i = 0; i < pos.count; i++) indices.push(i); }
+
+    const id = `obj_${++idCounter}_${Date.now()}`;
+    const count = get().objects.filter((o) => o.featureType === "revolve_cut").length;
+    const newObj: CadObject = {
+      id, type: "mesh", name: `Cut-Revolve ${count + 1}`,
+      position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
+      dimensions: { width: 1, height: 1, depth: 1 },
+      material: "Steel (AISI 1045)", color: "#cc3333",
+      visible: true, locked: false, opacity: 1, metalness: 0.4, roughness: 0.5,
+      meshVertices: vertices, meshIndices: indices,
+      featureType: "revolve_cut",
+      featureParams: { sketchId, angle },
+    };
+    set((s) => ({
+      objects: [...s.objects, newObj],
+      featureHistory: [...s.featureHistory, {
+        id: `feat_${id}`, type: "revolve_cut", name: newObj.name, objectId: id,
+        children: [], expanded: true, visible: true, locked: false,
+      }],
+      selectedId: id, selectedIds: [id],
+    }));
+    geo.dispose();
+  },
+
+  holeWizard: (position, diameter, depth, holeType) => {
+    get().pushHistory();
+    const radius = diameter / 2 / 10;
+    const hDepth = depth / 10;
+
+    let geo: THREE.BufferGeometry;
+    if (holeType === "counterbore") {
+      // Counterbore: larger cylinder on top + smaller cylinder below
+      const topGeo = new THREE.CylinderGeometry(radius * 1.8, radius * 1.8, hDepth * 0.3, 32);
+      topGeo.translate(0, hDepth * 0.15, 0);
+      const bottomGeo = new THREE.CylinderGeometry(radius, radius, hDepth, 32);
+      bottomGeo.translate(0, -hDepth * 0.35, 0);
+      // Merge
+      const merged = new THREE.BufferGeometry();
+      const verts: number[] = [];
+      const idxs: number[] = [];
+      [topGeo, bottomGeo].forEach(g => {
+        g.computeVertexNormals();
+        const p = g.attributes.position;
+        const offset = verts.length / 3;
+        for (let i = 0; i < p.count; i++) verts.push(p.getX(i), p.getY(i), p.getZ(i));
+        const ix = g.index;
+        if (ix) { for (let i = 0; i < ix.count; i++) idxs.push(ix.getX(i) + offset); }
+        g.dispose();
+      });
+      merged.setAttribute("position", new THREE.Float32BufferAttribute(verts, 3));
+      merged.setIndex(idxs);
+      merged.computeVertexNormals();
+      geo = merged;
+    } else if (holeType === "countersink") {
+      geo = new THREE.ConeGeometry(radius * 1.5, hDepth, 32);
+    } else {
+      geo = new THREE.CylinderGeometry(radius, radius, hDepth, 32);
+    }
+
+    geo.computeVertexNormals();
+    const pos = geo.attributes.position;
+    const vertices: number[] = [];
+    for (let i = 0; i < pos.count; i++) vertices.push(pos.getX(i) + position[0], pos.getY(i) + position[1], pos.getZ(i) + position[2]);
+    const idx = geo.index;
+    const indices: number[] = [];
+    if (idx) { for (let i = 0; i < idx.count; i++) indices.push(idx.getX(i)); }
+    else { for (let i = 0; i < pos.count; i++) indices.push(i); }
+
+    const id = get().addGeneratedObject({
+      type: "mesh",
+      name: `${holeType === "tapped" ? "Tapped " : holeType === "counterbore" ? "CBore " : holeType === "countersink" ? "CSink " : ""}Hole D${diameter}`,
+      dimensions: { width: radius * 2, height: hDepth, depth: radius * 2 },
+      position: position,
+      meshVertices: vertices, meshIndices: indices,
+      color: "#555555",
+      featureType: "hole" as FeatureType,
+      featureParams: { diameter, depth, holeType },
+    });
+    geo.dispose();
+    return id;
+  },
+
+  // ── Feature Tree: Suppress/Unsuppress ────────────────────────
+
+  suppressFeature: (id) => {
+    const feature = get().featureHistory.find(f => f.id === id);
+    if (!feature) return;
+    get().pushHistory();
+    set((s) => ({
+      featureHistory: s.featureHistory.map(f =>
+        f.id === id ? { ...f, visible: false, locked: true } : f
+      ),
+      objects: s.objects.map(o =>
+        o.id === feature.objectId ? { ...o, visible: false, suppressed: true } : o
+      ),
+    }));
+  },
+
+  unsuppressFeature: (id) => {
+    const feature = get().featureHistory.find(f => f.id === id);
+    if (!feature) return;
+    get().pushHistory();
+    set((s) => ({
+      featureHistory: s.featureHistory.map(f =>
+        f.id === id ? { ...f, visible: true, locked: false } : f
+      ),
+      objects: s.objects.map(o =>
+        o.id === feature.objectId ? { ...o, visible: true, suppressed: false } : o
+      ),
+    }));
+  },
+
+  getParentChildRelations: (id) => {
+    const { featureHistory } = get();
+    const feature = featureHistory.find(f => f.id === id);
+    if (!feature) return { parents: [], children: [] };
+    const parents = feature.parentId ? [feature.parentId] : [];
+    const children = featureHistory.filter(f => f.parentId === id).map(f => f.id);
+    return { parents, children };
+  },
+
+  rollbackTo: (index) => {
+    const { featureHistory, objects } = get();
+    if (index < 0 || index >= featureHistory.length) return;
+    get().pushHistory();
+    // Suppress all features after the rollback index
+    const featureIds = featureHistory.slice(index + 1).map(f => f.id);
+    const objectIds = featureHistory.slice(index + 1).map(f => f.objectId);
+    set((s) => ({
+      featureHistory: s.featureHistory.map((f, i) =>
+        i > index ? { ...f, visible: false, locked: true } : { ...f, visible: true, locked: false }
+      ),
+      objects: s.objects.map(o =>
+        objectIds.includes(o.id) ? { ...o, visible: false, suppressed: true } :
+        featureHistory.slice(0, index + 1).some(f => f.objectId === o.id) ? { ...o, visible: true, suppressed: false } : o
+      ),
+      rollbackIndex: index,
+    }));
   },
 }));

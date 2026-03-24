@@ -1684,6 +1684,7 @@ export default function Viewport3D({ mode }: Viewport3DProps) {
         <SketchDrawTools />
 
         {objects.map((obj) => {
+          if (obj.visible === false) return null;
           switch (obj.type) {
             case "line":
               return <CadLine key={obj.id} obj={obj} />;
@@ -1697,6 +1698,77 @@ export default function Viewport3D({ mode }: Viewport3DProps) {
               return <CadPolygon key={obj.id} obj={obj} />;
             case "ellipse":
               return <CadEllipse key={obj.id} obj={obj} />;
+            case "centerline":
+              // Render centerline as dashed line (construction geometry)
+              return obj.centerlinePoints && obj.centerlinePoints.length >= 2 ? (
+                <group key={obj.id}>
+                  <Line
+                    points={obj.centerlinePoints}
+                    color="#ff6600"
+                    lineWidth={1}
+                    dashed
+                    dashSize={0.15}
+                    gapSize={0.08}
+                  />
+                  {obj.centerlinePoints.map((pt, i) => (
+                    <mesh key={i} position={pt}>
+                      <boxGeometry args={[0.04, 0.04, 0.04]} />
+                      <meshBasicMaterial color="#ff6600" />
+                    </mesh>
+                  ))}
+                </group>
+              ) : null;
+            case "point":
+              // Render as cross marker
+              return obj.pointPosition ? (
+                <group key={obj.id}>
+                  <mesh position={obj.pointPosition}>
+                    <sphereGeometry args={[0.05, 8, 8]} />
+                    <meshBasicMaterial color="#ffff00" />
+                  </mesh>
+                  {/* Cross lines */}
+                  <Line points={[[obj.pointPosition[0]-0.08, obj.pointPosition[1], obj.pointPosition[2]], [obj.pointPosition[0]+0.08, obj.pointPosition[1], obj.pointPosition[2]]]} color="#ffff00" lineWidth={1.5} />
+                  <Line points={[[obj.pointPosition[0], obj.pointPosition[1], obj.pointPosition[2]-0.08], [obj.pointPosition[0], obj.pointPosition[1], obj.pointPosition[2]+0.08]]} color="#ffff00" lineWidth={1.5} />
+                </group>
+              ) : null;
+            case "slot":
+              // Render slot as two semicircles connected by lines
+              return obj.slotCenter1 && obj.slotCenter2 && obj.slotWidth ? (() => {
+                const c1 = obj.slotCenter1!;
+                const c2 = obj.slotCenter2!;
+                const w = obj.slotWidth! / 2;
+                const dx = c2[0] - c1[0];
+                const dz = c2[2] - c1[2];
+                const len = Math.sqrt(dx*dx + dz*dz);
+                if (len < 0.001) return null;
+                const nx = -dz / len * w;
+                const nz = dx / len * w;
+                const pts: [number, number, number][] = [];
+                // Top line
+                pts.push([c1[0]+nx, SKETCH_Y, c1[2]+nz]);
+                pts.push([c2[0]+nx, SKETCH_Y, c2[2]+nz]);
+                // Semicircle at c2
+                for (let i = 0; i <= 16; i++) {
+                  const a = Math.atan2(nz, nx) + Math.PI / 2 + (i / 16) * Math.PI;
+                  pts.push([c2[0] + Math.cos(a) * w, SKETCH_Y, c2[2] + Math.sin(a) * w]);
+                }
+                // Bottom line (reversed)
+                pts.push([c2[0]-nx, SKETCH_Y, c2[2]-nz]);
+                pts.push([c1[0]-nx, SKETCH_Y, c1[2]-nz]);
+                // Semicircle at c1
+                for (let i = 0; i <= 16; i++) {
+                  const a = Math.atan2(nz, nx) - Math.PI / 2 + (i / 16) * Math.PI;
+                  pts.push([c1[0] + Math.cos(a) * w, SKETCH_Y, c1[2] + Math.sin(a) * w]);
+                }
+                pts.push(pts[0]); // close
+                return (
+                  <group key={obj.id}>
+                    <Line points={pts} color={obj.color} lineWidth={1.5} />
+                    <mesh position={c1}><boxGeometry args={[0.04, 0.04, 0.04]} /><meshBasicMaterial color="#ff8800" /></mesh>
+                    <mesh position={c2}><boxGeometry args={[0.04, 0.04, 0.04]} /><meshBasicMaterial color="#ff8800" /></mesh>
+                  </group>
+                );
+              })() : null;
             default:
               return <CadMesh key={obj.id} obj={obj} />;
           }
