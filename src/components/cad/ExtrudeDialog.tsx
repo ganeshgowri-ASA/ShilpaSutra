@@ -13,16 +13,18 @@ export default function ExtrudeDialog({ onClose }: ExtrudeDialogProps) {
   const extrudeFromSketch = useCadStore((s) => s.extrudeFromSketch);
 
   const selected = objects.find((o) => o.id === selectedId);
-  const sketchTypes = ["rectangle", "circle"];
-  const isValidSketch = selected && sketchTypes.includes(selected.type);
+  const sketchTypes = ["rectangle", "circle", "polygon", "line"];
+  const isValidSketch = selected && (sketchTypes.includes(selected.type) || selected.isProfile);
 
   const [distance, setDistance] = useState(10);
+  const [direction, setDirection] = useState<"normal" | "reverse" | "midplane" | "both">("normal");
 
   const handleApply = useCallback(() => {
     if (!selected || !isValidSketch) return;
-    extrudeFromSketch(selected.id, distance);
+    const actualDist = direction === "reverse" ? -distance : direction === "midplane" ? distance / 2 : distance;
+    extrudeFromSketch(selected.id, Math.abs(actualDist));
     onClose();
-  }, [selected, isValidSketch, distance, extrudeFromSketch, onClose]);
+  }, [selected, isValidSketch, distance, direction, extrudeFromSketch, onClose]);
 
   if (!isValidSketch) {
     return (
@@ -54,7 +56,7 @@ export default function ExtrudeDialog({ onClose }: ExtrudeDialogProps) {
       {/* Profile info */}
       <div className="text-[10px] text-slate-400 mb-3">
         Profile: <span className="text-[#00D4FF]">{selected.name}</span>
-        <span className="text-slate-600 ml-1">({selected.type})</span>
+        <span className="text-slate-600 ml-1">({selected.type}{selected.isProfile ? " - closed" : ""})</span>
       </div>
 
       {/* Distance input */}
@@ -72,6 +74,26 @@ export default function ExtrudeDialog({ onClose }: ExtrudeDialogProps) {
           className="w-full bg-[#0d1117] text-white text-[11px] font-mono px-2 py-1.5 rounded border border-[#16213e] focus:border-[#00D4FF]/50 outline-none"
           autoFocus
         />
+      </div>
+
+      {/* Direction mode */}
+      <div className="mb-4">
+        <label className="text-[10px] text-slate-400 block mb-1">Direction</label>
+        <div className="grid grid-cols-2 gap-1">
+          {(["normal", "reverse", "midplane", "both"] as const).map((dir) => (
+            <button
+              key={dir}
+              onClick={() => setDirection(dir)}
+              className={`text-[10px] py-1 px-2 rounded border transition-colors ${
+                direction === dir
+                  ? "border-[#00D4FF]/40 bg-[#00D4FF]/10 text-[#00D4FF]"
+                  : "border-[#16213e] text-slate-500 hover:border-slate-500"
+              }`}
+            >
+              {dir.charAt(0).toUpperCase() + dir.slice(1)}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Preview info */}

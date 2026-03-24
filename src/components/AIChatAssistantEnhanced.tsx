@@ -33,6 +33,13 @@ function interpretCommand(
     updateObject: (id: string, updates: Partial<CadObject>) => void;
     deleteObject: (id: string) => void;
     selectObject: (id: string | null) => void;
+    aiExtrude: (distance: number) => string | null;
+    aiAddHole: (diameter: number, depth: number) => string | null;
+    aiFilletSelected: (radius: number) => boolean;
+    aiChamferSelected: (distance: number) => boolean;
+    aiMirror: (plane: "xy" | "xz" | "yz") => string[];
+    aiCreateGear: (teeth: number, module_: number, width: number) => string;
+    aiShell: (thickness: number) => boolean;
   }
 ): CommandResult {
   const lower = input.toLowerCase().trim();
@@ -45,39 +52,23 @@ function interpretCommand(
     const radius = radiusMatch ? parseFloat(radiusMatch[1]) : 2;
     steps.push(`Parsing fillet command: radius = ${radius}mm`);
 
-    if (lower.includes("all")) {
-      steps.push(`Target: ALL edges on all ${objects.filter(o => !["line","arc","circle","rectangle"].includes(o.type)).length} solid objects`);
-      steps.push("Applying fillet operation (simulated - marking objects as filleted)");
-      const meshObjects = objects.filter(o => !["line", "arc", "circle", "rectangle"].includes(o.type));
-      meshObjects.forEach((obj) => {
-        actions.updateObject(obj.id, { name: `${obj.name} (R${radius} fillet)` });
-      });
-      return {
-        success: true,
-        message: `Applied ${radius}mm fillet to all edges on ${meshObjects.length} object(s). In production, this would invoke OpenCASCADE FilletMaker on each edge.`,
-        thinkingSteps: steps,
-        commandType: "fillet",
-      };
-    } else if (selected) {
-      steps.push(`Target: Selected object "${selected.name}"`);
-      steps.push(`Applying ${radius}mm fillet to all edges of ${selected.name}`);
-      actions.updateObject(selected.id, { name: `${selected.name} (R${radius} fillet)` });
-      return {
-        success: true,
-        message: `Applied ${radius}mm fillet to all edges of "${selected.name}".`,
-        thinkingSteps: steps,
-        objectId: selected.id,
-        commandType: "fillet",
-      };
-    } else {
-      steps.push("No object selected - cannot apply fillet");
-      return {
-        success: false,
-        message: "Please select an object first, or say 'fillet all edges'.",
-        thinkingSteps: steps,
-        commandType: "fillet",
-      };
+    if (selected) {
+      steps.push(`Target: "${selected.name}" - applying R${radius} fillet geometry`);
+      steps.push("Generating filleted cross-section profile with quadratic bezier corners");
+      steps.push("Extruding filleted profile to create 3D solid");
+      const success = actions.aiFilletSelected(radius);
+      if (success) {
+        return {
+          success: true,
+          message: `Applied ${radius}mm fillet to "${selected.name}". Geometry updated with rounded edges.`,
+          thinkingSteps: steps,
+          objectId: selected.id,
+          commandType: "fillet",
+        };
+      }
+      return { success: false, message: "Cannot fillet sketch entities. Select a 3D solid.", thinkingSteps: steps, commandType: "fillet" };
     }
+    return { success: false, message: "Select an object first to apply fillet.", thinkingSteps: steps, commandType: "fillet" };
   }
 
   // ── CHAMFER command ──
@@ -85,17 +76,19 @@ function interpretCommand(
     const sizeMatch = lower.match(/(\d+(?:\.\d+)?)\s*(?:mm|cm)?/);
     const size = sizeMatch ? parseFloat(sizeMatch[1]) : 1;
     steps.push(`Parsing chamfer command: size = ${size}mm`);
-
     if (selected) {
-      steps.push(`Applying ${size}mm chamfer to "${selected.name}"`);
-      actions.updateObject(selected.id, { name: `${selected.name} (${size}mm chamfer)` });
-      return {
-        success: true,
-        message: `Applied ${size}mm chamfer to "${selected.name}".`,
-        thinkingSteps: steps,
-        objectId: selected.id,
-        commandType: "chamfer",
-      };
+      steps.push(`Applying ${size}mm chamfer to "${selected.name}" - generating chamfered geometry`);
+      const success = actions.aiChamferSelected(size);
+      if (success) {
+        return {
+          success: true,
+          message: `Applied ${size}mm chamfer to "${selected.name}". Edges beveled.`,
+          thinkingSteps: steps,
+          objectId: selected.id,
+          commandType: "chamfer",
+        };
+      }
+      return { success: false, message: "Cannot chamfer sketch entities. Select a 3D solid.", thinkingSteps: steps, commandType: "chamfer" };
     }
     return { success: false, message: "Select an object to chamfer.", thinkingSteps: steps, commandType: "chamfer" };
   }
@@ -142,46 +135,92 @@ function interpretCommand(
     return { success: false, message: "Select an object to add bolt holes.", thinkingSteps: steps, commandType: "bolt-holes" };
   }
 
+  // ── EXTRUDE command ──
+  if (lower.includes("extrude") || lower.includes("pull") || lower.includes("push")) {
+    const distMatch = lower.match(/(\d+(?:\.\d+)?)\s*(?:mm|cm)?/);
+    const dist = distMatch ? parseFloat(distMatch[1]) : 10;
+    steps.push(`Parsing extrude command: distance = ${dist}mm`);
+    if (selected && (selected.type === "rectangle" || selected.type === "circle")) {
+      steps.push(`Extruding sketch profile "${selected.name}" by ${dist}mm`);
+      steps.push("Using THREE.ExtrudeGeometry to generate solid from 2D profile");
+      const resultId = actions.aiExtrude(dist);
+      if (resultId) {
+        return {
+          success: true,
+          message: `Extruded "${selected.name}" by ${dist}mm. 3D solid created.`,
+          thinkingSteps: steps,
+          objectId: resultId,
+          commandType: "extrude",
+        };
+      }
+    }
+    steps.push("No valid sketch profile selected for extrusion");
+    return { success: false, message: "Select a closed sketch profile (rectangle/circle) to extrude.", thinkingSteps: steps, commandType: "extrude" };
+  }
+
+  // ── HOLE command ──
+  if (lower.includes("hole") && !lower.includes("bolt")) {
+    const diaMatch = lower.match(/(?:diameter|dia|d|ø)\s*(\d+(?:\.\d+)?)/i) || lower.match(/(\d+(?:\.\d+)?)\s*(?:mm|cm)/);
+    const diameter = diaMatch ? parseFloat(diaMatch[1]) : 5;
+    const depthMatch = lower.match(/(?:depth|deep)\s*(\d+(?:\.\d+)?)/i);
+    const depth = depthMatch ? parseFloat(depthMatch[1]) : 10;
+    steps.push(`Parsing hole command: diameter=${diameter}mm, depth=${depth}mm`);
+    if (selected) {
+      steps.push(`Adding hole to "${selected.name}": D${diameter}mm x ${depth}mm deep`);
+      const id = actions.aiAddHole(diameter, depth);
+      if (id) {
+        return {
+          success: true,
+          message: `Added D${diameter}mm hole (${depth}mm deep) to "${selected.name}".`,
+          thinkingSteps: steps,
+          objectId: id,
+          commandType: "hole",
+        };
+      }
+    }
+    return { success: false, message: "Select an object to add a hole.", thinkingSteps: steps, commandType: "hole" };
+  }
+
+  // ── SHELL command ──
+  if (lower.includes("shell") || lower.includes("hollow")) {
+    const thickMatch = lower.match(/(\d+(?:\.\d+)?)\s*(?:mm|cm)?/);
+    const thickness = thickMatch ? parseFloat(thickMatch[1]) : 2;
+    steps.push(`Parsing shell command: wall thickness = ${thickness}mm`);
+    if (selected) {
+      steps.push(`Shelling "${selected.name}" with ${thickness}mm wall thickness`);
+      const success = actions.aiShell(thickness);
+      if (success) {
+        return {
+          success: true,
+          message: `Shelled "${selected.name}" with ${thickness}mm wall thickness.`,
+          thinkingSteps: steps,
+          objectId: selected.id,
+          commandType: "shell",
+        };
+      }
+      return { success: false, message: "Cannot shell sketch entities. Select a 3D solid.", thinkingSteps: steps, commandType: "shell" };
+    }
+    return { success: false, message: "Select an object to shell.", thinkingSteps: steps, commandType: "shell" };
+  }
+
   // ── MIRROR command ──
   if (lower.includes("mirror")) {
     const planeMatch = lower.match(/(?:about|across|along|on)\s*(xz|xy|yz|x|y|z)/i);
-    const plane = planeMatch ? planeMatch[1].toUpperCase() : "XZ";
-    steps.push(`Parsing mirror command: plane = ${plane}`);
+    const planeStr = planeMatch ? planeMatch[1].toUpperCase() : "XZ";
+    const mirrorPlane = planeStr === "X" || planeStr === "YZ" ? "yz" as const :
+                        planeStr === "Y" || planeStr === "XZ" ? "xz" as const : "xy" as const;
+    steps.push(`Mirroring about ${planeStr} plane`);
 
-    const targets = lower.includes("all")
-      ? objects.filter((o) => !["line", "arc", "circle", "rectangle"].includes(o.type))
-      : selected
-      ? [selected]
-      : [];
-
-    if (targets.length === 0) {
-      return { success: false, message: "Select an object or say 'mirror all'.", thinkingSteps: steps, commandType: "mirror" };
+    if (selected) {
+      const ids = actions.aiMirror(mirrorPlane);
+      return {
+        success: true,
+        message: `Mirrored "${selected.name}" about ${planeStr} plane. New geometry created.`,
+        thinkingSteps: steps,
+        commandType: "mirror",
+      };
     }
-
-    steps.push(`Mirroring ${targets.length} object(s) about ${plane} plane`);
-
-    targets.forEach((obj) => {
-      const newPos: [number, number, number] = [...obj.position];
-      if (plane.includes("Y") || plane === "XZ") newPos[1] = -newPos[1];
-      if (plane.includes("X") || plane === "YZ") newPos[0] = -newPos[0];
-      if (plane.includes("Z") || plane === "XY") newPos[2] = -newPos[2];
-
-      actions.addGeneratedObject({
-        type: obj.type,
-        name: `${obj.name} (mirrored)`,
-        dimensions: { ...obj.dimensions },
-        position: newPos,
-        color: obj.color,
-        material: obj.material,
-      });
-    });
-
-    return {
-      success: true,
-      message: `Mirrored ${targets.length} object(s) about the ${plane} plane.`,
-      thinkingSteps: steps,
-      commandType: "mirror",
-    };
+    return { success: false, message: "Select an object to mirror.", thinkingSteps: steps, commandType: "mirror" };
   }
 
   // ── MOVE / TRANSLATE command ──
@@ -353,6 +392,27 @@ function interpretCommand(
     return { success: false, message: "Select an object to create an array.", thinkingSteps: steps, commandType: "array" };
   }
 
+  // ── GEAR command ──
+  if (lower.includes("gear") && !lower.includes("change") && !lower.includes("material")) {
+    const teethMatch = lower.match(/(\d+)\s*(?:teeth|tooth|t)/i);
+    const teeth = teethMatch ? parseInt(teethMatch[1]) : 20;
+    const moduleMatch = lower.match(/(?:module|mod|m)\s*(\d+(?:\.\d+)?)/i);
+    const mod = moduleMatch ? parseFloat(moduleMatch[1]) : 2;
+    const widthMatch = lower.match(/(?:width|w|thick)\s*(\d+(?:\.\d+)?)/i);
+    const width = widthMatch ? parseFloat(widthMatch[1]) : 10;
+    steps.push(`Parsing gear command: ${teeth} teeth, module ${mod}, width ${width}mm`);
+    steps.push("Generating involute gear tooth profile with center bore");
+    steps.push("Extruding gear profile to create 3D solid");
+    const id = actions.aiCreateGear(teeth, mod, width);
+    return {
+      success: true,
+      message: `Created ${teeth}-tooth gear (module ${mod}, ${width}mm face width). Actual involute geometry generated.`,
+      thinkingSteps: steps,
+      objectId: id,
+      commandType: "gear",
+    };
+  }
+
   // ── CREATE object commands (fallback to parametric generator) ──
   if (lower.includes("create") || lower.includes("add") || lower.includes("make") || lower.includes("generate") || lower.includes("design") || lower.includes("place")) {
     steps.push("Parsing create/generate command");
@@ -461,11 +521,14 @@ function interpretCommand(
       success: true,
       message: `Available commands:
 - "create a box/cylinder/sphere/cone"
-- "add a gear with 20 teeth"
+- "create gear 20 teeth module 2 width 10"
+- "extrude 15mm" (select a sketch profile first)
+- "add hole diameter 8mm depth 20mm"
 - "add 4 bolt holes M8"
-- "fillet all edges 2mm"
-- "chamfer 1mm"
-- "mirror about XZ"
+- "fillet 2mm" (applies real fillet geometry)
+- "chamfer 1mm" (applies real chamfer geometry)
+- "shell 2mm" (hollows selected solid)
+- "mirror about XZ" (duplicates geometry)
 - "move by (10, 0, 5)"
 - "rotate 45 degrees about Y"
 - "scale 2x"
@@ -508,6 +571,10 @@ const COMMAND_ICONS: Record<string, string> = {
   create: "+",
   info: "?",
   help: "H",
+  extrude: "E",
+  hole: "O",
+  gear: "G",
+  shell: "S",
 };
 
 /* ── Component ── */
@@ -544,6 +611,13 @@ I'm context-aware and know what's in your scene. Try asking "what's in the scene
   const updateObject = useCadStore((s) => s.updateObject);
   const deleteObject = useCadStore((s) => s.deleteObject);
   const selectObject = useCadStore((s) => s.selectObject);
+  const aiExtrude = useCadStore((s) => s.aiExtrude);
+  const aiAddHole = useCadStore((s) => s.aiAddHole);
+  const aiFilletSelected = useCadStore((s) => s.aiFilletSelected);
+  const aiChamferSelected = useCadStore((s) => s.aiChamferSelected);
+  const aiMirror = useCadStore((s) => s.aiMirror);
+  const aiCreateGear = useCadStore((s) => s.aiCreateGear);
+  const aiShell = useCadStore((s) => s.aiShell);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -583,6 +657,13 @@ I'm context-aware and know what's in your scene. Try asking "what's in the scene
         updateObject,
         deleteObject,
         selectObject,
+        aiExtrude,
+        aiAddHole,
+        aiFilletSelected,
+        aiChamferSelected,
+        aiMirror,
+        aiCreateGear,
+        aiShell,
       });
 
       setMessages((prev) =>
@@ -601,7 +682,7 @@ I'm context-aware and know what's in your scene. Try asking "what's in the scene
       );
       setIsProcessing(false);
     }, 400 + Math.random() * 400);
-  }, [input, isProcessing, objects, selectedId, addObject, addGeneratedObject, updateObject, deleteObject, selectObject]);
+  }, [input, isProcessing, objects, selectedId, addObject, addGeneratedObject, updateObject, deleteObject, selectObject, aiExtrude, aiAddHole, aiFilletSelected, aiChamferSelected, aiMirror, aiCreateGear, aiShell]);
 
   const selectedObj = objects.find((o) => o.id === selectedId);
 

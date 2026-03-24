@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState, useMemo, useCallback, Component, type ReactNode } from "react";
 import { useCadStore, type ToolId } from "@/stores/cad-store";
+import { useConstraintStore } from "@/stores/constraint-store";
 
 const SKETCH_TOOLS: ToolId[] = [
   "line", "arc", "circle", "rectangle", "polygon", "spline", "ellipse", "construction_line",
@@ -74,10 +75,31 @@ function SketchOverlayInner({ containerRef }: SketchOverlayProps) {
   const setDynamicInputValue = useCadStore((s) => s.setDynamicInputValue);
   const setDynamicInputActive = useCadStore((s) => s.setDynamicInputActive);
 
+  const constraints = useConstraintStore((s) => s.constraints);
+  const constraintStatus = useConstraintStore((s) => s.constraintStatus);
+  const activeSketchId = useCadStore((s) => s.activeSketchId);
+  const objects = useCadStore((s) => s.objects);
+  const isConstructionMode = useCadStore((s) => s.isConstructionMode);
+
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
   const [isOverCanvas, setIsOverCanvas] = useState(false);
   const [orthoLocked, setOrthoLocked] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Count sketch entities and DOF
+  const sketchEntityCount = useMemo(() => {
+    if (!activeSketchId) return 0;
+    return objects.filter(o => o.sketchId === activeSketchId).length;
+  }, [activeSketchId, objects]);
+
+  const constraintCount = constraints.length;
+  const dofStatus = useMemo(() => {
+    if (constraintStatus === "fully") return { label: "Fully Constrained", color: "#22c55e" };
+    if (constraintStatus === "over") return { label: "Over-Constrained", color: "#ef4444" };
+    const entityDof = sketchEntityCount * 2; // simplified: 2 DOF per entity
+    const remaining = Math.max(0, entityDof - constraintCount);
+    return { label: `Under-Constrained (${remaining} DOF)`, color: "#f59e0b" };
+  }, [constraintStatus, sketchEntityCount, constraintCount]);
 
   const isSketchMode = SKETCH_TOOLS.includes(activeTool) || !!sketchPlane;
   const isDrawing = SKETCH_TOOLS.includes(activeTool);
@@ -560,6 +582,24 @@ function SketchOverlayInner({ containerRef }: SketchOverlayProps) {
                 <span style={{ color: snapColors[snapType] || "#666", opacity: 0.7 }}>
                   {snapType}
                 </span>
+              </>
+            )}
+            {isConstructionMode && (
+              <>
+                <span className="text-slate-700">|</span>
+                <span className="text-sky-400 font-semibold">CONSTRUCTION</span>
+              </>
+            )}
+            {sketchEntityCount > 0 && (
+              <>
+                <span className="text-slate-700">|</span>
+                <span className="text-slate-400">{sketchEntityCount} entities</span>
+              </>
+            )}
+            {sketchEntityCount > 0 && (
+              <>
+                <span className="text-slate-700">|</span>
+                <span style={{ color: dofStatus.color }} className="font-semibold">{dofStatus.label}</span>
               </>
             )}
           </div>
