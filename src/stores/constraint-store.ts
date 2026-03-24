@@ -20,7 +20,10 @@ export type ConstraintType =
   | "angle"
   | "radius"
   | "diameter"
-  | "midpoint";
+  | "midpoint"
+  | "pierce"
+  | "merge"
+  | "equal_curvature";
 
 export type ConstraintStatus = "under" | "fully" | "over";
 
@@ -247,6 +250,33 @@ function evaluateConstraintResidual(
       if (pts.length < 3) return 0;
       const expected = vec3Mid(pts[1], pts[2]);
       return vec3Dist(pts[0], expected);
+    }
+
+    case "pierce": {
+      // entityIds: [point, line_start, line_end]
+      // Point must lie on the line
+      if (pts.length < 3) return 0;
+      const lineDir = vec3Sub(pts[2], pts[1]);
+      const lineLength = vec3Len(lineDir);
+      if (lineLength < 1e-15) return 0;
+      const toPoint = vec3Sub(pts[0], pts[1]);
+      const crossP = vec3Cross(toPoint, lineDir);
+      return vec3Len(crossP) / lineLength;
+    }
+
+    case "merge": {
+      // entityIds: [pointA, pointB] — merge two points into one
+      if (pts.length < 2) return 0;
+      return vec3Dist(pts[0], pts[1]);
+    }
+
+    case "equal_curvature": {
+      // entityIds: [center1, radiusPt1, center2, radiusPt2]
+      // Equal curvature: radii should match at the junction
+      if (pts.length < 4) return 0;
+      const r1 = vec3Dist(pts[0], pts[1]);
+      const r2 = vec3Dist(pts[2], pts[3]);
+      return Math.abs(r1 - r2);
     }
 
     default:

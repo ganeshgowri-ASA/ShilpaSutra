@@ -20,6 +20,9 @@ const constraintSymbols: Record<ConstraintType, string> = {
   radius: "R",
   diameter: "\u2300",
   midpoint: "\u25C6",
+  pierce: "\u2316",
+  merge: "\u2A06",
+  equal_curvature: "\u223C",
 };
 
 const constraintColors: Record<ConstraintType, string> = {
@@ -38,6 +41,9 @@ const constraintColors: Record<ConstraintType, string> = {
   radius: "#44aaff",
   diameter: "#44aaff",
   midpoint: "#ff44aa",
+  pierce: "#ff6b9d",
+  merge: "#ff9f43",
+  equal_curvature: "#a29bfe",
 };
 
 export default function ConstraintIndicators() {
