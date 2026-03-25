@@ -703,7 +703,7 @@ I'm context-aware and know what's in your scene. Try asking "what's in the scene
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
           <span className="text-xs font-bold text-white">AI Assistant</span>
-          <span className="text-[9px] bg-purple-500/20 text-purple-400 border border-purple-500/30 rounded px-1.5 py-0.5">Zookeeper</span>
+          <span className="text-[9px] bg-purple-500/20 text-purple-400 border border-purple-500/30 rounded px-1.5 py-0.5">ShilpaSutra AI</span>
         </div>
         <div className="flex items-center gap-1">
           <button

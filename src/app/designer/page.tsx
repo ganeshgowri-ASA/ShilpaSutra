@@ -100,7 +100,7 @@ export default function DesignerPage() {
 
   const viewportRef = useRef<HTMLDivElement>(null);
   const [aiOpen, setAiOpen] = useState(false);
-  const [aiMode, setAiMode] = useState<"basic" | "zookeeper">("zookeeper");
+  const [aiMode, setAiMode] = useState<"basic" | "enhanced">("enhanced");
   const [parametricOpen, setParametricOpen] = useState(false);
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [showExtrudeDialog, setShowExtrudeDialog] = useState(false);
@@ -299,14 +299,14 @@ export default function DesignerPage() {
                 </button>
                 {aiOpen && (
                   <button
-                    onClick={() => setAiMode(aiMode === "basic" ? "zookeeper" : "basic")}
+                    onClick={() => setAiMode(aiMode === "basic" ? "enhanced" : "basic")}
                     className={`text-[10px] px-2 py-1 rounded-md border font-medium transition-all duration-150 backdrop-blur-md ${
-                      aiMode === "zookeeper"
+                      aiMode === "enhanced"
                         ? "border-purple-500/30 text-purple-400 bg-purple-500/10"
                         : "border-[#21262d] text-slate-500 bg-[#0d1117]/80"
                     }`}
                   >
-                    {aiMode === "zookeeper" ? "Zookeeper" : "Basic"}
+                    {aiMode === "enhanced" ? "ShilpaSutra AI" : "Basic"}
                   </button>
                 )}
                 <button
@@ -421,7 +421,7 @@ export default function DesignerPage() {
 
         {/* AI Chat Sidebar */}
         {aiOpen && aiMode === "basic" && <AIChatSidebar onClose={() => setAiOpen(false)} />}
-        {aiOpen && aiMode === "zookeeper" && <AIChatAssistantEnhanced onClose={() => setAiOpen(false)} />}
+        {aiOpen && aiMode === "enhanced" && <AIChatAssistantEnhanced onClose={() => setAiOpen(false)} />}
       </div>
 
       {/* Timeline toggle + Command Bar */}
