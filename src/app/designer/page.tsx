@@ -2,7 +2,7 @@
 import React, { useState, useCallback, useRef, Component, type ErrorInfo, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import { useCadStore } from "@/stores/cad-store";
-import { Package, History } from "lucide-react";
+import { Package, History, Layers } from "lucide-react";
 import type { SelectionFilterType } from "@/components/cad/SelectionFilter";
 
 /* ── Error Boundary to prevent full-page crashes ── */
@@ -85,6 +85,7 @@ const ReferenceGeometryPanel = dynamic(() => import("@/components/cad/ReferenceG
 const ConfigurationManager = dynamic(() => import("@/components/cad/ConfigurationManager"), { ssr: false });
 const AppearanceEditor = dynamic(() => import("@/components/cad/AppearanceEditor"), { ssr: false });
 const SketchGrid = dynamic(() => import("@/components/cad/SketchGrid"), { ssr: false });
+const LayerPanel = dynamic(() => import("@/components/cad/LayerPanel"), { ssr: false });
 
 export default function DesignerPage() {
   const activeTool = useCadStore((s) => s.activeTool);
@@ -114,6 +115,7 @@ export default function DesignerPage() {
   const [showRefGeometry, setShowRefGeometry] = useState(false);
   const [showConfigManager, setShowConfigManager] = useState(false);
   const [showAppearance, setShowAppearance] = useState(false);
+  const [showLayerPanel, setShowLayerPanel] = useState(false);
   const [selectionFilters, setSelectionFilters] = useState<Set<SelectionFilterType>>(
     () => new Set<SelectionFilterType>(["vertex", "edge", "face", "body", "component"])
   );
@@ -250,6 +252,29 @@ export default function DesignerPage() {
 
             {/* Selection Filter (bottom left, above sketch plane selector) */}
             <SelectionFilter activeFilters={selectionFilters} onToggle={handleToggleFilter} />
+
+            {/* Layer Panel (left side, floating) */}
+            {showLayerPanel && (
+              <div className="absolute top-14 left-3 z-20 pointer-events-auto animate-scale-in">
+                <LayerPanel onClose={() => setShowLayerPanel(false)} />
+              </div>
+            )}
+
+            {/* Layer toggle button */}
+            <div className="absolute bottom-14 left-3 z-10 pointer-events-auto">
+              <button
+                onClick={() => setShowLayerPanel(!showLayerPanel)}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-medium transition-all duration-150 backdrop-blur-md shadow-panel ${
+                  showLayerPanel
+                    ? "bg-[#00D4FF]/15 text-[#00D4FF] border border-[#00D4FF]/30"
+                    : "text-slate-400 hover:text-white bg-[#0d1117]/80 hover:bg-[#21262d] border border-[#21262d]"
+                }`}
+                title="Toggle Layers Panel"
+              >
+                <Layers size={12} />
+                Layers
+              </button>
+            </div>
 
             {/* Measurement overlay - top right */}
             {measureResult && (
