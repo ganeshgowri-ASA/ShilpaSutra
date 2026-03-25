@@ -4,8 +4,9 @@ import { useCadStore, type ToolId } from "@/stores/cad-store";
 import { useConstraintStore } from "@/stores/constraint-store";
 
 const SKETCH_TOOLS: ToolId[] = [
-  "line", "arc", "circle", "rectangle", "polygon", "spline", "ellipse", "construction_line",
+  "line", "polyline", "arc", "circle", "rectangle", "polygon", "spline", "ellipse", "construction_line",
   "arc_3point", "arc_tangent", "circle_3point", "center_rectangle", "slot", "point", "centerline",
+  "hatch", "revision_cloud", "infinite_line", "multiline",
 ];
 
 /** Constraint color coding for sketch entities (SolidWorks-style):

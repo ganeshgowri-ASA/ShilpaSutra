@@ -9,6 +9,7 @@ export type ToolId =
   | "sphere"
   | "cone"
   | "line"
+  | "polyline"
   | "arc"
   | "arc_3point"
   | "arc_tangent"
@@ -26,6 +27,10 @@ export type ToolId =
   | "slot_arc"
   | "parabola"
   | "sketch_text"
+  | "hatch"
+  | "revision_cloud"
+  | "infinite_line"
+  | "multiline"
   | "delete"
   | "measure"
   | "measure_angle"
@@ -105,7 +110,7 @@ export type FeatureType =
 
 export interface CadObject {
   id: string;
-  type: "box" | "cylinder" | "sphere" | "cone" | "line" | "arc" | "circle" | "rectangle" | "polygon" | "ellipse" | "spline" | "mesh" | "point" | "slot" | "centerline";
+  type: "box" | "cylinder" | "sphere" | "cone" | "line" | "polyline" | "arc" | "circle" | "rectangle" | "polygon" | "ellipse" | "spline" | "mesh" | "point" | "slot" | "centerline" | "hatch" | "revision_cloud" | "infinite_line" | "multiline";
   name: string;
   position: [number, number, number];
   rotation: [number, number, number];
@@ -160,6 +165,19 @@ export interface CadObject {
   slotWidth?: number;
   // Centerline-specific (same as line but construction)
   centerlinePoints?: [number, number, number][];
+  // Polyline-specific
+  polylinePoints?: [number, number, number][];
+  polylineClosed?: boolean;
+  // Hatch-specific
+  hatchPattern?: "solid" | "ansi31" | "ansi32" | "ansi33" | "ansi34" | "ansi37" | "cross" | "dots" | "brick" | "stone" | "grass";
+  hatchScale?: number;
+  hatchAngle?: number;
+  hatchBoundary?: [number, number, number][];
+  // Revision cloud
+  cloudPoints?: [number, number, number][];
+  cloudArcRadius?: number;
+  // Layer assignment
+  layerId?: string;
   // Suppression state (SolidWorks-style)
   suppressed?: boolean;
   // Parent/child dependency tracking
@@ -396,6 +414,9 @@ interface CadState {
   addSlot: (center1: [number, number, number], center2: [number, number, number], width: number) => string;
   addCenterline: (points: [number, number, number][]) => string;
   addCenterRectangle: (center: [number, number, number], halfW: number, halfD: number) => string;
+  addPolyline: (points: [number, number, number][], closed?: boolean) => string;
+  addHatch: (boundary: [number, number, number][], pattern: CadObject["hatchPattern"], scale?: number, angle?: number) => string;
+  addRevisionCloud: (points: [number, number, number][], arcRadius?: number) => string;
 
   // Solid operations
   extrudeCut: (sketchId: string, distance: number) => void;
@@ -2134,6 +2155,66 @@ const phiLength = (angle * Math.PI) / 180;
     const c1: [number, number, number] = [center[0] - halfW, center[1], center[2] - halfD];
     const c2: [number, number, number] = [center[0] + halfW, center[1], center[2] + halfD];
     return get().addRectangle(c1, c2);
+  },
+
+  addPolyline: (points, closed = false) => {
+    get().pushHistory();
+    const id = `obj_${++idCounter}_${Date.now()}`;
+    const count = get().objects.filter((o) => o.type === "polyline").length;
+    const obj: CadObject = {
+      id, type: "polyline",
+      name: `Polyline ${count + 1}`,
+      position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
+      dimensions: { width: 0, height: 0, depth: 0 },
+      material: "Steel (AISI 1045)", color: "#4a9eff",
+      visible: true, locked: false, opacity: 1, metalness: 0, roughness: 1,
+      polylinePoints: points, polylineClosed: closed,
+      sketchId: get().activeSketchId || undefined,
+      sketchPlane: get().sketchPlane || undefined,
+    };
+    set((s) => ({ objects: [...s.objects, obj], selectedId: id, selectedIds: [id] }));
+    get().addFeature({ id: `feat_${id}`, type: "polyline", name: obj.name, objectId: id, visible: true, locked: false });
+    return id;
+  },
+
+  addHatch: (boundary, pattern = "ansi31", hatchScale = 1, angle = 0) => {
+    get().pushHistory();
+    const id = `obj_${++idCounter}_${Date.now()}`;
+    const count = get().objects.filter((o) => o.type === "hatch").length;
+    const obj: CadObject = {
+      id, type: "hatch",
+      name: `Hatch ${count + 1}`,
+      position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
+      dimensions: { width: 0, height: 0, depth: 0 },
+      material: "Steel (AISI 1045)", color: "#666666",
+      visible: true, locked: false, opacity: 0.6, metalness: 0, roughness: 1,
+      hatchPattern: pattern, hatchScale, hatchAngle: angle, hatchBoundary: boundary,
+      sketchId: get().activeSketchId || undefined,
+      sketchPlane: get().sketchPlane || undefined,
+    };
+    set((s) => ({ objects: [...s.objects, obj], selectedId: id, selectedIds: [id] }));
+    get().addFeature({ id: `feat_${id}`, type: "hatch", name: obj.name, objectId: id, visible: true, locked: false });
+    return id;
+  },
+
+  addRevisionCloud: (points, arcRadius = 0.3) => {
+    get().pushHistory();
+    const id = `obj_${++idCounter}_${Date.now()}`;
+    const count = get().objects.filter((o) => o.type === "revision_cloud").length;
+    const obj: CadObject = {
+      id, type: "revision_cloud",
+      name: `Rev Cloud ${count + 1}`,
+      position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1],
+      dimensions: { width: 0, height: 0, depth: 0 },
+      material: "Steel (AISI 1045)", color: "#ff4444",
+      visible: true, locked: false, opacity: 1, metalness: 0, roughness: 1,
+      cloudPoints: points, cloudArcRadius: arcRadius,
+      sketchId: get().activeSketchId || undefined,
+      sketchPlane: get().sketchPlane || undefined,
+    };
+    set((s) => ({ objects: [...s.objects, obj], selectedId: id, selectedIds: [id] }));
+    get().addFeature({ id: `feat_${id}`, type: "revision_cloud", name: obj.name, objectId: id, visible: true, locked: false });
+    return id;
   },
 
   // ── Extrude Cut (subtract via sketch profile) ────────────────

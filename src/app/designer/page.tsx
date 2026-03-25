@@ -2,7 +2,7 @@
 import React, { useState, useCallback, useRef, useEffect, Component, type ErrorInfo, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import { useCadStore } from "@/stores/cad-store";
-import { Package, History, MessageSquare } from "lucide-react";
+import { Package, History, Layers, RulerIcon, Settings2, Grid3X3, MessageSquare } from "lucide-react";
 import type { SelectionFilterType } from "@/components/cad/SelectionFilter";
 
 /* ── Error Boundary to prevent full-page crashes ── */
@@ -85,6 +85,12 @@ const ReferenceGeometryPanel = dynamic(() => import("@/components/cad/ReferenceG
 const ConfigurationManager = dynamic(() => import("@/components/cad/ConfigurationManager"), { ssr: false });
 const AppearanceEditor = dynamic(() => import("@/components/cad/AppearanceEditor"), { ssr: false });
 const SketchGrid = dynamic(() => import("@/components/cad/SketchGrid"), { ssr: false });
+const LayerPanel = dynamic(() => import("@/components/cad/LayerPanel"), { ssr: false });
+const DimensionTools = dynamic(() => import("@/components/cad/DimensionTools"), { ssr: false });
+const SnapIndicatorOverlay = dynamic(() => import("@/components/cad/SnapIndicator"), { ssr: false });
+const EntityPropertiesPanel = dynamic(() => import("@/components/cad/EntityPropertiesPanel"), { ssr: false });
+const GridControls = dynamic(() => import("@/components/cad/GridControls"), { ssr: false });
+const CoordinateInput = dynamic(() => import("@/components/cad/CoordinateInput"), { ssr: false });
 const AIToolPanel = dynamic(() => import("@/components/cad/AIToolPanel"), { ssr: false });
 
 type AIToolType = "ai_text_to_cad" | "ai_suggest" | "ai_optimize" | "ai_explain" | null;
@@ -117,13 +123,18 @@ export default function DesignerPage() {
   const [showRefGeometry, setShowRefGeometry] = useState(false);
   const [showConfigManager, setShowConfigManager] = useState(false);
   const [showAppearance, setShowAppearance] = useState(false);
+  const [showLayerPanel, setShowLayerPanel] = useState(false);
+  const [showDimensionTools, setShowDimensionTools] = useState(false);
+  const [showEntityProps, setShowEntityProps] = useState(false);
+  const [showGridControls, setShowGridControls] = useState(false);
   const [activeAITool, setActiveAITool] = useState<AIToolType>(null);
   const [selectionFilters, setSelectionFilters] = useState<Set<SelectionFilterType>>(
     () => new Set<SelectionFilterType>(["vertex", "edge", "face", "body", "component"])
   );
 
-  const sketchTools = ["line", "arc", "circle", "rectangle", "polygon", "spline", "ellipse", "construction_line",
-    "arc_3point", "arc_tangent", "circle_3point", "center_rectangle", "slot", "point", "centerline"];
+  const sketchTools = ["line", "polyline", "arc", "circle", "rectangle", "polygon", "spline", "ellipse", "construction_line",
+    "arc_3point", "arc_tangent", "circle_3point", "center_rectangle", "slot", "point", "centerline",
+    "hatch", "revision_cloud", "infinite_line", "multiline"];
   const isSketchMode = sketchTools.includes(activeTool) || !!sketchPlane;
 
   const handleCloseOperation = useCallback(() => {
@@ -208,6 +219,15 @@ export default function DesignerPage() {
               <SketchOverlay containerRef={viewportRef} />
             </ViewportErrorBoundary>
 
+            {/* Snap indicator overlay with visual markers */}
+            <ViewportErrorBoundary fallback={null}>
+              <SnapIndicatorOverlay
+                containerWidth={1920}
+                containerHeight={1080}
+                activeSnap={null}
+              />
+            </ViewportErrorBoundary>
+
             {/* Sketch Toolbar (floating, top center) */}
             <SketchToolbar visible={isSketchMode} />
 
@@ -280,6 +300,86 @@ export default function DesignerPage() {
 
             {/* Selection Filter (bottom left, above sketch plane selector) */}
             <SelectionFilter activeFilters={selectionFilters} onToggle={handleToggleFilter} />
+
+            {/* Layer Panel (left side, floating) */}
+            {showLayerPanel && (
+              <div className="absolute top-14 left-3 z-20 pointer-events-auto animate-scale-in">
+                <LayerPanel onClose={() => setShowLayerPanel(false)} />
+              </div>
+            )}
+
+            {/* Layer & Dimension toggle buttons */}
+            <div className="absolute bottom-14 left-3 z-10 pointer-events-auto flex items-center gap-1.5">
+              <button
+                onClick={() => setShowLayerPanel(!showLayerPanel)}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-medium transition-all duration-150 backdrop-blur-md shadow-panel ${
+                  showLayerPanel
+                    ? "bg-[#00D4FF]/15 text-[#00D4FF] border border-[#00D4FF]/30"
+                    : "text-slate-400 hover:text-white bg-[#0d1117]/80 hover:bg-[#21262d] border border-[#21262d]"
+                }`}
+                title="Toggle Layers Panel"
+              >
+                <Layers size={12} />
+                Layers
+              </button>
+              <button
+                onClick={() => setShowDimensionTools(!showDimensionTools)}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-medium transition-all duration-150 backdrop-blur-md shadow-panel ${
+                  showDimensionTools
+                    ? "bg-[#00D4FF]/15 text-[#00D4FF] border border-[#00D4FF]/30"
+                    : "text-slate-400 hover:text-white bg-[#0d1117]/80 hover:bg-[#21262d] border border-[#21262d]"
+                }`}
+                title="Toggle Dimension Tools"
+              >
+                <RulerIcon size={12} />
+                Dims
+              </button>
+              <button
+                onClick={() => setShowEntityProps(!showEntityProps)}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-medium transition-all duration-150 backdrop-blur-md shadow-panel ${
+                  showEntityProps
+                    ? "bg-[#00D4FF]/15 text-[#00D4FF] border border-[#00D4FF]/30"
+                    : "text-slate-400 hover:text-white bg-[#0d1117]/80 hover:bg-[#21262d] border border-[#21262d]"
+                }`}
+                title="Toggle Entity Properties"
+              >
+                <Settings2 size={12} />
+                Props
+              </button>
+              <button
+                onClick={() => setShowGridControls(!showGridControls)}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-medium transition-all duration-150 backdrop-blur-md shadow-panel ${
+                  showGridControls
+                    ? "bg-[#00D4FF]/15 text-[#00D4FF] border border-[#00D4FF]/30"
+                    : "text-slate-400 hover:text-white bg-[#0d1117]/80 hover:bg-[#21262d] border border-[#21262d]"
+                }`}
+                title="Toggle Grid Controls"
+              >
+                <Grid3X3 size={12} />
+                Grid
+              </button>
+            </div>
+
+            {/* Dimension Tools Panel */}
+            {showDimensionTools && (
+              <div className="absolute top-14 left-[310px] z-20 pointer-events-auto animate-scale-in">
+                <DimensionTools onClose={() => setShowDimensionTools(false)} />
+              </div>
+            )}
+
+            {/* Entity Properties Panel */}
+            {showEntityProps && (
+              <div className="absolute top-14 right-3 z-20 pointer-events-auto animate-scale-in">
+                <EntityPropertiesPanel onClose={() => setShowEntityProps(false)} />
+              </div>
+            )}
+
+            {/* Grid Controls Panel */}
+            {showGridControls && (
+              <div className="absolute bottom-28 left-3 z-20 pointer-events-auto animate-scale-in">
+                <GridControls onClose={() => setShowGridControls(false)} />
+              </div>
+            )}
 
             {/* Measurement overlay - top right */}
             {measureResult && (
@@ -471,12 +571,14 @@ export default function DesignerPage() {
         {aiOpen && aiMode === "enhanced" && <AIChatAssistantEnhanced onClose={() => setAiOpen(false)} />}
       </div>
 
-      {/* Timeline toggle + Command Bar */}
+      {/* Timeline toggle + Coordinate Input + Command Bar */}
       <div className="flex items-center gap-2 px-3 py-1 bg-[#0d1117] border-t border-[#21262d]">
         <button onClick={() => setTimelineOpen(!timelineOpen)}
           className={`text-[9px] font-semibold px-2.5 py-0.5 rounded-md border transition-all duration-150 ${timelineOpen ? "border-[#00D4FF]/30 text-[#00D4FF] bg-[#00D4FF]/10" : "border-[#21262d] text-slate-500 hover:text-slate-300 hover:border-[#30363d]"}`}>
           Timeline
         </button>
+        <div className="h-3 w-px bg-[#21262d]" />
+        <CoordinateInput />
       </div>
 
       {/* Command Bar (bottom) */}
