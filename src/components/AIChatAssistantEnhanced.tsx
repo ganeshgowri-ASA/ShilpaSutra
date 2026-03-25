@@ -593,7 +593,7 @@ export default function AIChatAssistantEnhanced({ onClose }: { onClose: () => vo
     {
       id: "welcome",
       role: "assistant",
-      content: `Welcome to ShilpaSutra AI Assistant (Zookeeper Mode).
+      content: `Welcome to ShilpaSutra AI Engine.
 
 I can understand natural language commands to modify your 3D scene:
 
@@ -702,8 +702,7 @@ I'm context-aware and know what's in your scene. Try asking "what's in the scene
       <div className="flex items-center justify-between px-3 py-2 border-b border-[#21262d] bg-[#0d1117]">
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-          <span className="text-xs font-bold text-white">AI Assistant</span>
-          <span className="text-[9px] bg-purple-500/20 text-purple-400 border border-purple-500/30 rounded px-1.5 py-0.5">ShilpaSutra AI</span>
+          <span className="text-xs font-bold text-white">ShilpaSutra AI Engine</span>
         </div>
         <div className="flex items-center gap-1">
           <button

@@ -754,7 +754,7 @@ export async function POST(request: NextRequest) {
       success: true,
       geometry,
       metadata: {
-        engine: "ShilpaSutra Zookeeper v1.0",
+        engine: "ShilpaSutra AI Engine v1.0",
         parsedType: type,
         parsedParams: params,
         supportedFormats: ["STEP", "STL", "OBJ", "IGES", "3MF", "GLB", "GLTF", "FBX", "DXF", "PLY"],

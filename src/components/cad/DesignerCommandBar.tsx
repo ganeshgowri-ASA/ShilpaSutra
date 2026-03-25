@@ -1,7 +1,7 @@
 "use client";
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useCadStore } from "@/stores/cad-store";
-import { Terminal, Grid3X3, Sparkles } from "lucide-react";
+import { Terminal, Grid3X3, Sparkles, X, CheckCircle2, AlertCircle } from "lucide-react";
 
 const COMMANDS = [
   "BOX", "CYLINDER", "SPHERE", "CONE",
@@ -32,12 +32,99 @@ interface SuggestionItem {
   description?: string;
 }
 
+// Process natural language AI commands
+function processAICommand(
+  input: string,
+  selectedObj: { name: string; type: string; dimensions: { width: number; height: number; depth: number }; material?: string } | null,
+  objectCount: number,
+  actions: {
+    addGeneratedObject: (obj: Record<string, unknown>) => string;
+    aiFilletSelected: (r: number) => boolean;
+    aiChamferSelected: (d: number) => boolean;
+    aiShell: (t: number) => boolean;
+    aiMirror: (p: "xy" | "xz" | "yz") => string[];
+  }
+): { success: boolean; message: string } {
+  const lower = input.toLowerCase().trim();
+
+  // Fillet
+  if (lower.match(/^(fillet|round)/)) {
+    const r = parseFloat(lower.match(/(\d+(?:\.\d+)?)/)?.[1] || "2");
+    if (!selectedObj) return { success: false, message: "Select an object first to apply fillet." };
+    const ok = actions.aiFilletSelected(r);
+    return ok
+      ? { success: true, message: `Applied ${r}mm fillet to "${selectedObj.name}".` }
+      : { success: false, message: "Cannot fillet this object type." };
+  }
+  // Chamfer
+  if (lower.match(/^(chamfer|bevel)/)) {
+    const d = parseFloat(lower.match(/(\d+(?:\.\d+)?)/)?.[1] || "1");
+    if (!selectedObj) return { success: false, message: "Select an object first to apply chamfer." };
+    const ok = actions.aiChamferSelected(d);
+    return ok
+      ? { success: true, message: `Applied ${d}mm chamfer to "${selectedObj.name}".` }
+      : { success: false, message: "Cannot chamfer this object type." };
+  }
+  // Shell
+  if (lower.match(/^shell/)) {
+    const t = parseFloat(lower.match(/(\d+(?:\.\d+)?)/)?.[1] || "2");
+    if (!selectedObj) return { success: false, message: "Select an object first to apply shell." };
+    const ok = actions.aiShell(t);
+    return ok
+      ? { success: true, message: `Applied ${t}mm shell to "${selectedObj.name}".` }
+      : { success: false, message: "Cannot shell this object type." };
+  }
+  // Mirror
+  if (lower.includes("mirror")) {
+    const plane = lower.includes("xz") ? "xz" : lower.includes("yz") ? "yz" : "xy";
+    const ids = actions.aiMirror(plane as "xy" | "xz" | "yz");
+    return ids.length > 0
+      ? { success: true, message: `Mirrored ${ids.length} object(s) about ${plane.toUpperCase()} plane.` }
+      : { success: false, message: "No objects to mirror." };
+  }
+  // Create objects
+  if (lower.match(/^(make|create|add|generate|design|place)\s/)) {
+    let type: "box" | "cylinder" | "sphere" | "cone" = "box";
+    let name = "Generated Part";
+    const dims = { width: 2, height: 2, depth: 2 };
+    if (lower.includes("cylinder") || lower.includes("tube")) { type = "cylinder"; name = "Cylinder"; }
+    else if (lower.includes("sphere") || lower.includes("ball")) { type = "sphere"; name = "Sphere"; }
+    else if (lower.includes("cone")) { type = "cone"; name = "Cone"; }
+    else if (lower.includes("box") || lower.includes("cube") || lower.includes("block")) { type = "box"; name = "Box"; }
+    else if (lower.includes("gear")) { type = "cylinder"; name = "Gear"; }
+    else if (lower.includes("bracket")) { type = "box"; name = "Bracket"; }
+    // Parse dimensions like "50x30x20"
+    const dm = lower.match(/(\d+)\s*[x×]\s*(\d+)\s*[x×]\s*(\d+)/);
+    if (dm) { dims.width = parseInt(dm[1])/10; dims.height = parseInt(dm[2])/10; dims.depth = parseInt(dm[3])/10; }
+    actions.addGeneratedObject({ type, name, dimensions: dims, position: [0, dims.height/2, 0] });
+    return { success: true, message: `Created "${name}" (${dims.width*10}×${dims.height*10}×${dims.depth*10}mm) in viewport.` };
+  }
+  // Optimize / explain / help
+  if (lower.includes("optimize")) {
+    return { success: true, message: selectedObj
+      ? `Optimization for "${selectedObj.name}": consider shell (2mm) to reduce mass ~60%, add ribs for support, fillet stress concentrators.`
+      : "Select an object to optimize." };
+  }
+  if (lower.includes("explain")) {
+    return { success: true, message: selectedObj
+      ? `"${selectedObj.name}" is a ${selectedObj.type}, ${(selectedObj.dimensions.width*10).toFixed(0)}×${(selectedObj.dimensions.height*10).toFixed(0)}×${(selectedObj.dimensions.depth*10).toFixed(0)}mm.`
+      : "Select an object to explain." };
+  }
+  if (lower.includes("what") || lower.includes("scene") || lower.includes("list")) {
+    return { success: true, message: `Scene contains ${objectCount} object(s).${selectedObj ? ` Selected: "${selectedObj.name}".` : ""}` };
+  }
+
+  return { success: false, message: `Unknown command: "${input}". Try "make a box 50x30x20" or "fillet 3mm".` };
+}
+
 export default function DesignerCommandBar() {
   const [input, setInput] = useState("");
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
+  const [commandResponse, setCommandResponse] = useState<{ message: string; success: boolean } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const responseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const executeCommand = useCadStore((s) => s.executeCommand);
   const commandHistory = useCadStore((s) => s.commandHistory);
@@ -46,8 +133,23 @@ export default function DesignerCommandBar() {
   const setSnapGrid = useCadStore((s) => s.setSnapGrid);
   const selectedIds = useCadStore((s) => s.selectedIds);
   const selectedId = useCadStore((s) => s.selectedId);
+  const objects = useCadStore((s) => s.objects);
+  const addGeneratedObject = useCadStore((s) => s.addGeneratedObject);
+  const aiFilletSelected = useCadStore((s) => s.aiFilletSelected);
+  const aiChamferSelected = useCadStore((s) => s.aiChamferSelected);
+  const aiShell = useCadStore((s) => s.aiShell);
+  const aiMirror = useCadStore((s) => s.aiMirror);
 
   const selCount = selectedIds.length || (selectedId ? 1 : 0);
+  const selectedObj = objects.find((o) => o.id === selectedId) || null;
+
+  // Auto-dismiss response after 6 seconds
+  useEffect(() => {
+    if (commandResponse) {
+      responseTimerRef.current = setTimeout(() => setCommandResponse(null), 6000);
+      return () => { if (responseTimerRef.current) clearTimeout(responseTimerRef.current); };
+    }
+  }, [commandResponse]);
 
   // Build combined suggestions: standard commands + AI suggestions
   const getSuggestions = useCallback((text: string): SuggestionItem[] => {
@@ -87,13 +189,34 @@ export default function DesignerCommandBar() {
     (e: React.FormEvent) => {
       e.preventDefault();
       if (!input.trim()) return;
-      executeCommand(input.trim());
+      const cmd = input.trim();
+      const upper = cmd.toUpperCase().split(/\s+/)[0];
+      const isStandardCmd = COMMANDS.includes(upper);
+
+      if (isStandardCmd) {
+        executeCommand(cmd);
+        setCommandResponse({ success: true, message: `Executed: ${upper}` });
+      } else {
+        // Process as AI natural language command
+        const result = processAICommand(cmd, selectedObj, objects.length, {
+          addGeneratedObject: addGeneratedObject as (obj: Record<string, unknown>) => string,
+          aiFilletSelected,
+          aiChamferSelected,
+          aiShell,
+          aiMirror,
+        });
+        if (!result.success) {
+          // Still try standard command execution as fallback
+          executeCommand(cmd);
+        }
+        setCommandResponse(result);
+      }
       setInput("");
       setHistoryIndex(-1);
       setShowSuggestions(false);
       setSelectedSuggestionIndex(0);
     },
-    [input, executeCommand]
+    [input, executeCommand, selectedObj, objects.length, addGeneratedObject, aiFilletSelected, aiChamferSelected, aiShell, aiMirror]
   );
 
   const handleKeyDown = useCallback(
@@ -141,6 +264,26 @@ export default function DesignerCommandBar() {
 
   return (
     <div className="h-10 bg-[#1a1a2e] border-t border-[#16213e] flex items-center px-3 shrink-0 select-none relative">
+      {/* Command response notification */}
+      {commandResponse && (
+        <div className={`absolute bottom-full left-0 right-0 mb-0 px-4 py-2 text-xs flex items-center gap-2 animate-fade-in z-50 border-b ${
+          commandResponse.success
+            ? "bg-[#0d1117]/95 border-emerald-500/20 text-emerald-300"
+            : "bg-[#0d1117]/95 border-amber-500/20 text-amber-300"
+        }`}>
+          {commandResponse.success
+            ? <CheckCircle2 size={12} className="text-emerald-400 shrink-0" />
+            : <AlertCircle size={12} className="text-amber-400 shrink-0" />
+          }
+          <span className="flex-1 font-mono leading-relaxed">{commandResponse.message}</span>
+          <button
+            onClick={() => setCommandResponse(null)}
+            className="text-slate-500 hover:text-white shrink-0"
+          >
+            <X size={12} />
+          </button>
+        </div>
+      )}
       {/* Command input */}
       <div className="flex items-center gap-2 flex-1">
         <Terminal size={14} className="text-slate-600 shrink-0" />

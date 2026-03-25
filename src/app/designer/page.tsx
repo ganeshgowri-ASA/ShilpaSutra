@@ -93,7 +93,7 @@ const GridControls = dynamic(() => import("@/components/cad/GridControls"), { ss
 const CoordinateInput = dynamic(() => import("@/components/cad/CoordinateInput"), { ssr: false });
 const AIToolPanel = dynamic(() => import("@/components/cad/AIToolPanel"), { ssr: false });
 
-type AIToolType = "ai_text_to_cad" | "ai_suggest" | "ai_optimize" | "ai_explain" | null;
+type AIToolType = "ai_text_to_cad" | "ai_suggest" | "ai_optimize" | "ai_explain" | "ai_fea" | "ai_cfd" | null;
 
 export default function DesignerPage() {
   const activeTool = useCadStore((s) => s.activeTool);
@@ -149,7 +149,7 @@ export default function DesignerPage() {
   const handleConfigManager = useCallback(() => setShowConfigManager(true), []);
   const handleHoleWizard = useCallback(() => setShowHoleWizard(true), []);
 
-  const handleAITool = useCallback((tool: "ai_text_to_cad" | "ai_suggest" | "ai_optimize" | "ai_explain") => {
+  const handleAITool = useCallback((tool: "ai_text_to_cad" | "ai_suggest" | "ai_optimize" | "ai_explain" | "ai_fea" | "ai_cfd") => {
     setActiveAITool((prev) => (prev === tool ? null : tool));
   }, []);
 
@@ -436,7 +436,7 @@ export default function DesignerPage() {
                         : "border-[#21262d] text-slate-500 bg-[#0d1117]/80"
                     }`}
                   >
-                    {aiMode === "enhanced" ? "ShilpaSutra AI" : "Basic"}
+                    {aiMode === "enhanced" ? "AI Engine" : "Basic"}
                   </button>
                 )}
                 <button
