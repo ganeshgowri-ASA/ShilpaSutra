@@ -2,7 +2,7 @@
 import React, { useState, useCallback, useRef, Component, type ErrorInfo, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import { useCadStore } from "@/stores/cad-store";
-import { Package, History, Layers } from "lucide-react";
+import { Package, History, Layers, RulerIcon } from "lucide-react";
 import type { SelectionFilterType } from "@/components/cad/SelectionFilter";
 
 /* ── Error Boundary to prevent full-page crashes ── */
@@ -86,6 +86,7 @@ const ConfigurationManager = dynamic(() => import("@/components/cad/Configuratio
 const AppearanceEditor = dynamic(() => import("@/components/cad/AppearanceEditor"), { ssr: false });
 const SketchGrid = dynamic(() => import("@/components/cad/SketchGrid"), { ssr: false });
 const LayerPanel = dynamic(() => import("@/components/cad/LayerPanel"), { ssr: false });
+const DimensionTools = dynamic(() => import("@/components/cad/DimensionTools"), { ssr: false });
 
 export default function DesignerPage() {
   const activeTool = useCadStore((s) => s.activeTool);
@@ -116,6 +117,7 @@ export default function DesignerPage() {
   const [showConfigManager, setShowConfigManager] = useState(false);
   const [showAppearance, setShowAppearance] = useState(false);
   const [showLayerPanel, setShowLayerPanel] = useState(false);
+  const [showDimensionTools, setShowDimensionTools] = useState(false);
   const [selectionFilters, setSelectionFilters] = useState<Set<SelectionFilterType>>(
     () => new Set<SelectionFilterType>(["vertex", "edge", "face", "body", "component"])
   );
@@ -261,8 +263,8 @@ export default function DesignerPage() {
               </div>
             )}
 
-            {/* Layer toggle button */}
-            <div className="absolute bottom-14 left-3 z-10 pointer-events-auto">
+            {/* Layer & Dimension toggle buttons */}
+            <div className="absolute bottom-14 left-3 z-10 pointer-events-auto flex items-center gap-1.5">
               <button
                 onClick={() => setShowLayerPanel(!showLayerPanel)}
                 className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-medium transition-all duration-150 backdrop-blur-md shadow-panel ${
@@ -275,7 +277,26 @@ export default function DesignerPage() {
                 <Layers size={12} />
                 Layers
               </button>
+              <button
+                onClick={() => setShowDimensionTools(!showDimensionTools)}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-medium transition-all duration-150 backdrop-blur-md shadow-panel ${
+                  showDimensionTools
+                    ? "bg-[#00D4FF]/15 text-[#00D4FF] border border-[#00D4FF]/30"
+                    : "text-slate-400 hover:text-white bg-[#0d1117]/80 hover:bg-[#21262d] border border-[#21262d]"
+                }`}
+                title="Toggle Dimension Tools"
+              >
+                <RulerIcon size={12} />
+                Dims
+              </button>
             </div>
+
+            {/* Dimension Tools Panel */}
+            {showDimensionTools && (
+              <div className="absolute top-14 left-[310px] z-20 pointer-events-auto animate-scale-in">
+                <DimensionTools onClose={() => setShowDimensionTools(false)} />
+              </div>
+            )}
 
             {/* Measurement overlay - top right */}
             {measureResult && (
