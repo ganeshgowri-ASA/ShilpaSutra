@@ -227,6 +227,365 @@ let idCounter = 0;
 
 const MAX_HISTORY = 50;
 
+// ── Unit conversion: everything → mm, then mm → scene units (1 scene unit = 10mm) ──
+
+const UNIT_TO_MM: Record<string, number> = {
+  mm: 1, millimeter: 1, millimeters: 1, millimetre: 1, millimetres: 1,
+  cm: 10, centimeter: 10, centimeters: 10, centimetre: 10, centimetres: 10,
+  m: 1000, meter: 1000, meters: 1000, metre: 1000, metres: 1000,
+  in: 25.4, inch: 25.4, inches: 25.4, '"': 25.4,
+  ft: 304.8, foot: 304.8, feet: 304.8, "'": 304.8,
+};
+
+const MM_TO_SCENE = 1 / 10; // 10mm = 1 scene unit
+
+function parseValueWithUnit(token: string): number | null {
+  // e.g. "2m", "35mm", "1.5in", "200", "12ft"
+  const m = token.match(/^([0-9]*\.?[0-9]+)\s*(mm|cm|m|in|inch|inches|ft|foot|feet|meter|meters|metre|metres|millimeter|millimeters|centimeter|centimeters|"|')?$/i);
+  if (!m) return null;
+  const val = parseFloat(m[1]);
+  const unit = (m[2] || "mm").toLowerCase();
+  const factor = UNIT_TO_MM[unit] ?? 1;
+  return val * factor * MM_TO_SCENE;
+}
+
+interface ParsedDims { width: number; height: number; depth: number }
+
+function parseDimensions(text: string): ParsedDims | null {
+  // Pattern: "2m x 1m x 35mm" or "200x100x50" or "2m by 1m by 35mm"
+  const dimPattern = /([0-9]*\.?[0-9]+)\s*(mm|cm|m|in|inch|inches|ft|foot|feet)?\s*[x×by]+\s*([0-9]*\.?[0-9]+)\s*(mm|cm|m|in|inch|inches|ft|foot|feet)?\s*(?:[x×by]+\s*([0-9]*\.?[0-9]+)\s*(mm|cm|m|in|inch|inches|ft|foot|feet)?)?/i;
+  const m = text.match(dimPattern);
+  if (!m) return null;
+  const u1 = (m[2] || "mm").toLowerCase();
+  const u2 = (m[4] || m[2] || "mm").toLowerCase();
+  const u3 = (m[6] || m[4] || m[2] || "mm").toLowerCase();
+  const w = parseFloat(m[1]) * (UNIT_TO_MM[u1] ?? 1) * MM_TO_SCENE;
+  const h = parseFloat(m[3]) * (UNIT_TO_MM[u2] ?? 1) * MM_TO_SCENE;
+  const d = m[5] ? parseFloat(m[5]) * (UNIT_TO_MM[u3] ?? 1) * MM_TO_SCENE : h;
+  return { width: w, height: d, depth: h }; // w=X, height=Y(thickness), depth=Z
+}
+
+function parseSingleDim(text: string, keyword: string): number | null {
+  const re = new RegExp(keyword + "\\s*:?\\s*([0-9]*\\.?[0-9]+)\\s*(mm|cm|m|in|inch|inches|ft|foot|feet)?", "i");
+  const m = text.match(re);
+  if (!m) return null;
+  const unit = (m[2] || "mm").toLowerCase();
+  return parseFloat(m[1]) * (UNIT_TO_MM[unit] ?? 1) * MM_TO_SCENE;
+}
+
+function parseOdId(text: string): { od: number; id: number } | null {
+  const odM = text.match(/OD\s*:?\s*([0-9]*\.?[0-9]+)\s*(mm|cm|m|in|inch|inches|ft|foot|feet)?/i);
+  const idM = text.match(/ID\s*:?\s*([0-9]*\.?[0-9]+)\s*(mm|cm|m|in|inch|inches|ft|foot|feet)?/i);
+  if (!odM || !idM) return null;
+  const odU = (odM[2] || "mm").toLowerCase();
+  const idU = (idM[2] || "mm").toLowerCase();
+  return {
+    od: parseFloat(odM[1]) * (UNIT_TO_MM[odU] ?? 1) * MM_TO_SCENE,
+    id: parseFloat(idM[1]) * (UNIT_TO_MM[idU] ?? 1) * MM_TO_SCENE,
+  };
+}
+
+// ── Material inference ──
+
+interface MaterialInfo { material: string; color: string; metalness: number; roughness: number }
+
+function inferMaterial(text: string): MaterialInfo {
+  const t = text.toLowerCase();
+  if (/alumini?um|alu\b/i.test(t)) return { material: "Aluminum 6061-T6", color: "#c0c8d0", metalness: 0.7, roughness: 0.3 };
+  if (/steel|stainless/i.test(t)) return { material: "Steel (AISI 1045)", color: "#8899aa", metalness: 0.6, roughness: 0.4 };
+  if (/titanium/i.test(t)) return { material: "Titanium Ti-6Al-4V", color: "#7a8a9a", metalness: 0.6, roughness: 0.35 };
+  if (/copper/i.test(t)) return { material: "Copper C110", color: "#b87333", metalness: 0.8, roughness: 0.25 };
+  if (/brass/i.test(t)) return { material: "Brass C360", color: "#c9a84c", metalness: 0.7, roughness: 0.3 };
+  if (/plastic|abs|pla\b|nylon|polymer|polycarbonate|pc\b|pvc/i.test(t)) return { material: "ABS Plastic", color: "#e0e0e0", metalness: 0.0, roughness: 0.7 };
+  if (/glass|transparent/i.test(t)) return { material: "Polycarbonate", color: "#d0e8ff", metalness: 0.1, roughness: 0.1 };
+  if (/wood|timber/i.test(t)) return { material: "Nylon PA6", color: "#b08050", metalness: 0.0, roughness: 0.8 };
+  // default
+  return { material: "Steel (AISI 1045)", color: "#8899aa", metalness: 0.4, roughness: 0.5 };
+}
+
+// ── Geometry serialization helper ──
+
+function serializeGeometry(geo: THREE.BufferGeometry): { meshVertices: number[]; meshIndices: number[] } {
+  geo.computeVertexNormals();
+  const pos = geo.attributes.position;
+  const meshVertices: number[] = [];
+  for (let i = 0; i < pos.count; i++) meshVertices.push(pos.getX(i), pos.getY(i), pos.getZ(i));
+  const idx = geo.index;
+  const meshIndices: number[] = [];
+  if (idx) { for (let i = 0; i < idx.count; i++) meshIndices.push(idx.getX(i)); }
+  else { for (let i = 0; i < pos.count; i++) meshIndices.push(i); }
+  geo.dispose();
+  return { meshVertices, meshIndices };
+}
+
+// ── Complex object builders (return partial CadObject) ──
+
+function buildPVModule(dims: ParsedDims, mat: MaterialInfo): Partial<CadObject>[] {
+  const { width: w, depth: d, height: frameH } = dims;
+  const glassThick = frameH * 0.6;
+  const cellInset = w * 0.05;
+
+  // Frame (aluminium extrusion border)
+  const frameShape = new THREE.Shape();
+  frameShape.moveTo(-w / 2, -d / 2);
+  frameShape.lineTo(w / 2, -d / 2);
+  frameShape.lineTo(w / 2, d / 2);
+  frameShape.lineTo(-w / 2, d / 2);
+  frameShape.closePath();
+  const frameHole = new THREE.Path();
+  const inset = w * 0.02;
+  frameHole.moveTo(-w / 2 + inset, -d / 2 + inset);
+  frameHole.lineTo(w / 2 - inset, -d / 2 + inset);
+  frameHole.lineTo(w / 2 - inset, d / 2 - inset);
+  frameHole.lineTo(-w / 2 + inset, d / 2 - inset);
+  frameHole.closePath();
+  frameShape.holes.push(frameHole);
+  const frameGeo = new THREE.ExtrudeGeometry(frameShape, { depth: frameH, bevelEnabled: false });
+  frameGeo.rotateX(-Math.PI / 2);
+  frameGeo.translate(0, frameH / 2, 0);
+  const frameMesh = serializeGeometry(frameGeo);
+
+  // Glass panel
+  const glassGeo = new THREE.BoxGeometry(w - inset * 2, glassThick, d - inset * 2);
+  glassGeo.translate(0, frameH * 0.55, 0);
+  const glassMesh = serializeGeometry(glassGeo);
+
+  // Solar cells (thin dark layer)
+  const cellW = w - cellInset * 2;
+  const cellD = d - cellInset * 2;
+  const cellGeo = new THREE.BoxGeometry(cellW, frameH * 0.05, cellD);
+  cellGeo.translate(0, frameH * 0.45, 0);
+  const cellMesh = serializeGeometry(cellGeo);
+
+  return [
+    {
+      type: "mesh" as const, name: "PV Module - Frame",
+      dimensions: { width: w, height: frameH, depth: d },
+      position: [0, frameH / 2, 0],
+      ...frameMesh,
+      material: "Aluminum 6061-T6", color: "#c0c8d0", metalness: 0.7, roughness: 0.3,
+      componentType: "pv_module_frame",
+    },
+    {
+      type: "mesh" as const, name: "PV Module - Glass",
+      dimensions: { width: w - inset * 2, height: glassThick, depth: d - inset * 2 },
+      position: [0, frameH * 0.55, 0],
+      ...glassMesh,
+      material: "Polycarbonate", color: "#88bbee", metalness: 0.1, roughness: 0.1,
+      opacity: 0.85,
+      componentType: "pv_module_glass",
+    },
+    {
+      type: "mesh" as const, name: "PV Module - Cells",
+      dimensions: { width: cellW, height: frameH * 0.05, depth: cellD },
+      position: [0, frameH * 0.45, 0],
+      ...cellMesh,
+      material: "ABS Plastic", color: "#1a1a3a", metalness: 0.2, roughness: 0.6,
+      componentType: "pv_module_cells",
+    },
+  ];
+}
+
+function buildBolt(size: number, length: number, mat: MaterialInfo): Partial<CadObject>[] {
+  // size = M diameter in scene units, length in scene units
+  const headH = size * 0.7;
+  const headW = size * 1.7; // across-flats ≈ 1.7x nominal
+  const shaftR = size / 2;
+
+  // Hex head
+  const hexShape = new THREE.Shape();
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2 - Math.PI / 6;
+    const x = Math.cos(a) * headW / 2;
+    const y = Math.sin(a) * headW / 2;
+    if (i === 0) hexShape.moveTo(x, y); else hexShape.lineTo(x, y);
+  }
+  hexShape.closePath();
+  const headGeo = new THREE.ExtrudeGeometry(hexShape, { depth: headH, bevelEnabled: false });
+  headGeo.rotateX(-Math.PI / 2);
+  headGeo.translate(0, length + headH / 2, 0);
+  const headMesh = serializeGeometry(headGeo);
+
+  // Shaft (cylinder)
+  const shaftGeo = new THREE.CylinderGeometry(shaftR, shaftR, length, 24);
+  shaftGeo.translate(0, length / 2, 0);
+  const shaftMesh = serializeGeometry(shaftGeo);
+
+  return [
+    {
+      type: "mesh" as const, name: `Bolt M${Math.round(size / MM_TO_SCENE)} - Head`,
+      dimensions: { width: headW, height: headH, depth: headW },
+      position: [0, length + headH / 2, 0],
+      ...headMesh, ...mat,
+      componentType: "hex_bolt_head",
+    },
+    {
+      type: "mesh" as const, name: `Bolt M${Math.round(size / MM_TO_SCENE)} - Shaft`,
+      dimensions: { width: shaftR * 2, height: length, depth: shaftR * 2 },
+      position: [0, length / 2, 0],
+      ...shaftMesh, ...mat,
+      componentType: "hex_bolt_shaft",
+    },
+  ];
+}
+
+function buildPipe(od: number, id: number, length: number, mat: MaterialInfo): Partial<CadObject>[] {
+  const outerR = od / 2;
+  const innerR = id / 2;
+  const shape = new THREE.Shape();
+  shape.absarc(0, 0, outerR, 0, Math.PI * 2, false);
+  const hole = new THREE.Path();
+  hole.absarc(0, 0, innerR, 0, Math.PI * 2, true);
+  shape.holes.push(hole);
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: length, bevelEnabled: false });
+  geo.rotateX(-Math.PI / 2);
+  geo.translate(0, length / 2, 0);
+  const mesh = serializeGeometry(geo);
+  return [{
+    type: "mesh" as const, name: `Pipe OD${Math.round(od / MM_TO_SCENE)}`,
+    dimensions: { width: od, height: length, depth: od },
+    position: [0, length / 2, 0],
+    ...mesh, ...mat,
+    componentType: "hollow_pipe",
+    componentParams: { od: od / MM_TO_SCENE, id: id / MM_TO_SCENE, length: length / MM_TO_SCENE },
+  }];
+}
+
+function buildBracket(w: number, h: number, thickness: number, mat: MaterialInfo): Partial<CadObject>[] {
+  // L-shaped bracket
+  const shape = new THREE.Shape();
+  shape.moveTo(0, 0);
+  shape.lineTo(w, 0);
+  shape.lineTo(w, thickness);
+  shape.lineTo(thickness, thickness);
+  shape.lineTo(thickness, h);
+  shape.lineTo(0, h);
+  shape.closePath();
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: w * 0.6, bevelEnabled: false });
+  geo.translate(-w / 2, 0, -w * 0.3);
+  const mesh = serializeGeometry(geo);
+  return [{
+    type: "mesh" as const, name: "L-Bracket",
+    dimensions: { width: w, height: h, depth: w * 0.6 },
+    position: [0, h / 2, 0],
+    ...mesh, ...mat,
+    componentType: "l_bracket",
+  }];
+}
+
+function buildFlange(od: number, id: number, thickness: number, boltCircle: number, numHoles: number, holeD: number, mat: MaterialInfo): Partial<CadObject>[] {
+  const outerR = od / 2;
+  const innerR = id / 2;
+  const shape = new THREE.Shape();
+  shape.absarc(0, 0, outerR, 0, Math.PI * 2, false);
+  const centerHole = new THREE.Path();
+  centerHole.absarc(0, 0, innerR, 0, Math.PI * 2, true);
+  shape.holes.push(centerHole);
+  // Bolt holes
+  const boltR = boltCircle / 2;
+  const holeR = holeD / 2;
+  for (let i = 0; i < numHoles; i++) {
+    const a = (i / numHoles) * Math.PI * 2;
+    const cx = Math.cos(a) * boltR;
+    const cy = Math.sin(a) * boltR;
+    const bh = new THREE.Path();
+    bh.absarc(cx, cy, holeR, 0, Math.PI * 2, true);
+    shape.holes.push(bh);
+  }
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: thickness, bevelEnabled: false });
+  geo.rotateX(-Math.PI / 2);
+  geo.translate(0, thickness / 2, 0);
+  const mesh = serializeGeometry(geo);
+  return [{
+    type: "mesh" as const, name: "Flange",
+    dimensions: { width: od, height: thickness, depth: od },
+    position: [0, thickness / 2, 0],
+    ...mesh, ...mat,
+    componentType: "flange",
+    componentParams: { od: od / MM_TO_SCENE, id: id / MM_TO_SCENE, thickness: thickness / MM_TO_SCENE, numHoles, holeD: holeD / MM_TO_SCENE },
+  }];
+}
+
+function buildIBeam(h: number, w: number, length: number, flangeT: number, webT: number, mat: MaterialInfo): Partial<CadObject>[] {
+  const shape = new THREE.Shape();
+  // I-beam cross section (bottom flange, web, top flange)
+  shape.moveTo(-w / 2, -h / 2);
+  shape.lineTo(w / 2, -h / 2);
+  shape.lineTo(w / 2, -h / 2 + flangeT);
+  shape.lineTo(webT / 2, -h / 2 + flangeT);
+  shape.lineTo(webT / 2, h / 2 - flangeT);
+  shape.lineTo(w / 2, h / 2 - flangeT);
+  shape.lineTo(w / 2, h / 2);
+  shape.lineTo(-w / 2, h / 2);
+  shape.lineTo(-w / 2, h / 2 - flangeT);
+  shape.lineTo(-webT / 2, h / 2 - flangeT);
+  shape.lineTo(-webT / 2, -h / 2 + flangeT);
+  shape.lineTo(-w / 2, -h / 2 + flangeT);
+  shape.closePath();
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: length, bevelEnabled: false });
+  geo.translate(0, 0, -length / 2);
+  geo.rotateX(-Math.PI / 2);
+  geo.translate(0, length / 2, 0);
+  const mesh = serializeGeometry(geo);
+  return [{
+    type: "mesh" as const, name: "I-Beam",
+    dimensions: { width: w, height: length, depth: h },
+    position: [0, length / 2, 0],
+    ...mesh, ...mat,
+    componentType: "i_beam",
+  }];
+}
+
+function buildChannel(h: number, w: number, length: number, flangeT: number, webT: number, mat: MaterialInfo): Partial<CadObject>[] {
+  // C-channel cross section
+  const shape = new THREE.Shape();
+  shape.moveTo(0, -h / 2);
+  shape.lineTo(w, -h / 2);
+  shape.lineTo(w, -h / 2 + flangeT);
+  shape.lineTo(webT, -h / 2 + flangeT);
+  shape.lineTo(webT, h / 2 - flangeT);
+  shape.lineTo(w, h / 2 - flangeT);
+  shape.lineTo(w, h / 2);
+  shape.lineTo(0, h / 2);
+  shape.closePath();
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: length, bevelEnabled: false });
+  geo.translate(-w / 2, 0, -length / 2);
+  geo.rotateX(-Math.PI / 2);
+  geo.translate(0, length / 2, 0);
+  const mesh = serializeGeometry(geo);
+  return [{
+    type: "mesh" as const, name: "Channel",
+    dimensions: { width: w, height: length, depth: h },
+    position: [0, length / 2, 0],
+    ...mesh, ...mat,
+    componentType: "c_channel",
+  }];
+}
+
+function buildAngle(legA: number, legB: number, length: number, thickness: number, mat: MaterialInfo): Partial<CadObject>[] {
+  // L-angle profile
+  const shape = new THREE.Shape();
+  shape.moveTo(0, 0);
+  shape.lineTo(legA, 0);
+  shape.lineTo(legA, thickness);
+  shape.lineTo(thickness, thickness);
+  shape.lineTo(thickness, legB);
+  shape.lineTo(0, legB);
+  shape.closePath();
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: length, bevelEnabled: false });
+  geo.translate(-legA / 2, -legB / 2, -length / 2);
+  geo.rotateX(-Math.PI / 2);
+  geo.translate(0, length / 2, 0);
+  const mesh = serializeGeometry(geo);
+  return [{
+    type: "mesh" as const, name: "Angle",
+    dimensions: { width: legA, height: length, depth: legB },
+    position: [0, length / 2, 0],
+    ...mesh, ...mat,
+    componentType: "angle_profile",
+  }];
+}
+
 interface HistoryEntry {
   objects: CadObject[];
   selectedId: string | null;
@@ -1141,89 +1500,311 @@ export const useCadStore = create<CadState>((set, get) => ({
   },
 
   executeCommand: (cmd: string) => {
-    const parts = cmd.trim().toUpperCase().split(/\s+/);
-    const command = parts[0];
     const store = get();
+    const raw = cmd.trim();
+    const upper = raw.toUpperCase();
+    const parts = upper.split(/\s+/);
+    const command = parts[0];
 
     set((s) => ({
-      commandHistory: [...s.commandHistory.slice(-49), cmd],
+      commandHistory: [...s.commandHistory.slice(-49), raw],
     }));
 
+    // ── 1. Simple keyword commands (backward compatible) ──
     switch (command) {
-      case "UNDO":
-        store.undo();
-        break;
-      case "REDO":
-        store.redo();
-        break;
-      case "DELETE":
-        store.deleteSelected();
-        break;
+      case "UNDO": store.undo(); return;
+      case "REDO": store.redo(); return;
+      case "DELETE": store.deleteSelected(); return;
       case "COPY": {
         const sel = store.getSelected();
-        if (sel) {
-          const newObj = { ...sel, name: `${sel.name} (Copy)` };
-          store.addGeneratedObject(newObj);
-        }
-        break;
+        if (sel) store.addGeneratedObject({ ...sel, name: `${sel.name} (Copy)` });
+        return;
       }
-      case "BOX":
-        store.addObject("box");
-        break;
-      case "CYLINDER":
-        store.addObject("cylinder");
-        break;
-      case "SPHERE":
-        store.addObject("sphere");
-        break;
-      case "CONE":
-        store.addObject("cone");
-        break;
-      case "EXTRUDE": {
+    }
+
+    // ── 2. CAD operations on selected object ──
+    const lower = raw.toLowerCase();
+
+    // Fillet: "fillet 5mm", "fillet radius 2"
+    if (/^fillet\b/i.test(raw)) {
+      const r = parseSingleDim(raw, "(?:fillet|radius)") ?? parseValueWithUnit(parts[1]?.toLowerCase() ?? "") ?? 1 * MM_TO_SCENE;
+      store.aiFilletSelected(r / MM_TO_SCENE * 10); // aiFilletSelected expects mm
+      return;
+    }
+
+    // Chamfer: "chamfer 3mm", "chamfer distance 5"
+    if (/^chamfer\b/i.test(raw)) {
+      const d = parseSingleDim(raw, "(?:chamfer|distance)") ?? parseValueWithUnit(parts[1]?.toLowerCase() ?? "") ?? 1 * MM_TO_SCENE;
+      store.aiChamferSelected(d / MM_TO_SCENE * 10);
+      return;
+    }
+
+    // Extrude: "extrude 50mm", "extrude 2in"
+    if (/^extrude\b/i.test(raw)) {
+      const dist = parseSingleDim(raw, "extrude") ?? parseValueWithUnit(parts[1]?.toLowerCase() ?? "");
+      if (dist) {
+        store.aiExtrude(dist);
+      } else {
         store.setActiveTool("extrude");
-        break;
       }
-      case "FILLET": {
-        const radius = parseFloat(parts[1]) || 1;
-        store.setActiveTool("fillet");
-        // Store radius in a way the tool can access
-        void radius;
-        break;
+      return;
+    }
+
+    // Shell: "shell 2mm"
+    if (/^shell\b/i.test(raw)) {
+      const t = parseSingleDim(raw, "shell") ?? parseValueWithUnit(parts[1]?.toLowerCase() ?? "") ?? 0.2;
+      store.aiShell(t / MM_TO_SCENE * 10);
+      return;
+    }
+
+    // Mirror: "mirror xy", "mirror about yz"
+    if (/^mirror\b/i.test(raw)) {
+      const plane = /yz/i.test(raw) ? "yz" : /xz/i.test(raw) ? "xz" : "xy";
+      store.aiMirror(plane);
+      return;
+    }
+
+    // Scale: "scale 2", "scale 0.5x", "scale 150%"
+    if (/^scale\b/i.test(raw)) {
+      const m = raw.match(/([0-9]*\.?[0-9]+)\s*[x%]?/i);
+      if (m) {
+        let factor = parseFloat(m[1]);
+        if (raw.includes("%")) factor /= 100;
+        store.aiScale(factor);
       }
-      case "CHAMFER": {
-        const dist = parseFloat(parts[1]) || 1;
-        store.setActiveTool("chamfer");
-        void dist;
-        break;
+      return;
+    }
+
+    // Rotate: "rotate 45", "rotate 90 x", "rotate 180 z"
+    if (/^rotate\b/i.test(raw)) {
+      const am = raw.match(/([0-9]*\.?[0-9]+)/);
+      const angle = am ? parseFloat(am[1]) : 0;
+      const axis = /\bx\b/i.test(raw) ? "x" : /\bz\b/i.test(raw) ? "z" : "y";
+      store.aiRotate(angle, axis);
+      return;
+    }
+
+    // Move: "move 10 20 30", "move x 5mm"
+    if (/^move\b/i.test(raw)) {
+      const sel = store.getSelected();
+      if (sel && parts.length >= 4) {
+        const x = parseValueWithUnit(parts[1].toLowerCase()) ?? 0;
+        const y = parseValueWithUnit(parts[2].toLowerCase()) ?? 0;
+        const z = parseValueWithUnit(parts[3].toLowerCase()) ?? 0;
+        store.pushHistory();
+        store.updateObject(sel.id, {
+          position: [sel.position[0] + x, sel.position[1] + y, sel.position[2] + z],
+        });
       }
-      case "MOVE": {
-        if (parts.length >= 4) {
-          const sel = store.getSelected();
-          if (sel) {
-            const x = parseFloat(parts[1]) || 0;
-            const y = parseFloat(parts[2]) || 0;
-            const z = parseFloat(parts[3]) || 0;
-            store.pushHistory();
-            store.updateObject(sel.id, {
-              position: [sel.position[0] + x, sel.position[1] + y, sel.position[2] + z],
-            });
-          }
-        }
-        break;
+      return;
+    }
+
+    // Linear pattern: "pattern linear 3 x 50mm" or "pattern 3x2 10mm"
+    if (/^pattern\b.*linear/i.test(raw) || /^linear.?pattern/i.test(raw)) {
+      const sel = store.getSelected();
+      if (!sel) return;
+      const countM = raw.match(/(\d+)\s*(?:copies|count|times|x\b)/i);
+      const count = countM ? parseInt(countM[1]) : 3;
+      const spacing = parseSingleDim(raw, "(?:spacing|gap|pitch)") ?? parseDimensions(raw)?.width ?? 2;
+      const dir: "x" | "z" = /\bz\b/i.test(raw) ? "z" : "x";
+      store.pushHistory();
+      for (let i = 1; i < count; i++) {
+        const pos: [number, number, number] = [...sel.position];
+        if (dir === "x") pos[0] += spacing * i;
+        else pos[2] += spacing * i;
+        store.addGeneratedObject({
+          ...sel,
+          name: `${sel.name} [${i + 1}]`,
+          position: pos,
+        });
       }
-      case "ROTATE": {
-        const angle = parseFloat(parts[1]) || 0;
-        const sel = store.getSelected();
-        if (sel) {
-          store.pushHistory();
-          store.updateObject(sel.id, {
-            rotation: [sel.rotation[0], sel.rotation[1] + (angle * Math.PI) / 180, sel.rotation[2]],
-          });
-        }
-        break;
+      return;
+    }
+
+    // Circular pattern: "pattern circular 6 radius 50mm"
+    if (/^pattern\b.*circular/i.test(raw) || /^circular.?pattern/i.test(raw)) {
+      const sel = store.getSelected();
+      if (!sel) return;
+      const countM = raw.match(/(\d+)\s*(?:copies|count|times)?/i);
+      const count = countM ? parseInt(countM[1]) : 6;
+      const radius = parseSingleDim(raw, "radius") ?? 5;
+      store.pushHistory();
+      for (let i = 1; i < count; i++) {
+        const a = (i / count) * Math.PI * 2;
+        const pos: [number, number, number] = [
+          sel.position[0] + Math.cos(a) * radius,
+          sel.position[1],
+          sel.position[2] + Math.sin(a) * radius,
+        ];
+        const rot: [number, number, number] = [
+          sel.rotation[0],
+          sel.rotation[1] + a,
+          sel.rotation[2],
+        ];
+        store.addGeneratedObject({
+          ...sel,
+          name: `${sel.name} [${i + 1}]`,
+          position: pos,
+          rotation: rot,
+        });
       }
-      default:
-        break;
+      return;
+    }
+
+    // ── 3. Simple primitives with optional dimensions ──
+    const dims = parseDimensions(raw);
+    const mat = inferMaterial(raw);
+
+    if (/^box\b|^cube\b/i.test(raw)) {
+      const id = store.addObject("box");
+      if (dims) store.updateObject(id, { dimensions: dims, ...mat, position: [0, dims.height / 2, 0] });
+      else store.updateObject(id, mat);
+      return;
+    }
+    if (/^cylinder\b/i.test(raw)) {
+      const id = store.addObject("cylinder");
+      if (dims) store.updateObject(id, { dimensions: { width: dims.width / 2, height: dims.height, depth: dims.depth / 2 }, ...mat, position: [0, dims.height / 2, 0] });
+      else store.updateObject(id, mat);
+      return;
+    }
+    if (/^sphere\b|^ball\b/i.test(raw)) {
+      const id = store.addObject("sphere");
+      const r = parseValueWithUnit(parts[1]?.toLowerCase() ?? "");
+      if (r) store.updateObject(id, { dimensions: { width: r, height: r, depth: r }, ...mat, position: [0, r, 0] });
+      else store.updateObject(id, mat);
+      return;
+    }
+    if (/^cone\b/i.test(raw)) {
+      const id = store.addObject("cone");
+      if (dims) store.updateObject(id, { dimensions: { width: dims.width / 2, height: dims.height, depth: dims.depth / 2 }, ...mat });
+      else store.updateObject(id, mat);
+      return;
+    }
+
+    // ── 4. Complex object recognition (natural language) ──
+
+    // PV module / solar panel: "create a PV module 2m x 1m x 35mm"
+    if (/pv\s*module|solar\s*panel|photovoltaic/i.test(raw)) {
+      const d = dims ?? { width: 200 * MM_TO_SCENE, depth: 100 * MM_TO_SCENE, height: 3.5 * MM_TO_SCENE };
+      const pvParts = buildPVModule(d, mat);
+      pvParts.forEach((p) => store.addGeneratedObject(p as Partial<CadObject> & { type: CadObject["type"]; name: string }));
+      return;
+    }
+
+    // Gear: "gear 20 teeth module 2 width 10mm" or "spur gear 24T"
+    if (/gear\b/i.test(raw)) {
+      const teethM = raw.match(/(\d+)\s*(?:teeth|tooth|t\b)/i);
+      const teeth = teethM ? parseInt(teethM[1]) : 20;
+      const mod = parseSingleDim(raw, "module") ?? 0.2; // scene units
+      const width = parseSingleDim(raw, "(?:width|thick|face)") ?? 1;
+      store.aiCreateGear(teeth, mod / MM_TO_SCENE * 10, width / MM_TO_SCENE * 10);
+      return;
+    }
+
+    // Bolt: "bolt M8", "bolt M8 x 30mm", "hex bolt M12 length 50mm"
+    if (/bolt\b|screw\b|fastener\b/i.test(raw)) {
+      const mMatch = raw.match(/M\s*(\d+)/i);
+      const mSize = mMatch ? parseInt(mMatch[1]) : 8;
+      const length = parseSingleDim(raw, "(?:length|long|l)") ?? parseDimensions(raw)?.depth ?? (mSize * 2.5 * MM_TO_SCENE);
+      const boltMat = /stainless|steel/i.test(raw) ? inferMaterial("steel") : inferMaterial(raw);
+      const boltParts = buildBolt(mSize * MM_TO_SCENE, length, boltMat);
+      boltParts.forEach((p) => store.addGeneratedObject(p as Partial<CadObject> & { type: CadObject["type"]; name: string }));
+      return;
+    }
+
+    // Pipe: "pipe OD 50mm ID 40mm length 200mm" or "pipe 2in x 1.5in x 300mm"
+    if (/pipe\b|tube\b|tubing\b/i.test(raw)) {
+      const odid = parseOdId(raw);
+      const length = parseSingleDim(raw, "(?:length|long|height|h)") ?? 10;
+      if (odid) {
+        const pipeParts = buildPipe(odid.od, odid.id, length, mat);
+        pipeParts.forEach((p) => store.addGeneratedObject(p as Partial<CadObject> & { type: CadObject["type"]; name: string }));
+      } else if (dims) {
+        // Interpret as OD x ID x length
+        const pipeParts = buildPipe(dims.width, dims.depth, dims.height || 10, mat);
+        pipeParts.forEach((p) => store.addGeneratedObject(p as Partial<CadObject> & { type: CadObject["type"]; name: string }));
+      } else {
+        // Default hollow cylinder
+        const pipeParts = buildPipe(5, 4, 10, mat);
+        pipeParts.forEach((p) => store.addGeneratedObject(p as Partial<CadObject> & { type: CadObject["type"]; name: string }));
+      }
+      return;
+    }
+
+    // Bracket: "bracket 50x80x5mm" or "L-bracket"
+    if (/bracket\b|l-bracket\b|l\s+bracket\b/i.test(raw)) {
+      const d = dims ?? { width: 5, height: 5, depth: 0.5 };
+      const thickness = parseSingleDim(raw, "(?:thick|thickness|t)") ?? Math.min(d.width, d.depth) * 0.15;
+      const bracketParts = buildBracket(d.width, d.depth, thickness, mat);
+      bracketParts.forEach((p) => store.addGeneratedObject(p as Partial<CadObject> & { type: CadObject["type"]; name: string }));
+      return;
+    }
+
+    // Flange: "flange OD 150mm ID 80mm thickness 20mm 8 holes"
+    if (/flange\b/i.test(raw)) {
+      const odid = parseOdId(raw);
+      const od = odid?.od ?? (dims?.width ?? 15);
+      const id = odid?.id ?? (od * 0.5);
+      const thickness = parseSingleDim(raw, "(?:thick|thickness|t)") ?? dims?.height ?? 2;
+      const holesM = raw.match(/(\d+)\s*holes?/i);
+      const numHoles = holesM ? parseInt(holesM[1]) : 8;
+      const boltCircle = od * 0.75;
+      const holeD = od * 0.06;
+      const flangeParts = buildFlange(od, id, thickness, boltCircle, numHoles, holeD, mat);
+      flangeParts.forEach((p) => store.addGeneratedObject(p as Partial<CadObject> & { type: CadObject["type"]; name: string }));
+      return;
+    }
+
+    // I-beam: "I-beam 200x100x3000mm" or "I beam H200 W100 L3m"
+    if (/i[- ]?beam\b|h[- ]?beam\b|wide\s*flange/i.test(raw)) {
+      const d = dims ?? { width: 10, height: 30, depth: 20 };
+      const flangeT = parseSingleDim(raw, "(?:flange|ft)") ?? d.width * 0.12;
+      const webT = parseSingleDim(raw, "(?:web|wt)") ?? d.width * 0.08;
+      // dims: width=flange width, depth=beam height, height=length
+      const beamParts = buildIBeam(d.depth, d.width, d.height, flangeT, webT, mat);
+      beamParts.forEach((p) => store.addGeneratedObject(p as Partial<CadObject> & { type: CadObject["type"]; name: string }));
+      return;
+    }
+
+    // Channel: "channel 100x50x2000mm"
+    if (/channel\b|c[- ]?channel\b/i.test(raw)) {
+      const d = dims ?? { width: 5, height: 20, depth: 10 };
+      const flangeT = d.width * 0.12;
+      const webT = d.width * 0.08;
+      const chParts = buildChannel(d.depth, d.width, d.height, flangeT, webT, mat);
+      chParts.forEach((p) => store.addGeneratedObject(p as Partial<CadObject> & { type: CadObject["type"]; name: string }));
+      return;
+    }
+
+    // Angle profile: "angle 50x50x3000mm thickness 5mm"
+    if (/\bangle\s*(?:profile|section|iron|steel)?\b/i.test(raw) && !/rotate/i.test(raw)) {
+      const d = dims ?? { width: 5, height: 20, depth: 5 };
+      const thickness = parseSingleDim(raw, "(?:thick|thickness|t)") ?? d.width * 0.1;
+      const angleParts = buildAngle(d.width, d.depth, d.height, thickness, mat);
+      angleParts.forEach((p) => store.addGeneratedObject(p as Partial<CadObject> & { type: CadObject["type"]; name: string }));
+      return;
+    }
+
+    // ── 5. Generic box with parsed dimensions (fallback for "create a plate 200x100x10mm") ──
+    if (dims) {
+      store.pushHistory();
+      store.addGeneratedObject({
+        type: "box",
+        name: raw.length > 40 ? raw.slice(0, 37) + "..." : raw,
+        dimensions: dims,
+        position: [0, dims.height / 2, 0],
+        ...mat,
+      });
+      return;
+    }
+
+    // ── 6. Fallback: try original simple keywords ──
+    switch (command) {
+      case "BOX": store.addObject("box"); break;
+      case "CYLINDER": store.addObject("cylinder"); break;
+      case "SPHERE": store.addObject("sphere"); break;
+      case "CONE": store.addObject("cone"); break;
+      default: break;
     }
   },
 
