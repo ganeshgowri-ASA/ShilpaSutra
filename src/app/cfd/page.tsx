@@ -20,8 +20,8 @@ const ThermalBlockDiagram = dynamic(() => import("@/components/ThermalBlockDiagr
   ),
 });
 
-type BoundaryType = "temperature" | "heatFlux" | "convection" | "insulated";
-type FlowModel = "laminar" | "k-epsilon" | "k-omega-sst";
+type BoundaryType = "temperature" | "heatFlux" | "convection" | "insulated" | "inlet" | "outlet" | "symmetry";
+type FlowModel = "laminar" | "k-epsilon" | "k-omega-sst" | "spalart-allmaras" | "les-smagorinsky";
 type Colormap = "rainbow" | "jet" | "viridis" | "coolwarm";
 type WallType = "no-slip" | "slip" | "heated";
 
@@ -488,7 +488,13 @@ export default function CFDPage() {
                     {boundaries.map(bc => (
                       <div key={bc.id} className="bg-[#0d1117] rounded p-3 border border-[#21262d] text-xs space-y-2 mb-2">
                         <div className="flex items-center justify-between">
-                          <span className="text-orange-400 font-medium">Thermal BC</span>
+                          <span className={`font-medium text-[10px] px-1.5 py-0.5 rounded ${
+                            bc.type === "inlet" ? "bg-green-500/15 text-green-400" :
+                            bc.type === "outlet" ? "bg-red-500/15 text-red-400" :
+                            bc.type === "symmetry" ? "bg-blue-500/15 text-blue-400" :
+                            bc.type === "insulated" ? "bg-slate-500/15 text-slate-400" :
+                            "bg-orange-500/15 text-orange-400"
+                          }`}>{bc.type === "inlet" ? "Inlet" : bc.type === "outlet" ? "Outlet" : bc.type === "symmetry" ? "Symmetry" : "Thermal BC"}</span>
                           <button onClick={() => removeBoundary(bc.id)} className="text-slate-600 hover:text-red-400 text-[10px]">remove</button>
                         </div>
                         <div className="flex items-center justify-between">
@@ -506,15 +512,23 @@ export default function CFDPage() {
                             <option value="heatFlux">Heat Flux (W/m2)</option>
                             <option value="convection">Convection</option>
                             <option value="insulated">Insulated</option>
+                            <option value="inlet">Velocity Inlet</option>
+                            <option value="outlet">Pressure Outlet</option>
+                            <option value="symmetry">Symmetry Plane</option>
                           </select>
                         </div>
-                        {bc.type !== "insulated" && (
+                        {bc.type !== "insulated" && bc.type !== "symmetry" && (
                           <div className="flex items-center justify-between">
-                            <span className="text-slate-500">{bc.type === "temperature" ? "Temp (C)" : bc.type === "heatFlux" ? "Flux (W/m2)" : "Power (W)"}</span>
-                            <input type="number" value={bc.value}
+                            <span className="text-slate-500">
+                              {bc.type === "temperature" ? "Temp (C)" : bc.type === "heatFlux" ? "Flux (W/m2)" : bc.type === "inlet" ? "Velocity (m/s)" : bc.type === "outlet" ? "Pressure (Pa)" : "Power (W)"}
+                            </span>
+                            <input type="number" value={bc.type === "inlet" ? (bc.value || inletVelocity) : bc.type === "outlet" ? (bc.value || outletPressure) : bc.value}
                               onChange={e => updateBoundary(bc.id, { value: parseFloat(e.target.value) || 0 })}
                               className="w-20 bg-[#161b22] text-white rounded px-2 py-1 border border-[#21262d] text-right" />
                           </div>
+                        )}
+                        {bc.type === "symmetry" && (
+                          <div className="text-[9px] text-slate-600 mt-1">Zero normal velocity & zero normal gradients</div>
                         )}
                         {bc.type === "convection" && (
                           <>
@@ -550,14 +564,25 @@ export default function CFDPage() {
                         <option value="transient">Transient</option>
                       </select>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-500">Turbulence</span>
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-slate-500">Turbulence Model</span>
+                      </div>
                       <select value={flowModel} onChange={e => setFlowModel(e.target.value as FlowModel)}
-                        className="bg-[#161b22] text-white rounded px-2 py-1 border border-[#21262d]">
-                        <option value="laminar">Laminar</option>
-                        <option value="k-epsilon">k-epsilon</option>
-                        <option value="k-omega-sst">k-omega SST</option>
+                        className="w-full bg-[#161b22] text-white rounded px-2 py-1 border border-[#21262d] text-[11px]">
+                        <option value="laminar">Laminar (Re &lt; 2300)</option>
+                        <option value="k-epsilon">k-epsilon (Standard RANS)</option>
+                        <option value="k-omega-sst">k-omega SST (Separated flows)</option>
+                        <option value="spalart-allmaras">Spalart-Allmaras (External aero)</option>
+                        <option value="les-smagorinsky">LES Smagorinsky (Transient)</option>
                       </select>
+                      <div className="mt-1 text-[9px] text-slate-600">
+                        {flowModel === "laminar" && "No turbulence model. Valid for low Reynolds number flows."}
+                        {flowModel === "k-epsilon" && "Two-equation RANS model. Good for fully-developed turbulent flows."}
+                        {flowModel === "k-omega-sst" && "Menter SST model. Best for wall-bounded and separated flows."}
+                        {flowModel === "spalart-allmaras" && "One-equation model optimized for external aerodynamics."}
+                        {flowModel === "les-smagorinsky" && "Large Eddy Simulation. Requires transient solver and fine mesh."}
+                      </div>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-slate-500">Max Iterations</span>
