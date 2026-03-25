@@ -85,6 +85,9 @@ const ReferenceGeometryPanel = dynamic(() => import("@/components/cad/ReferenceG
 const ConfigurationManager = dynamic(() => import("@/components/cad/ConfigurationManager"), { ssr: false });
 const AppearanceEditor = dynamic(() => import("@/components/cad/AppearanceEditor"), { ssr: false });
 const SketchGrid = dynamic(() => import("@/components/cad/SketchGrid"), { ssr: false });
+const AIToolPanel = dynamic(() => import("@/components/cad/AIToolPanel"), { ssr: false });
+
+type AIToolType = "ai_text_to_cad" | "ai_suggest" | "ai_optimize" | "ai_explain" | null;
 
 export default function DesignerPage() {
   const activeTool = useCadStore((s) => s.activeTool);
@@ -114,6 +117,7 @@ export default function DesignerPage() {
   const [showRefGeometry, setShowRefGeometry] = useState(false);
   const [showConfigManager, setShowConfigManager] = useState(false);
   const [showAppearance, setShowAppearance] = useState(false);
+  const [activeAITool, setActiveAITool] = useState<AIToolType>(null);
   const [selectionFilters, setSelectionFilters] = useState<Set<SelectionFilterType>>(
     () => new Set<SelectionFilterType>(["vertex", "edge", "face", "body", "component"])
   );
@@ -133,6 +137,10 @@ export default function DesignerPage() {
   const handleAppearance = useCallback(() => setShowAppearance(true), []);
   const handleConfigManager = useCallback(() => setShowConfigManager(true), []);
   const handleHoleWizard = useCallback(() => setShowHoleWizard(true), []);
+
+  const handleAITool = useCallback((tool: "ai_text_to_cad" | "ai_suggest" | "ai_optimize" | "ai_explain") => {
+    setActiveAITool((prev) => (prev === tool ? null : tool));
+  }, []);
 
   const handleToggleFilter = useCallback((filter: SelectionFilterType) => {
     setSelectionFilters((prev) => {
@@ -154,6 +162,7 @@ export default function DesignerPage() {
         onAppearance={handleAppearance}
         onConfigManager={handleConfigManager}
         onHoleWizard={handleHoleWizard}
+        onAITool={handleAITool}
       />
 
       {/* Main workspace area */}
@@ -380,6 +389,11 @@ export default function DesignerPage() {
             {/* Appearance Editor */}
             {showAppearance && (
               <AppearanceEditor onClose={() => setShowAppearance(false)} />
+            )}
+
+            {/* AI Tool Panel (floating, top center) */}
+            {activeAITool && (
+              <AIToolPanel toolType={activeAITool} onClose={() => setActiveAITool(null)} />
             )}
 
             {/* History Timeline (floating, bottom right) */}
