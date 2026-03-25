@@ -87,6 +87,7 @@ const AppearanceEditor = dynamic(() => import("@/components/cad/AppearanceEditor
 const SketchGrid = dynamic(() => import("@/components/cad/SketchGrid"), { ssr: false });
 const LayerPanel = dynamic(() => import("@/components/cad/LayerPanel"), { ssr: false });
 const DimensionTools = dynamic(() => import("@/components/cad/DimensionTools"), { ssr: false });
+const SnapIndicatorOverlay = dynamic(() => import("@/components/cad/SnapIndicator"), { ssr: false });
 
 export default function DesignerPage() {
   const activeTool = useCadStore((s) => s.activeTool);
@@ -181,6 +182,15 @@ export default function DesignerPage() {
             {/* Professional sketch overlay (crosshair, dimensions, snap, dynamic input) */}
             <ViewportErrorBoundary fallback={null}>
               <SketchOverlay containerRef={viewportRef} />
+            </ViewportErrorBoundary>
+
+            {/* Snap indicator overlay with visual markers */}
+            <ViewportErrorBoundary fallback={null}>
+              <SnapIndicatorOverlay
+                containerWidth={1920}
+                containerHeight={1080}
+                activeSnap={null}
+              />
             </ViewportErrorBoundary>
 
             {/* Sketch Toolbar (floating, top center) */}
