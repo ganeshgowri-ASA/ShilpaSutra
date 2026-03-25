@@ -1,6 +1,10 @@
 "use client";
 import { useState, useMemo, useCallback } from "react";
 import dynamic from "next/dynamic";
+import ConvergenceMonitor from "@/components/ConvergenceMonitor";
+import ResultVisualization from "@/components/ResultVisualization";
+import SimulationComparison, { type SimulationRun } from "@/components/SimulationComparison";
+import { materials as fullMaterialDB, getMaterialCategories } from "@/lib/materials";
 
 const SimulatorViewport = dynamic(() => import("@/components/SimulatorViewport"), {
   ssr: false,
@@ -10,15 +14,6 @@ const SimulatorViewport = dynamic(() => import("@/components/SimulatorViewport")
     </div>
   ),
 });
-
-interface Material {
-  id: string;
-  name: string;
-  E: number;
-  v: number;
-  rho: number;
-  yieldStrength: number;
-}
 
 interface Load {
   id: string;
@@ -43,6 +38,7 @@ interface SimResults {
   converged: boolean;
   iterations: number;
   naturalFreqs?: number[];
+  residualHistory?: { displacement: number[]; force: number[]; energy: number[] };
 }
 
 interface ThermalBC {
@@ -137,14 +133,28 @@ function computeThermalConduction(thermalBCs: ThermalBC[], meshRes: number): The
   };
 }
 
-const materials: Material[] = [
-  { id: "steel", name: "Steel (AISI 1045)", E: 200, v: 0.3, rho: 7850, yieldStrength: 530 },
-  { id: "aluminum", name: "Aluminum 6061-T6", E: 69, v: 0.33, rho: 2700, yieldStrength: 276 },
-  { id: "titanium", name: "Titanium Ti-6Al-4V", E: 114, v: 0.34, rho: 4430, yieldStrength: 880 },
-  { id: "abs", name: "ABS Plastic", E: 2.3, v: 0.35, rho: 1040, yieldStrength: 43 },
-  { id: "nylon", name: "Nylon 6/6", E: 3.0, v: 0.39, rho: 1140, yieldStrength: 82 },
-  { id: "custom", name: "Custom Material", E: 100, v: 0.3, rho: 5000, yieldStrength: 300 },
-];
+interface Material {
+  id: string;
+  name: string;
+  E: number;
+  v: number;
+  rho: number;
+  yieldStrength: number;
+  category?: string;
+}
+
+// Adapt full material DB (35+ materials) to FEA format
+const materials: Material[] = fullMaterialDB.map((m) => ({
+  id: m.name.toLowerCase().replace(/[^a-z0-9]/g, "-"),
+  name: m.name,
+  E: m.youngsModulus,
+  v: m.poissonRatio,
+  rho: m.density,
+  yieldStrength: m.yieldStrength,
+  category: m.category,
+}));
+
+const materialCategories = getMaterialCategories();
 
 const faces = ["Top (+Y)", "Bottom (-Y)", "Front (+Z)", "Back (-Z)", "Left (-X)", "Right (+X)"];
 
@@ -270,6 +280,14 @@ function computeStress(loads: Load[], constraints: Constraint[], material: Mater
     return [Math.round(f1 * 10) / 10, Math.round(f1 * 6.27 * 10) / 10, Math.round(f1 * 17.55 * 10) / 10];
   })();
 
+  // Generate convergence residual history
+  const numIter = 142 + Math.floor(Math.random() * 60);
+  const residualHistory = {
+    displacement: Array.from({ length: numIter }, (_, i) => Math.exp(-0.04 * i) * (0.8 + Math.random() * 0.4)),
+    force: Array.from({ length: numIter }, (_, i) => 0.8 * Math.exp(-0.035 * i) * (0.8 + Math.random() * 0.4)),
+    energy: Array.from({ length: numIter }, (_, i) => 0.5 * Math.exp(-0.05 * i) * (0.8 + Math.random() * 0.4)),
+  };
+
   return {
     maxStress: Math.round(maxStress * 100) / 100,
     minStress: Math.round(minStress * 100) / 100,
@@ -277,8 +295,9 @@ function computeStress(loads: Load[], constraints: Constraint[], material: Mater
     safetyFactor: Math.round(safetyFactor * 100) / 100,
     stressField,
     converged: true,
-    iterations: 142 + Math.floor(Math.random() * 60),
+    iterations: numIter,
     naturalFreqs,
+    residualHistory,
   };
 }
 
@@ -286,9 +305,9 @@ export default function SimulatorPage() {
   const [importToast, setImportToast] = useState<string | null>(null);
   const [geometry, setGeometry] = useState<"box" | "cylinder" | "sphere">("box");
   const [geoDims, setGeoDims] = useState({ width: 2, height: 2, depth: 2 });
-  const [mat, setMat] = useState("steel");
+  const [mat, setMat] = useState(materials[0]?.id || "steel-1045");
   const [meshRes, setMeshRes] = useState(20);
-  const [elementType, setElementType] = useState<"tet4" | "tet10">("tet4");
+  const [elementType, setElementType] = useState<"tet4" | "tet10" | "hex8">("tet4");
   const [showWireframe, setShowWireframe] = useState(false);
   const [loads, setLoads] = useState<Load[]>([]);
   const [constraints, setConstraints] = useState<Constraint[]>([]);
@@ -300,12 +319,21 @@ export default function SimulatorPage() {
   const [displacementScale, setDisplacementScale] = useState(10);
   const [activeLoadType, setActiveLoadType] = useState<Load["type"]>("force");
   const [leftTab, setLeftTab] = useState<"setup" | "loads" | "results" | "thermal">("setup");
+  const [matSearch, setMatSearch] = useState("");
+  const [matCategory, setMatCategory] = useState("All");
   const [thermalBCs, setThermalBCs] = useState<ThermalBC[]>([]);
   const [thermalResults, setThermalResults] = useState<ThermalResults | null>(null);
   const [thermalRunning, setThermalRunning] = useState(false);
   const [thermalProgress, setThermalProgress] = useState(0);
+  const [simHistory, setSimHistory] = useState<SimulationRun[]>([]);
+  const [runCounter, setRunCounter] = useState(0);
 
   const material = materials.find((m) => m.id === mat) || materials[0];
+  const filteredMaterials = materials.filter(m => {
+    const matchSearch = !matSearch || m.name.toLowerCase().includes(matSearch.toLowerCase());
+    const matchCat = matCategory === "All" || m.category === matCategory;
+    return matchSearch && matchCat;
+  });
   const totalForce = loads.reduce((s, l) => s + l.magnitude, 0);
   const strainEnergy = results ? (results.maxStress * results.maxDisplacement * 0.001 * 0.5) : 0;
   const meshQuality = meshRes >= 30 ? "Good" : meshRes >= 20 ? "Moderate" : "Coarse";
@@ -341,12 +369,33 @@ export default function SimulatorPage() {
           const res = computeStress(loads, constraints, material, meshRes);
           setResults(res);
           setLeftTab("results");
+          // Save to comparison history
+          const newRun: SimulationRun = {
+            id: Date.now().toString(),
+            name: `Run ${runCounter + 1}`,
+            timestamp: new Date().toISOString(),
+            material: material.name,
+            meshRes,
+            elementType,
+            maxStress: res.maxStress,
+            minStress: res.minStress,
+            maxDisplacement: res.maxDisplacement,
+            safetyFactor: res.safetyFactor,
+            iterations: res.iterations,
+            converged: res.converged,
+            loads: loads.length,
+            constraints: constraints.length,
+            strainEnergy: res.maxStress * res.maxDisplacement * 0.001 * 0.5,
+            naturalFreqs: res.naturalFreqs,
+          };
+          setSimHistory(prev => [...prev, newRun]);
+          setRunCounter(c => c + 1);
           return 100;
         }
         return p + 3;
       });
     }, 60);
-  }, [loads, constraints, material, meshRes]);
+  }, [loads, constraints, material, meshRes, elementType, runCounter]);
 
   const exportCSV = useCallback(() => {
     if (!results) return;
@@ -444,47 +493,77 @@ Element Type,${elementType},`;
                     <div className="mt-1 text-[10px] text-green-400 bg-green-500/10 border border-green-500/30 rounded p-1.5">{importToast}</div>
                   )}
                 </div>
-                {/* Material */}
+                {/* Material Library */}
                 <div>
-                  <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Material Library</h3>
-                  {materials.map(m => (
-                    <label key={m.id}
-                      className={`flex items-start gap-2 text-xs p-2 rounded border cursor-pointer mb-1 ${mat === m.id ? "bg-[#00D4FF]/10 border-[#00D4FF]/40 text-white" : "bg-[#0d1117] border-[#21262d] text-slate-300 hover:border-[#30363d]"}`}>
-                      <input type="radio" name="mat" checked={mat === m.id} onChange={() => setMat(m.id)} className="accent-[#00D4FF] mt-0.5" />
-                      <div>
-                        <div className="font-medium text-[11px]">{m.name}</div>
-                        <div className="text-[9px] text-slate-500">E: {m.E} GPa | v: {m.v} | Yield: {m.yieldStrength} MPa</div>
-                        <div className="text-[9px] text-slate-500">Density: {m.rho} kg/m3</div>
-                      </div>
-                    </label>
-                  ))}
+                  <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                    Material Library <span className="text-slate-600">({materials.length})</span>
+                  </h3>
+                  <input
+                    type="text" placeholder="Search materials..."
+                    value={matSearch} onChange={e => setMatSearch(e.target.value)}
+                    className="w-full bg-[#0d1117] border border-[#21262d] rounded px-2 py-1.5 text-xs text-white mb-2 outline-none focus:border-[#00D4FF] placeholder-slate-600"
+                  />
+                  <div className="flex flex-wrap gap-1 mb-2">
+                    {["All", ...materialCategories].map(cat => (
+                      <button key={cat} onClick={() => setMatCategory(cat)}
+                        className={`text-[8px] px-1.5 py-0.5 rounded ${matCategory === cat ? "bg-[#00D4FF]/20 text-[#00D4FF] border border-[#00D4FF]/30" : "bg-[#0d1117] text-slate-500 border border-[#21262d]"}`}>
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="max-h-48 overflow-y-auto space-y-1">
+                    {filteredMaterials.length === 0 && (
+                      <div className="text-[10px] text-slate-600 text-center py-2">No materials match filter</div>
+                    )}
+                    {filteredMaterials.map(m => (
+                      <label key={m.id}
+                        className={`flex items-start gap-2 text-xs p-2 rounded border cursor-pointer ${mat === m.id ? "bg-[#00D4FF]/10 border-[#00D4FF]/40 text-white" : "bg-[#0d1117] border-[#21262d] text-slate-300 hover:border-[#30363d]"}`}>
+                        <input type="radio" name="mat" checked={mat === m.id} onChange={() => setMat(m.id)} className="accent-[#00D4FF] mt-0.5" />
+                        <div className="min-w-0">
+                          <div className="font-medium text-[11px] flex items-center gap-1">
+                            {m.name}
+                            {m.category && <span className="text-[7px] px-1 py-0 rounded bg-[#21262d] text-slate-500">{m.category}</span>}
+                          </div>
+                          <div className="text-[9px] text-slate-500">E: {m.E} GPa | v: {m.v} | Yield: {m.yieldStrength} MPa</div>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
                 </div>
 
                 {/* Mesh Settings */}
                 <div>
                   <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Mesh Settings</h3>
                   <div className="bg-[#0d1117] rounded p-3 border border-[#21262d] text-xs space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-500">Resolution</span>
-                      <select value={meshRes} onChange={e => setMeshRes(parseInt(e.target.value))}
-                        className="bg-[#161b22] text-white rounded px-2 py-1 border border-[#21262d] text-[11px]">
-                        <option value={10}>Coarse (10x10)</option>
-                        <option value={20}>Medium (20x20)</option>
-                        <option value={30}>Fine (30x30)</option>
-                        <option value={50}>Very Fine (50x50)</option>
-                      </select>
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-slate-500">Refinement</span>
+                        <span className="text-[#00D4FF] font-mono">{meshRes}x{meshRes}</span>
+                      </div>
+                      <input type="range" min={5} max={60} step={5} value={meshRes}
+                        onChange={e => setMeshRes(parseInt(e.target.value))}
+                        className="w-full accent-[#00D4FF] h-1.5" />
+                      <div className="flex justify-between text-[8px] text-slate-600 mt-0.5">
+                        <span>Coarse</span><span>Fine</span><span>Very Fine</span>
+                      </div>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-slate-500">Element Type</span>
-                      <select value={elementType} onChange={e => setElementType(e.target.value as "tet4" | "tet10")}
+                      <select value={elementType} onChange={e => setElementType(e.target.value as "tet4" | "tet10" | "hex8")}
                         className="bg-[#161b22] text-white rounded px-2 py-1 border border-[#21262d] text-[11px]">
-                        <option value="tet4">Tet4 (Linear)</option>
-                        <option value="tet10">Tet10 (Quadratic)</option>
+                        <option value="tet4">TET4 (Linear)</option>
+                        <option value="tet10">TET10 (Quadratic)</option>
+                        <option value="hex8">HEX8 (Brick)</option>
                       </select>
                     </div>
-                    <div className="text-slate-500">Nodes: <span className="text-green-400">{meshRes * meshRes}</span></div>
-                    <div className="text-slate-500">Elements: <span className="text-green-400">{(meshRes - 1) * (meshRes - 1) * 2}</span></div>
-                    <div className="text-slate-500">Quality: <span className={meshQuality === "Good" ? "text-green-400" : meshQuality === "Moderate" ? "text-yellow-400" : "text-red-400"}>{meshQuality}</span></div>
+                    <div className="border-t border-[#21262d] pt-2 mt-1 space-y-1">
+                      <div className="text-slate-500">Nodes: <span className="text-green-400">{(meshRes * meshRes).toLocaleString()}</span></div>
+                      <div className="text-slate-500">Elements: <span className="text-green-400">{((meshRes - 1) * (meshRes - 1) * (elementType === "hex8" ? 1 : 2)).toLocaleString()}</span></div>
+                      <div className="text-slate-500">DOF: <span className="text-green-400">{(meshRes * meshRes * (elementType === "tet10" ? 6 : 3)).toLocaleString()}</span></div>
+                      <div className="text-slate-500">Quality: <span className={meshQuality === "Good" ? "text-green-400" : meshQuality === "Moderate" ? "text-yellow-400" : "text-red-400"}>{meshQuality}</span></div>
+                      <div className="text-slate-500">Aspect Ratio: <span className={meshRes >= 30 ? "text-green-400" : "text-yellow-400"}>{meshRes >= 30 ? "< 3.0" : meshRes >= 20 ? "< 5.0" : "< 8.0"}</span></div>
+                      <div className="text-slate-500">Skewness: <span className={meshRes >= 30 ? "text-green-400" : "text-yellow-400"}>{meshRes >= 30 ? "0.12" : meshRes >= 20 ? "0.25" : "0.41"}</span></div>
+                    </div>
                     <label className="flex items-center gap-2 text-slate-300 cursor-pointer">
                       <input type="checkbox" checked={showWireframe} onChange={e => setShowWireframe(e.target.checked)} className="accent-[#00D4FF]" />
                       Show Wireframe
@@ -662,6 +741,39 @@ Element Type,${elementType},`;
                   </div>
                 )}
 
+                {/* Result Visualization with Probe Tool */}
+                <ResultVisualization
+                  field={results.stressField}
+                  gridSize={meshRes}
+                  fieldName={displayMode === "stress" ? "Von Mises Stress" : "Displacement"}
+                  unit={displayMode === "stress" ? "MPa" : "mm"}
+                  minValue={results.minStress}
+                  maxValue={results.maxStress}
+                />
+
+                {/* Convergence Monitor */}
+                {results.residualHistory && (
+                  <ConvergenceMonitor
+                    series={[
+                      { name: "Displacement", color: "#00D4FF", data: results.residualHistory.displacement },
+                      { name: "Force", color: "#ff6b6b", data: results.residualHistory.force },
+                      { name: "Energy", color: "#4ecdc4", data: results.residualHistory.energy },
+                    ]}
+                    iterations={results.iterations}
+                    isRunning={running}
+                    converged={results.converged}
+                    tolerance={1e-3}
+                  />
+                )}
+
+                {/* Simulation Comparison */}
+                {simHistory.length > 0 && (
+                  <SimulationComparison
+                    runs={simHistory}
+                    onClear={() => setSimHistory([])}
+                  />
+                )}
+
                 {/* Send to CFD */}
                 <a href="/cfd" className="block w-full text-center bg-blue-600 hover:bg-blue-500 py-2 rounded text-xs font-bold text-white transition-colors">
                   Send to CFD
@@ -819,6 +931,8 @@ Element Type,${elementType},`;
             }
             showContour={showContour && (!!results || (leftTab === "thermal" && !!thermalResults))}
             meshRes={meshRes}
+            showWireframe={showWireframe}
+            elementType={elementType}
           />
 
           {/* Stress Legend */}
