@@ -196,6 +196,28 @@ function cylinderTriangles(obj: CadObject, segments = 16): number[][] {
   return tris;
 }
 
+function coneTriangles(obj: CadObject, segments = 16): number[][] {
+  const [px, py, pz] = obj.position;
+  const { width: r, height: h } = obj.dimensions;
+  const hh = h / 2;
+  const tris: number[][] = [];
+  for (let i = 0; i < segments; i++) {
+    const a0 = (i / segments) * Math.PI * 2;
+    const a1 = ((i + 1) / segments) * Math.PI * 2;
+    const x0 = Math.cos(a0) * r, z0 = Math.sin(a0) * r;
+    const x1 = Math.cos(a1) * r, z1 = Math.sin(a1) * r;
+    const slant = Math.sqrt(r * r + h * h);
+    const nFactor = h / slant;
+    const nx0 = Math.cos(a0) * nFactor, nz0 = Math.sin(a0) * nFactor;
+    const ny = r / slant;
+    // Side triangle (apex at top)
+    tris.push([nx0, ny, nz0, px, py + hh, pz, px + x0, py - hh, pz + z0, px + x1, py - hh, pz + z1]);
+    // Bottom cap
+    tris.push([0, -1, 0, px, py - hh, pz, px + x1, py - hh, pz + z1, px + x0, py - hh, pz + z0]);
+  }
+  return tris;
+}
+
 function sphereTriangles(obj: CadObject, segments = 12): number[][] {
   const [px, py, pz] = obj.position;
   const r = obj.dimensions.width / 2;
@@ -232,6 +254,7 @@ function generateSTLBinary(objects: CadObject[]): ArrayBuffer {
     if (obj.type === "box") allTris.push(...boxTriangles(obj));
     else if (obj.type === "cylinder") allTris.push(...cylinderTriangles(obj));
     else if (obj.type === "sphere") allTris.push(...sphereTriangles(obj));
+    else if (obj.type === "cone") allTris.push(...coneTriangles(obj));
   }
 
   const triangleCount = allTris.length;
@@ -287,6 +310,7 @@ function generateOBJ(objects: CadObject[]): string {
     if (obj.type === "box") tris = boxTriangles(obj);
     else if (obj.type === "cylinder") tris = cylinderTriangles(obj);
     else if (obj.type === "sphere") tris = sphereTriangles(obj);
+    else if (obj.type === "cone") tris = coneTriangles(obj);
 
     for (const tri of tris) {
       lines += `v ${tri[3].toFixed(6)} ${tri[4].toFixed(6)} ${tri[5].toFixed(6)}\n`;
@@ -380,6 +404,157 @@ function generateDxf(objects: CadObject[]): string {
   }
 
   return `0\nSECTION\n2\nENTITIES\n${entities}0\nENDSEC\n0\nEOF\n`;
+}
+
+/* ── PLY Text Export ── */
+function generatePLY(objects: CadObject[]): string {
+  const allTris: number[][] = [];
+  for (const obj of objects) {
+    if (obj.visible === false) continue;
+    if (obj.type === "box") allTris.push(...boxTriangles(obj));
+    else if (obj.type === "cylinder") allTris.push(...cylinderTriangles(obj));
+    else if (obj.type === "sphere") allTris.push(...sphereTriangles(obj));
+    else if (obj.type === "cone") allTris.push(...coneTriangles(obj));
+  }
+
+  const vertexCount = allTris.length * 3;
+  const faceCount = allTris.length;
+
+  let ply = `ply\nformat ascii 1.0\ncomment ShilpaSutra PLY Export\n`;
+  ply += `element vertex ${vertexCount}\nproperty float x\nproperty float y\nproperty float z\n`;
+  ply += `property float nx\nproperty float ny\nproperty float nz\n`;
+  ply += `element face ${faceCount}\nproperty list uchar int vertex_indices\nend_header\n`;
+
+  for (const tri of allTris) {
+    const [nx, ny, nz] = [tri[0], tri[1], tri[2]];
+    ply += `${tri[3].toFixed(6)} ${tri[4].toFixed(6)} ${tri[5].toFixed(6)} ${nx.toFixed(4)} ${ny.toFixed(4)} ${nz.toFixed(4)}\n`;
+    ply += `${tri[6].toFixed(6)} ${tri[7].toFixed(6)} ${tri[8].toFixed(6)} ${nx.toFixed(4)} ${ny.toFixed(4)} ${nz.toFixed(4)}\n`;
+    ply += `${tri[9].toFixed(6)} ${tri[10].toFixed(6)} ${tri[11].toFixed(6)} ${nx.toFixed(4)} ${ny.toFixed(4)} ${nz.toFixed(4)}\n`;
+  }
+
+  for (let i = 0; i < faceCount; i++) {
+    ply += `3 ${i * 3} ${i * 3 + 1} ${i * 3 + 2}\n`;
+  }
+
+  return ply;
+}
+
+/* ── glTF JSON Export ── */
+function generateGLTF(objects: CadObject[]): string {
+  const allTris: number[][] = [];
+  for (const obj of objects) {
+    if (obj.visible === false) continue;
+    if (obj.type === "box") allTris.push(...boxTriangles(obj));
+    else if (obj.type === "cylinder") allTris.push(...cylinderTriangles(obj));
+    else if (obj.type === "sphere") allTris.push(...sphereTriangles(obj));
+    else if (obj.type === "cone") allTris.push(...coneTriangles(obj));
+  }
+
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const indices: number[] = [];
+
+  for (let i = 0; i < allTris.length; i++) {
+    const tri = allTris[i];
+    const [nx, ny, nz] = [tri[0], tri[1], tri[2]];
+    positions.push(tri[3], tri[4], tri[5], tri[6], tri[7], tri[8], tri[9], tri[10], tri[11]);
+    normals.push(nx, ny, nz, nx, ny, nz, nx, ny, nz);
+    indices.push(i * 3, i * 3 + 1, i * 3 + 2);
+  }
+
+  // Compute bounding box
+  let minX = Infinity, minY = Infinity, minZ = Infinity;
+  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+  for (let i = 0; i < positions.length; i += 3) {
+    minX = Math.min(minX, positions[i]); maxX = Math.max(maxX, positions[i]);
+    minY = Math.min(minY, positions[i+1]); maxY = Math.max(maxY, positions[i+1]);
+    minZ = Math.min(minZ, positions[i+2]); maxZ = Math.max(maxZ, positions[i+2]);
+  }
+
+  // Base64 encode buffers
+  const posBuffer = new Float32Array(positions);
+  const normBuffer = new Float32Array(normals);
+  const idxBuffer = new Uint16Array(indices);
+
+  const toBase64 = (buf: ArrayBuffer) => {
+    const bytes = new Uint8Array(buf);
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+  };
+  const posB64 = toBase64(posBuffer.buffer);
+  const normB64 = toBase64(normBuffer.buffer);
+  const idxB64 = toBase64(idxBuffer.buffer);
+
+  const gltf = {
+    asset: { version: "2.0", generator: "ShilpaSutra" },
+    scene: 0,
+    scenes: [{ name: "Scene", nodes: [0] }],
+    nodes: [{ name: "Model", mesh: 0 }],
+    meshes: [{
+      name: "Mesh",
+      primitives: [{
+        attributes: { POSITION: 0, NORMAL: 1 },
+        indices: 2,
+        mode: 4,
+      }],
+    }],
+    accessors: [
+      { bufferView: 0, componentType: 5126, count: positions.length / 3, type: "VEC3", max: [maxX, maxY, maxZ], min: [minX, minY, minZ] },
+      { bufferView: 1, componentType: 5126, count: normals.length / 3, type: "VEC3" },
+      { bufferView: 2, componentType: 5123, count: indices.length, type: "SCALAR" },
+    ],
+    bufferViews: [
+      { buffer: 0, byteOffset: 0, byteLength: posBuffer.byteLength, target: 34962 },
+      { buffer: 1, byteOffset: 0, byteLength: normBuffer.byteLength, target: 34962 },
+      { buffer: 2, byteOffset: 0, byteLength: idxBuffer.byteLength, target: 34963 },
+    ],
+    buffers: [
+      { uri: `data:application/octet-stream;base64,${posB64}`, byteLength: posBuffer.byteLength },
+      { uri: `data:application/octet-stream;base64,${normB64}`, byteLength: normBuffer.byteLength },
+      { uri: `data:application/octet-stream;base64,${idxB64}`, byteLength: idxBuffer.byteLength },
+    ],
+  };
+
+  return JSON.stringify(gltf, null, 2);
+}
+
+/* ── STEP Stub Export ── */
+function generateSTEPStub(objects: CadObject[]): string {
+  const now = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
+  let step = `ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('ShilpaSutra CAD Export'),'2;1');\n`;
+  step += `FILE_NAME('shilpasutra_export.step','${now}',('ShilpaSutra'),('ShilpaSutra Engineering'),'ShilpaSutra CAD','ShilpaSutra v2.0','');\n`;
+  step += `FILE_SCHEMA(('AUTOMOTIVE_DESIGN'));\nENDSEC;\nDATA;\n`;
+
+  let entityId = 1;
+  step += `#${entityId++}=APPLICATION_PROTOCOL_DEFINITION('international standard','automotive_design',2000,#${entityId});\n`;
+  step += `#${entityId++}=APPLICATION_CONTEXT('core data for automotive mechanical design processes');\n`;
+  step += `#${entityId++}=SHAPE_DEFINITION_REPRESENTATION(#${entityId},#${entityId + 1});\n`;
+  entityId++;
+  step += `#${entityId++}=PRODUCT_DEFINITION_SHAPE('','',#${entityId});\n`;
+  step += `#${entityId++}=PRODUCT_DEFINITION('design','',#${entityId},#${entityId + 1});\n`;
+  entityId += 2;
+
+  for (const obj of objects) {
+    if (obj.visible === false) continue;
+    step += `/* ${obj.type}: ${obj.name} at (${obj.position.join(',')}) dims (${obj.dimensions.width},${obj.dimensions.height},${obj.dimensions.depth}) */\n`;
+    step += `#${entityId++}=CARTESIAN_POINT('',(${obj.position[0]},${obj.position[1]},${obj.position[2]}));\n`;
+
+    if (obj.type === "box") {
+      step += `#${entityId++}=BLOCK('${obj.name}',#${entityId - 2},${obj.dimensions.width},${obj.dimensions.depth},${obj.dimensions.height});\n`;
+    } else if (obj.type === "cylinder") {
+      step += `#${entityId++}=RIGHT_CIRCULAR_CYLINDER('${obj.name}',#${entityId - 2},${obj.dimensions.height},${obj.dimensions.width});\n`;
+    } else if (obj.type === "sphere") {
+      step += `#${entityId++}=SPHERE('${obj.name}',#${entityId - 2},${obj.dimensions.width});\n`;
+    } else if (obj.type === "cone") {
+      step += `#${entityId++}=RIGHT_CIRCULAR_CONE('${obj.name}',#${entityId - 2},${obj.dimensions.height},${obj.dimensions.width},0.0);\n`;
+    }
+  }
+
+  step += `ENDSEC;\nEND-ISO-10303-21;\n`;
+  return step;
 }
 
 const unitSystems: UnitSystem[] = ["mm", "cm", "m", "in"];
@@ -488,13 +663,42 @@ export default function ImportExportPage() {
       a.download = "shilpasutra_export.obj";
       a.click();
       URL.revokeObjectURL(url);
-    } else {
-      const content = `Export Configuration\nFormat: ${exportOpts.format}\nUnits: ${exportOpts.units}\nPrecision: ${exportOpts.precision}\nInclude Textures: ${exportOpts.includeTextures}\nMerge Meshes: ${exportOpts.mergeMeshes}`;
-      const blob = new Blob([content], { type: "text/plain" });
+    } else if (exportOpts.format === "PLY") {
+      const text = generatePLY(cadObjects);
+      const blob = new Blob([text], { type: "text/plain" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `export_config.${exportOpts.format.toLowerCase()}`;
+      a.download = "shilpasutra_export.ply";
+      a.click();
+      URL.revokeObjectURL(url);
+    } else if (exportOpts.format === "glTF") {
+      const text = generateGLTF(cadObjects);
+      const blob = new Blob([text], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "shilpasutra_export.gltf";
+      a.click();
+      URL.revokeObjectURL(url);
+    } else if (exportOpts.format === "IGES" || exportOpts.format === "FBX") {
+      // IGES and FBX require specialized libraries - export as STL with note
+      const buf = generateSTLBinary(cadObjects);
+      const blob = new Blob([buf], { type: "application/octet-stream" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `shilpasutra_export.${exportOpts.format.toLowerCase()}.stl`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } else {
+      // STEP - generate a minimal STEP file structure
+      const stepContent = generateSTEPStub(cadObjects);
+      const blob = new Blob([stepContent], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "shilpasutra_export.step";
       a.click();
       URL.revokeObjectURL(url);
     }
@@ -767,7 +971,7 @@ export default function ImportExportPage() {
                 onClick={handleExport}
                 className="flex-1 py-2 rounded text-xs font-medium bg-[#00D4FF] text-black hover:bg-[#00bde6] transition-colors"
               >
-                Export {(exportOpts.format === "STL" || exportOpts.format === "OBJ") ? "(Real Geometry)" : ""}
+                Export {["STL","OBJ","PLY","glTF","STEP"].includes(exportOpts.format) ? `as ${exportOpts.format}` : `as ${exportOpts.format}`}
               </button>
             </div>
           </div>

@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "crypto";
 
-interface GenerateRequest {
-  prompt: string;
+// ─── Type Definitions ────────────────────────────────────────────────
+
+interface CADOperation {
+  op: 'primitive' | 'extrude' | 'revolve' | 'fillet' | 'chamfer' | 'boolean' | 'pattern' | 'shell';
+  params: Record<string, number | string | boolean>;
+  children?: CADOperation[];
 }
 
 interface GeneratedObject {
@@ -11,9 +16,353 @@ interface GeneratedObject {
   description: string;
 }
 
-// Built-in parametric generators
+interface ConversationMessage {
+  role: "user" | "assistant" | "system";
+  content: string;
+}
+
+interface GenerateRequest {
+  prompt: string;
+  messages?: ConversationMessage[];
+  conversationId?: string;
+}
+
+interface GenerateResponse {
+  success: boolean;
+  object: GeneratedObject;
+  operations?: CADOperation[];
+  kclCode?: string;
+  message: string;
+  source: "ai" | "parametric";
+  conversationId?: string;
+  fallback?: boolean;
+}
+
+// ─── Dimension Parsing ───────────────────────────────────────────────
+
+interface ParsedDimensions {
+  width?: number;
+  height?: number;
+  depth?: number;
+  diameter?: number;
+  radius?: number;
+  length?: number;
+  thickness?: number;
+  wallThickness?: number;
+  pitch?: number;
+}
+
+function parseDimensions(prompt: string): ParsedDimensions {
+  const lower = prompt.toLowerCase();
+  const dims: ParsedDimensions = {};
+
+  // "100x50x30mm" or "100 x 50 x 30 mm"
+  const wxhxd = lower.match(/(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)\s*(?:mm|cm|m)?/);
+  if (wxhxd) {
+    dims.width = parseFloat(wxhxd[1]);
+    dims.height = parseFloat(wxhxd[2]);
+    dims.depth = parseFloat(wxhxd[3]);
+  }
+
+  // "100x50mm" (2D)
+  if (!wxhxd) {
+    const wxh = lower.match(/(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)\s*(?:mm|cm|m)?/);
+    if (wxh) {
+      dims.width = parseFloat(wxh[1]);
+      dims.height = parseFloat(wxh[2]);
+    }
+  }
+
+  // "D50 H100" or "d50 h100"
+  const dMatch = lower.match(/d\s*(\d+(?:\.\d+)?)/);
+  if (dMatch) dims.diameter = parseFloat(dMatch[1]);
+
+  const hMatch = lower.match(/(?:^|[\s,])h\s*(\d+(?:\.\d+)?)/);
+  if (hMatch) dims.height = parseFloat(hMatch[1]);
+
+  // "M8x1.25" thread spec
+  const threadMatch = lower.match(/m(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)/);
+  if (threadMatch) {
+    dims.diameter = parseFloat(threadMatch[1]);
+    dims.pitch = parseFloat(threadMatch[2]);
+  }
+
+  // "3 inch" or "3in" or '3"'
+  const inchMatch = lower.match(/(\d+(?:\.\d+)?)\s*(?:inch|inches|in|")/);
+  if (inchMatch) {
+    const mm = parseFloat(inchMatch[1]) * 25.4;
+    if (!dims.width) dims.width = mm;
+    if (!dims.diameter) dims.diameter = mm;
+  }
+
+  // "radius 25mm" or "r25"
+  const radiusMatch = lower.match(/(?:radius|r)\s*(\d+(?:\.\d+)?)\s*(?:mm|cm|m)?/);
+  if (radiusMatch) dims.radius = parseFloat(radiusMatch[1]);
+
+  // "thickness 3mm" or "3mm thick"
+  const thickMatch = lower.match(/(?:thickness|thick)\s*(\d+(?:\.\d+)?)\s*(?:mm|cm|m)?/) ||
+                     lower.match(/(\d+(?:\.\d+)?)\s*(?:mm|cm|m)?\s*thick/);
+  if (thickMatch) dims.thickness = parseFloat(thickMatch[1]);
+
+  // "wall 2mm" or "wall thickness 2mm"
+  const wallMatch = lower.match(/wall\s*(?:thickness)?\s*(\d+(?:\.\d+)?)\s*(?:mm|cm|m)?/);
+  if (wallMatch) dims.wallThickness = parseFloat(wallMatch[1]);
+
+  // "length 100mm"
+  const lenMatch = lower.match(/length\s*(\d+(?:\.\d+)?)\s*(?:mm|cm|m)?/);
+  if (lenMatch) dims.length = parseFloat(lenMatch[1]);
+
+  // Generic "NNmm" (first occurrence if no other dims found)
+  if (!dims.width && !dims.diameter && !dims.radius) {
+    const genericMm = lower.match(/(\d+(?:\.\d+)?)\s*mm/);
+    if (genericMm) dims.width = parseFloat(genericMm[1]);
+  }
+
+  return dims;
+}
+
+// ─── KCL Code Generation ────────────────────────────────────────────
+
+function generateKCLCode(object: GeneratedObject, operations: CADOperation[]): string {
+  const lines: string[] = [
+    `// ShilpaSutra KCL - ${object.name}`,
+    `// Auto-generated parametric code`,
+    ``,
+  ];
+
+  for (const op of operations) {
+    switch (op.op) {
+      case 'primitive': {
+        const p = op.params;
+        switch (p.shape) {
+          case 'box':
+            lines.push(`sketch = startSketch('XZ')`);
+            lines.push(`rect = rectangle([${-Number(p.width) / 2}, ${-Number(p.depth) / 2}], [${Number(p.width) / 2}, ${Number(p.depth) / 2}])`);
+            lines.push(`profile = close(rect)`);
+            lines.push(`body = extrude(profile, ${p.height})`);
+            break;
+          case 'cylinder':
+            lines.push(`sketch = startSketch('XZ')`);
+            lines.push(`circ = circle([0, 0], ${p.radius})`);
+            lines.push(`profile = close(circ)`);
+            lines.push(`body = extrude(profile, ${p.height})`);
+            break;
+          case 'sphere':
+            lines.push(`sketch = startSketch('XZ')`);
+            lines.push(`arc = semicircle([0, ${-Number(p.radius)}], [0, ${p.radius}])`);
+            lines.push(`profile = close(arc)`);
+            lines.push(`body = revolve(profile, axis='Y', angle=360)`);
+            break;
+          case 'cone':
+            lines.push(`sketch = startSketch('XZ')`);
+            lines.push(`tri = polygon([[0, 0], [${p.radius}, 0], [0, ${p.height}]])`);
+            lines.push(`profile = close(tri)`);
+            lines.push(`body = revolve(profile, axis='Y', angle=360)`);
+            break;
+        }
+        break;
+      }
+      case 'extrude':
+        lines.push(`body = extrude(profile, ${op.params.height})`);
+        break;
+      case 'revolve':
+        lines.push(`body = revolve(profile, axis='${op.params.axis || 'Y'}', angle=${op.params.angle || 360})`);
+        break;
+      case 'fillet':
+        lines.push(`fillet(body, edges='${op.params.edges || 'all'}', radius=${op.params.radius})`);
+        break;
+      case 'chamfer':
+        lines.push(`chamfer(body, edges='${op.params.edges || 'all'}', distance=${op.params.distance})`);
+        break;
+      case 'shell':
+        lines.push(`shell(body, thickness=${op.params.thickness}, removeFace='${op.params.removeFace || 'top'}')`);
+        break;
+      case 'boolean':
+        lines.push(`body = boolean('${op.params.operation}', body, tool)`);
+        break;
+      case 'pattern': {
+        const pType = op.params.type === 'circular' ? 'circularPattern' : 'linearPattern';
+        lines.push(`body = ${pType}(body, count=${op.params.count}, spacing=${op.params.spacing || op.params.angle || 0})`);
+        break;
+      }
+    }
+  }
+
+  lines.push(``);
+  lines.push(`export(body)`);
+  return lines.join('\n');
+}
+
+// ─── Operation Tree Builders ─────────────────────────────────────────
+
+function buildOperations(object: GeneratedObject, prompt: string): CADOperation[] {
+  const lower = prompt.toLowerCase();
+  const ops: CADOperation[] = [];
+
+  // Primary shape primitive
+  const w = object.dimensions.width * 10;
+  const h = object.dimensions.height * 10;
+  const d = object.dimensions.depth * 10;
+
+  switch (object.type) {
+    case 'box':
+      ops.push({
+        op: 'primitive',
+        params: { shape: 'box', width: w, height: h, depth: d },
+      });
+      break;
+    case 'cylinder':
+      ops.push({
+        op: 'primitive',
+        params: { shape: 'cylinder', radius: w, height: h },
+      });
+      break;
+    case 'sphere':
+      ops.push({
+        op: 'primitive',
+        params: { shape: 'sphere', radius: w },
+      });
+      break;
+    case 'cone':
+      ops.push({
+        op: 'primitive',
+        params: { shape: 'cone', radius: w, height: h },
+      });
+      break;
+  }
+
+  // Detect additional operations from prompt
+  const filletMatch = lower.match(/fillet\s*(?:radius)?\s*(\d+(?:\.\d+)?)/);
+  if (filletMatch || lower.includes('fillet') || lower.includes('rounded')) {
+    const r = filletMatch ? parseFloat(filletMatch[1]) : 2;
+    ops.push({ op: 'fillet', params: { radius: r, edges: 'all_vertical' } });
+  }
+
+  const chamferMatch = lower.match(/chamfer\s*(\d+(?:\.\d+)?)/);
+  if (chamferMatch || lower.includes('chamfer') || lower.includes('beveled')) {
+    const dist = chamferMatch ? parseFloat(chamferMatch[1]) : 1;
+    ops.push({ op: 'chamfer', params: { distance: dist, edges: 'all' } });
+  }
+
+  if (lower.includes('shell') || lower.includes('hollow') || lower.includes('wall thickness')) {
+    const wallMatch = lower.match(/(?:wall\s*(?:thickness)?|shell)\s*(\d+(?:\.\d+)?)/);
+    const thickness = wallMatch ? parseFloat(wallMatch[1]) : 2;
+    ops.push({ op: 'shell', params: { thickness, removeFace: 'top' } });
+  }
+
+  if (lower.includes('pattern') || lower.includes('array')) {
+    const countMatch = lower.match(/(\d+)\s*(?:copies|instances|pattern|array)/);
+    const count = countMatch ? parseInt(countMatch[1]) : 4;
+    if (lower.includes('circular') || lower.includes('radial')) {
+      ops.push({ op: 'pattern', params: { type: 'circular', count, angle: 360 / count } });
+    } else {
+      ops.push({ op: 'pattern', params: { type: 'linear', count, spacing: 20 } });
+    }
+  }
+
+  return ops;
+}
+
+// ─── Enhanced Parametric Generators ──────────────────────────────────
+
 function generateFromPrompt(prompt: string): GeneratedObject {
   const lower = prompt.toLowerCase();
+  const dims = parseDimensions(prompt);
+
+  // Enclosure (box with wall thickness)
+  if (lower.includes("enclosure") || lower.includes("case") || lower.includes("housing") && !lower.includes("bearing")) {
+    const w = (dims.width || 100) / 10;
+    const h = (dims.height || 60) / 10;
+    const d = (dims.depth || 40) / 10;
+    const wall = dims.wallThickness || 2;
+    return {
+      type: "box",
+      name: "Enclosure",
+      dimensions: { width: w, height: h, depth: d },
+      description: `Enclosure ${w * 10}x${h * 10}x${d * 10}mm, wall thickness ${wall}mm. Shell operation applied.`,
+    };
+  }
+
+  // Pulley / Wheel
+  if (lower.includes("pulley") || lower.includes("wheel") || lower.includes("sheave")) {
+    const od = dims.diameter || 60;
+    const bore = dims.radius ? dims.radius * 2 : 10;
+    const width = dims.thickness || 15;
+    return {
+      type: "cylinder",
+      name: `Pulley OD${od}`,
+      dimensions: { width: od / 20, height: width / 10, depth: od / 20 },
+      description: `Pulley, OD ${od}mm, bore ${bore}mm, width ${width}mm. V-groove profile.`,
+    };
+  }
+
+  // Spring
+  if (lower.includes("spring") || lower.includes("coil")) {
+    const od = dims.diameter || 20;
+    const wireD = dims.thickness || 2;
+    const freeLen = dims.length || dims.height || 50;
+    const coils = Math.round(freeLen / (wireD * 2));
+    return {
+      type: "cylinder",
+      name: `Compression Spring`,
+      dimensions: { width: od / 20, height: freeLen / 10, depth: od / 20 },
+      description: `Compression spring, OD ${od}mm, wire ${wireD}mm, free length ${freeLen}mm, ${coils} active coils.`,
+    };
+  }
+
+  // Pipe / Tube
+  if (lower.includes("pipe") || lower.includes("tube")) {
+    const od = dims.diameter || 50;
+    const wall = dims.wallThickness || dims.thickness || 3;
+    const len = dims.length || dims.height || 100;
+    return {
+      type: "cylinder",
+      name: `Pipe OD${od}`,
+      dimensions: { width: od / 20, height: len / 10, depth: od / 20 },
+      description: `Pipe OD ${od}mm, wall ${wall}mm, ID ${od - wall * 2}mm, length ${len}mm.`,
+    };
+  }
+
+  // Motor mount
+  if (lower.includes("motor mount") || lower.includes("motor bracket") || lower.includes("nema")) {
+    const nemaMatch = lower.match(/nema\s*(\d+)/i);
+    const nemaSize = nemaMatch ? parseInt(nemaMatch[1]) : 23;
+    const boltCircle = nemaSize === 17 ? 31 : nemaSize === 23 ? 47.14 : nemaSize === 34 ? 69.6 : 47.14;
+    const faceW = nemaSize === 17 ? 42.3 : nemaSize === 23 ? 57.2 : nemaSize === 34 ? 86.3 : 57.2;
+    return {
+      type: "box",
+      name: `NEMA ${nemaSize} Motor Mount`,
+      dimensions: { width: faceW / 10, height: 0.5, depth: faceW / 10 },
+      description: `NEMA ${nemaSize} motor mount plate. Face ${faceW}mm, bolt circle ${boltCircle.toFixed(1)}mm, 4x mounting holes.`,
+    };
+  }
+
+  // Phone case
+  if (lower.includes("phone case") || lower.includes("phone cover") || lower.includes("iphone") || lower.includes("smartphone")) {
+    const w = dims.width || 75;
+    const h = dims.height || 150;
+    const d = dims.depth || 10;
+    return {
+      type: "box",
+      name: "Phone Case",
+      dimensions: { width: w / 10, height: h / 10, depth: d / 10 },
+      description: `Phone case ${w}x${h}x${d}mm with rounded corners and camera cutout.`,
+    };
+  }
+
+  // Generic prismatic profile / extrusion
+  if (lower.includes("extrusion") || lower.includes("profile") || lower.includes("t-slot") || lower.includes("alumin")) {
+    const size = dims.width || 20;
+    const len = dims.length || dims.height || 200;
+    return {
+      type: "box",
+      name: `Extrusion Profile ${size}x${size}`,
+      dimensions: { width: size / 10, height: len / 10, depth: size / 10 },
+      description: `${size}x${size}mm aluminium extrusion profile, length ${len}mm. T-slot compatible.`,
+    };
+  }
+
+  // ─── Original generators (enhanced with dimension parsing) ─────────
 
   if (lower.includes("gear") || lower.includes("spur")) {
     const teeth = parseInt(lower.match(/(\d+)\s*teeth/)?.[1] || "20");
@@ -27,31 +376,32 @@ function generateFromPrompt(prompt: string): GeneratedObject {
   }
 
   if (lower.includes("bracket") || lower.includes("mount")) {
-    const thickness = parseFloat(lower.match(/(\d+)\s*mm\s*thick/)?.[1] || "3") / 10;
+    const thickness = (dims.thickness || 3) / 10;
+    const w = (dims.width || 20) / 10;
+    const h = (dims.height || 20) / 10;
     return {
       type: "box",
       name: "L-Bracket",
-      dimensions: { width: 2, height: 2, depth: Math.max(0.3, thickness) },
-      description: "L-bracket with mounting surface. Add fillets and holes as needed.",
+      dimensions: { width: w, height: h, depth: Math.max(0.3, thickness) },
+      description: `L-bracket ${w * 10}x${h * 10}mm, thickness ${thickness * 10}mm. Add fillets and holes as needed.`,
     };
   }
 
   if (lower.includes("bolt") || lower.includes("hex") || lower.includes("screw")) {
-    const sizeMatch = lower.match(/m(\d+)/i);
-    const size = sizeMatch ? parseInt(sizeMatch[1]) : 8;
-    const lengthMatch = lower.match(/x(\d+)/);
-    const length = lengthMatch ? parseInt(lengthMatch[1]) : 30;
+    const size = dims.diameter || 8;
+    const length = dims.length || dims.height || 30;
+    const pitch = dims.pitch || (size <= 6 ? 1 : size <= 10 ? 1.25 : 1.75);
     return {
       type: "cylinder",
       name: `Hex Bolt M${size}x${length}`,
       dimensions: { width: size / 20, height: length / 10, depth: size / 20 },
-      description: `M${size}x${length} hex bolt. Head: ${(size * 0.65).toFixed(1)}mm, AF: ${(size * 1.7).toFixed(1)}mm.`,
+      description: `M${size}x${length} hex bolt, pitch ${pitch}mm. Head: ${(size * 0.65).toFixed(1)}mm, AF: ${(size * 1.7).toFixed(1)}mm.`,
     };
   }
 
-  if (lower.includes("flange") || lower.includes("pipe")) {
+  if (lower.includes("flange")) {
     const dnMatch = lower.match(/dn(\d+)/i);
-    const dn = dnMatch ? parseInt(dnMatch[1]) : 50;
+    const dn = dnMatch ? parseInt(dnMatch[1]) : (dims.diameter || 50);
     return {
       type: "cylinder",
       name: `Pipe Flange DN${dn}`,
@@ -62,67 +412,74 @@ function generateFromPrompt(prompt: string): GeneratedObject {
 
   if (lower.includes("heat") || lower.includes("sink") || lower.includes("fin")) {
     const fins = parseInt(lower.match(/(\d+)\s*fin/)?.[1] || "8");
+    const w = (dims.width || 50) / 10;
+    const d = (dims.depth || 50) / 10;
     return {
       type: "box",
       name: `Heatsink ${fins}-fin`,
-      dimensions: { width: 2, height: 1.5, depth: 2 },
-      description: `Heatsink with ${fins} fins, base 50x50x3mm, fin height 25mm.`,
+      dimensions: { width: w, height: 1.5, depth: d },
+      description: `Heatsink with ${fins} fins, base ${w * 10}x${d * 10}x3mm, fin height 25mm.`,
     };
   }
 
   if (lower.includes("box") || lower.includes("cube") || lower.includes("block")) {
-    const sizeMatch = lower.match(/(\d+)\s*(?:mm|cm)/);
-    const size = sizeMatch ? parseInt(sizeMatch[1]) / 10 : 2;
+    const size = (dims.width || 20) / 10;
+    const h = dims.height ? dims.height / 10 : size;
+    const d = dims.depth ? dims.depth / 10 : size;
     return {
       type: "box",
       name: "Box",
-      dimensions: { width: size, height: size, depth: size },
-      description: `${size * 10}mm cube.`,
+      dimensions: { width: size, height: h, depth: d },
+      description: `Box ${size * 10}x${h * 10}x${d * 10}mm.`,
     };
   }
 
   if (lower.includes("sphere") || lower.includes("ball")) {
-    const sizeMatch = lower.match(/(\d+)\s*(?:mm|cm|radius)/);
-    const size = sizeMatch ? parseInt(sizeMatch[1]) / 10 : 1.5;
+    const r = (dims.radius || dims.diameter ? (dims.diameter || 30) / 2 : dims.width || 15) / 10;
     return {
       type: "sphere",
       name: "Sphere",
-      dimensions: { width: size, height: size, depth: size },
-      description: `Sphere, radius ${size * 10}mm.`,
+      dimensions: { width: r, height: r, depth: r },
+      description: `Sphere, radius ${r * 10}mm.`,
     };
   }
 
-  if (lower.includes("cylinder") || lower.includes("tube") || lower.includes("rod") || lower.includes("shaft")) {
-    const diaMatch = lower.match(/(\d+)\s*mm/);
-    const dia = diaMatch ? parseInt(diaMatch[1]) / 20 : 1;
+  if (lower.includes("cylinder") || lower.includes("rod") || lower.includes("shaft")) {
+    const dia = dims.diameter || dims.width || 20;
+    const h = dims.height || dims.length || dia * 2;
     return {
       type: "cylinder",
       name: "Cylinder",
-      dimensions: { width: dia, height: dia * 2, depth: dia },
-      description: `Cylinder, radius ${dia * 10}mm, height ${dia * 20}mm.`,
+      dimensions: { width: dia / 20, height: h / 10, depth: dia / 20 },
+      description: `Cylinder, diameter ${dia}mm, height ${h}mm.`,
     };
   }
 
   if (lower.includes("cone") || lower.includes("taper")) {
+    const r = (dims.radius || dims.diameter ? (dims.diameter || 20) / 2 : 10) / 10;
+    const h = (dims.height || 20) / 10;
     return {
       type: "cone",
       name: "Cone",
-      dimensions: { width: 1, height: 2, depth: 1 },
-      description: "Cone, base radius 10mm, height 20mm.",
+      dimensions: { width: r, height: h, depth: r },
+      description: `Cone, base radius ${r * 10}mm, height ${h * 10}mm.`,
     };
   }
 
   if (lower.includes("plate") || lower.includes("panel") || lower.includes("sheet")) {
+    const w = (dims.width || 30) / 10;
+    const d = (dims.depth || dims.width || 30) / 10;
+    const t = (dims.thickness || 2) / 10;
     return {
       type: "box",
       name: "Plate",
-      dimensions: { width: 3, height: 0.2, depth: 3 },
-      description: "Flat plate 30x30x2mm.",
+      dimensions: { width: w, height: t, depth: d },
+      description: `Flat plate ${w * 10}x${d * 10}x${t * 10}mm.`,
     };
   }
 
-  if (lower.includes("bearing") || lower.includes("housing")) {
-    const bore = parseInt(lower.match(/(\d+)\s*(?:mm|bore)/)?.[1] || "25");
+  if (lower.includes("bearing")) {
+    const bore = dims.diameter || 25;
     return {
       type: "cylinder",
       name: `Bearing Housing ${bore}mm`,
@@ -140,21 +497,107 @@ function generateFromPrompt(prompt: string): GeneratedObject {
   };
 }
 
+// ─── AI System Prompt ────────────────────────────────────────────────
+
+const CAD_SYSTEM_PROMPT = `You are ShilpaSutra's CAD geometry generation engine. You translate natural language descriptions of 3D parts into structured CAD data.
+
+CAPABILITIES:
+- Primitive shapes: box, cylinder, sphere, cone
+- Feature operations: extrude, revolve, fillet, chamfer, boolean (union/subtract/intersect), shell, pattern (linear/circular)
+- Parametric dimensions: all measurements in mm
+- Design intent: infer appropriate tolerances, wall thicknesses, and structural features
+
+RESPONSE FORMAT:
+Respond with ONLY a JSON object (no markdown, no explanation). The JSON must contain:
+
+{
+  "object": {
+    "type": "box" | "cylinder" | "sphere" | "cone",
+    "name": "descriptive name",
+    "dimensions": { "width": number, "height": number, "depth": number },
+    "description": "brief engineering description"
+  },
+  "operations": [
+    {
+      "op": "primitive" | "extrude" | "revolve" | "fillet" | "chamfer" | "boolean" | "pattern" | "shell",
+      "params": { ... },
+      "children": []
+    }
+  ],
+  "kclCode": "// KCL parametric code string"
+}
+
+OPERATION PARAM SCHEMAS:
+- primitive: { shape: "box"|"cylinder"|"sphere"|"cone", width?, height?, depth?, radius? }
+- extrude: { height: number, direction?: "normal"|"+X"|"-X"|"+Y"|"-Y"|"+Z"|"-Z" }
+- revolve: { axis: "X"|"Y"|"Z", angle: number (degrees) }
+- fillet: { radius: number, edges: "all"|"all_vertical"|"all_horizontal"|"top"|"bottom"|"selected" }
+- chamfer: { distance: number, edges: "all"|"all_vertical"|"top"|"bottom"|"selected" }
+- boolean: { operation: "union"|"subtract"|"intersect" }
+- shell: { thickness: number, removeFace: "top"|"bottom"|"front"|"back"|"left"|"right" }
+- pattern: { type: "linear"|"circular", count: number, spacing?: number, axis?: "X"|"Y"|"Z", angle?: number }
+
+KCL CODE STYLE:
+\`\`\`
+sketch = startSketch('XZ')
+rect = rectangle([-w/2, -d/2], [w/2, d/2])
+profile = close(rect)
+body = extrude(profile, height)
+fillet(body, edges='all_vertical', radius=3)
+shell(body, thickness=2, removeFace='top')
+export(body)
+\`\`\`
+
+DIMENSION CONVENTIONS:
+- Dimensions are in mm unless stated otherwise
+- width=X axis, height=Y axis, depth=Z axis
+- For viewport display, divide mm by 10 for unit scale (e.g., 50mm = 5.0 units)
+- "radius" for cylinders/spheres refers to the display radius (mm/10)
+
+DESIGN RULES:
+- Always add fillets to sharp edges on enclosures and brackets (radius 1-3mm)
+- Default wall thickness for enclosures: 2mm
+- Bolt holes should be 0.5mm larger than nominal bolt size
+- Mounting brackets need at least 2 mounting holes
+- Minimum printable wall: 0.8mm, recommended: 1.5mm+
+
+When the user provides a conversational follow-up, modify the previously generated geometry accordingly. Maintain dimensional consistency across turns.`;
+
+// ─── POST Handler ────────────────────────────────────────────────────
+
 export async function POST(request: NextRequest) {
   try {
     const body: GenerateRequest = await request.json();
-    const { prompt } = body;
+    const { prompt, messages, conversationId } = body;
 
-    if (!prompt || prompt.trim().length === 0) {
-      return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
+    if ((!prompt || prompt.trim().length === 0) && (!messages || messages.length === 0)) {
+      return NextResponse.json({ error: "Prompt or messages array is required" }, { status: 400 });
     }
+
+    const activePrompt = prompt || messages?.[messages.length - 1]?.content || "";
+    const currentConversationId = conversationId || randomUUID();
 
     // Check for OpenRouter API key
     const apiKey = process.env.OPENROUTER_API_KEY;
 
     if (apiKey) {
-      // Try calling OpenRouter API for AI-powered generation
       try {
+        // Build message array for multi-turn support
+        const apiMessages: ConversationMessage[] = [
+          { role: "system", content: CAD_SYSTEM_PROMPT },
+        ];
+
+        if (messages && messages.length > 0) {
+          // Use provided conversation history (filter out any system messages from client)
+          for (const msg of messages) {
+            if (msg.role !== "system") {
+              apiMessages.push(msg);
+            }
+          }
+        } else {
+          apiMessages.push({ role: "user", content: activePrompt });
+        }
+
         const aiResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
           method: "POST",
           headers: {
@@ -165,21 +608,8 @@ export async function POST(request: NextRequest) {
           },
           body: JSON.stringify({
             model: "anthropic/claude-sonnet-4",
-            messages: [
-              {
-                role: "system",
-                content: `You are a CAD geometry generator. Given a user's description of a 3D part, respond with ONLY a JSON object (no markdown) containing:
-{
-  "type": "box" | "cylinder" | "sphere" | "cone",
-  "name": "descriptive name",
-  "dimensions": { "width": number, "height": number, "depth": number },
-  "description": "brief description of what was generated"
-}
-Dimensions should be in reasonable scale (1-5 units). For cylinders, width=radius. Choose the closest primitive type.`,
-              },
-              { role: "user", content: prompt },
-            ],
-            max_tokens: 300,
+            messages: apiMessages,
+            max_tokens: 1500,
             temperature: 0.3,
           }),
         });
@@ -189,14 +619,22 @@ Dimensions should be in reasonable scale (1-5 units). For cylinders, width=radiu
           const content = aiData.choices?.[0]?.message?.content;
           if (content) {
             try {
-              const parsed = JSON.parse(content.replace(/```json\n?/g, "").replace(/```/g, "").trim());
-              if (parsed.type && parsed.name && parsed.dimensions) {
-                return NextResponse.json({
+              const cleaned = content.replace(/```json\n?/g, "").replace(/```/g, "").trim();
+              const parsed = JSON.parse(cleaned);
+
+              // Support both flat (backward compat) and nested response
+              const object: GeneratedObject = parsed.object || parsed;
+              if (object.type && object.name && object.dimensions) {
+                const response: GenerateResponse = {
                   success: true,
-                  object: parsed,
-                  message: `AI generated: "${parsed.name}". ${parsed.description || ""}`,
+                  object,
+                  operations: parsed.operations || buildOperations(object, activePrompt),
+                  kclCode: parsed.kclCode || generateKCLCode(object, parsed.operations || buildOperations(object, activePrompt)),
+                  message: `AI generated: "${object.name}". ${object.description || ""}`,
                   source: "ai",
-                });
+                  conversationId: currentConversationId,
+                };
+                return NextResponse.json(response);
               }
             } catch {
               // JSON parse failed, fall through to parametric
@@ -209,15 +647,22 @@ Dimensions should be in reasonable scale (1-5 units). For cylinders, width=radiu
     }
 
     // Fallback: use built-in parametric generators
-    const object = generateFromPrompt(prompt);
+    const object = generateFromPrompt(activePrompt);
+    const operations = buildOperations(object, activePrompt);
+    const kclCode = generateKCLCode(object, operations);
 
-    return NextResponse.json({
+    const response: GenerateResponse = {
       success: true,
       object,
+      operations,
+      kclCode,
       message: `Generated "${object.name}". ${object.description}`,
       source: "parametric",
+      conversationId: currentConversationId,
       fallback: !apiKey,
-    });
+    };
+
+    return NextResponse.json(response);
   } catch (error) {
     return NextResponse.json(
       { error: "Failed to generate", details: String(error) },
