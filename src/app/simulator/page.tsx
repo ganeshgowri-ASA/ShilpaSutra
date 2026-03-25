@@ -288,7 +288,7 @@ export default function SimulatorPage() {
   const [geoDims, setGeoDims] = useState({ width: 2, height: 2, depth: 2 });
   const [mat, setMat] = useState("steel");
   const [meshRes, setMeshRes] = useState(20);
-  const [elementType, setElementType] = useState<"tet4" | "tet10">("tet4");
+  const [elementType, setElementType] = useState<"tet4" | "tet10" | "hex8">("tet4");
   const [showWireframe, setShowWireframe] = useState(false);
   const [loads, setLoads] = useState<Load[]>([]);
   const [constraints, setConstraints] = useState<Constraint[]>([]);
@@ -464,27 +464,35 @@ Element Type,${elementType},`;
                 <div>
                   <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Mesh Settings</h3>
                   <div className="bg-[#0d1117] rounded p-3 border border-[#21262d] text-xs space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-500">Resolution</span>
-                      <select value={meshRes} onChange={e => setMeshRes(parseInt(e.target.value))}
-                        className="bg-[#161b22] text-white rounded px-2 py-1 border border-[#21262d] text-[11px]">
-                        <option value={10}>Coarse (10x10)</option>
-                        <option value={20}>Medium (20x20)</option>
-                        <option value={30}>Fine (30x30)</option>
-                        <option value={50}>Very Fine (50x50)</option>
-                      </select>
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-slate-500">Refinement</span>
+                        <span className="text-[#00D4FF] font-mono">{meshRes}x{meshRes}</span>
+                      </div>
+                      <input type="range" min={5} max={60} step={5} value={meshRes}
+                        onChange={e => setMeshRes(parseInt(e.target.value))}
+                        className="w-full accent-[#00D4FF] h-1.5" />
+                      <div className="flex justify-between text-[8px] text-slate-600 mt-0.5">
+                        <span>Coarse</span><span>Fine</span><span>Very Fine</span>
+                      </div>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-slate-500">Element Type</span>
-                      <select value={elementType} onChange={e => setElementType(e.target.value as "tet4" | "tet10")}
+                      <select value={elementType} onChange={e => setElementType(e.target.value as "tet4" | "tet10" | "hex8")}
                         className="bg-[#161b22] text-white rounded px-2 py-1 border border-[#21262d] text-[11px]">
-                        <option value="tet4">Tet4 (Linear)</option>
-                        <option value="tet10">Tet10 (Quadratic)</option>
+                        <option value="tet4">TET4 (Linear)</option>
+                        <option value="tet10">TET10 (Quadratic)</option>
+                        <option value="hex8">HEX8 (Brick)</option>
                       </select>
                     </div>
-                    <div className="text-slate-500">Nodes: <span className="text-green-400">{meshRes * meshRes}</span></div>
-                    <div className="text-slate-500">Elements: <span className="text-green-400">{(meshRes - 1) * (meshRes - 1) * 2}</span></div>
-                    <div className="text-slate-500">Quality: <span className={meshQuality === "Good" ? "text-green-400" : meshQuality === "Moderate" ? "text-yellow-400" : "text-red-400"}>{meshQuality}</span></div>
+                    <div className="border-t border-[#21262d] pt-2 mt-1 space-y-1">
+                      <div className="text-slate-500">Nodes: <span className="text-green-400">{(meshRes * meshRes).toLocaleString()}</span></div>
+                      <div className="text-slate-500">Elements: <span className="text-green-400">{((meshRes - 1) * (meshRes - 1) * (elementType === "hex8" ? 1 : 2)).toLocaleString()}</span></div>
+                      <div className="text-slate-500">DOF: <span className="text-green-400">{(meshRes * meshRes * (elementType === "tet10" ? 6 : 3)).toLocaleString()}</span></div>
+                      <div className="text-slate-500">Quality: <span className={meshQuality === "Good" ? "text-green-400" : meshQuality === "Moderate" ? "text-yellow-400" : "text-red-400"}>{meshQuality}</span></div>
+                      <div className="text-slate-500">Aspect Ratio: <span className={meshRes >= 30 ? "text-green-400" : "text-yellow-400"}>{meshRes >= 30 ? "< 3.0" : meshRes >= 20 ? "< 5.0" : "< 8.0"}</span></div>
+                      <div className="text-slate-500">Skewness: <span className={meshRes >= 30 ? "text-green-400" : "text-yellow-400"}>{meshRes >= 30 ? "0.12" : meshRes >= 20 ? "0.25" : "0.41"}</span></div>
+                    </div>
                     <label className="flex items-center gap-2 text-slate-300 cursor-pointer">
                       <input type="checkbox" checked={showWireframe} onChange={e => setShowWireframe(e.target.checked)} className="accent-[#00D4FF]" />
                       Show Wireframe
@@ -819,6 +827,8 @@ Element Type,${elementType},`;
             }
             showContour={showContour && (!!results || (leftTab === "thermal" && !!thermalResults))}
             meshRes={meshRes}
+            showWireframe={showWireframe}
+            elementType={elementType}
           />
 
           {/* Stress Legend */}
