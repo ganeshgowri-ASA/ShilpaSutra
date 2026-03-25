@@ -1,8 +1,8 @@
 "use client";
-import React, { useState, useCallback, useRef, Component, type ErrorInfo, type ReactNode } from "react";
+import React, { useState, useCallback, useRef, useEffect, Component, type ErrorInfo, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import { useCadStore } from "@/stores/cad-store";
-import { Package, History } from "lucide-react";
+import { Package, History, MessageSquare } from "lucide-react";
 import type { SelectionFilterType } from "@/components/cad/SelectionFilter";
 
 /* ── Error Boundary to prevent full-page crashes ── */
@@ -140,6 +140,18 @@ export default function DesignerPage() {
 
   const handleAITool = useCallback((tool: "ai_text_to_cad" | "ai_suggest" | "ai_optimize" | "ai_explain") => {
     setActiveAITool((prev) => (prev === tool ? null : tool));
+  }, []);
+
+  // Keyboard shortcut: Ctrl+Shift+G to open Text-to-CAD inline
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "G") {
+        e.preventDefault();
+        setActiveAITool((prev) => (prev === "ai_text_to_cad" ? null : "ai_text_to_cad"));
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
   const handleToggleFilter = useCallback((filter: SelectionFilterType) => {
@@ -389,6 +401,18 @@ export default function DesignerPage() {
             {/* Appearance Editor */}
             {showAppearance && (
               <AppearanceEditor onClose={() => setShowAppearance(false)} />
+            )}
+
+            {/* Quick Text-to-CAD button (floating, bottom right) */}
+            {!activeAITool && !isSketchMode && (
+              <button
+                onClick={() => setActiveAITool("ai_text_to_cad")}
+                title="Text to CAD (Ctrl+Shift+G)"
+                className="absolute bottom-3 right-3 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-purple-600/90 hover:bg-purple-500 text-white text-[10px] font-medium shadow-lg shadow-purple-900/30 backdrop-blur-md transition-all duration-200 hover:shadow-purple-500/20 hover:scale-105 pointer-events-auto"
+              >
+                <MessageSquare size={12} />
+                Text to CAD
+              </button>
             )}
 
             {/* AI Tool Panel (floating, top center) */}
