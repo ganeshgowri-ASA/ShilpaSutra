@@ -1,6 +1,7 @@
 "use client";
 import { useState, useMemo, useCallback } from "react";
 import dynamic from "next/dynamic";
+import ConvergenceMonitor from "@/components/ConvergenceMonitor";
 
 const SimulatorViewport = dynamic(() => import("@/components/SimulatorViewport"), {
   ssr: false,
@@ -43,6 +44,7 @@ interface SimResults {
   converged: boolean;
   iterations: number;
   naturalFreqs?: number[];
+  residualHistory?: { displacement: number[]; force: number[]; energy: number[] };
 }
 
 interface ThermalBC {
@@ -270,6 +272,14 @@ function computeStress(loads: Load[], constraints: Constraint[], material: Mater
     return [Math.round(f1 * 10) / 10, Math.round(f1 * 6.27 * 10) / 10, Math.round(f1 * 17.55 * 10) / 10];
   })();
 
+  // Generate convergence residual history
+  const numIter = 142 + Math.floor(Math.random() * 60);
+  const residualHistory = {
+    displacement: Array.from({ length: numIter }, (_, i) => Math.exp(-0.04 * i) * (0.8 + Math.random() * 0.4)),
+    force: Array.from({ length: numIter }, (_, i) => 0.8 * Math.exp(-0.035 * i) * (0.8 + Math.random() * 0.4)),
+    energy: Array.from({ length: numIter }, (_, i) => 0.5 * Math.exp(-0.05 * i) * (0.8 + Math.random() * 0.4)),
+  };
+
   return {
     maxStress: Math.round(maxStress * 100) / 100,
     minStress: Math.round(minStress * 100) / 100,
@@ -277,8 +287,9 @@ function computeStress(loads: Load[], constraints: Constraint[], material: Mater
     safetyFactor: Math.round(safetyFactor * 100) / 100,
     stressField,
     converged: true,
-    iterations: 142 + Math.floor(Math.random() * 60),
+    iterations: numIter,
     naturalFreqs,
+    residualHistory,
   };
 }
 
@@ -668,6 +679,21 @@ Element Type,${elementType},`;
                       </div>
                     ))}
                   </div>
+                )}
+
+                {/* Convergence Monitor */}
+                {results.residualHistory && (
+                  <ConvergenceMonitor
+                    series={[
+                      { name: "Displacement", color: "#00D4FF", data: results.residualHistory.displacement },
+                      { name: "Force", color: "#ff6b6b", data: results.residualHistory.force },
+                      { name: "Energy", color: "#4ecdc4", data: results.residualHistory.energy },
+                    ]}
+                    iterations={results.iterations}
+                    isRunning={running}
+                    converged={results.converged}
+                    tolerance={1e-3}
+                  />
                 )}
 
                 {/* Send to CFD */}
