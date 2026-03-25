@@ -2,6 +2,7 @@
 import { useState, useMemo, useCallback } from "react";
 import dynamic from "next/dynamic";
 import ConvergenceMonitor from "@/components/ConvergenceMonitor";
+import { materials as fullMaterialDB, getMaterialCategories } from "@/lib/materials";
 
 const SimulatorViewport = dynamic(() => import("@/components/SimulatorViewport"), {
   ssr: false,
@@ -11,15 +12,6 @@ const SimulatorViewport = dynamic(() => import("@/components/SimulatorViewport")
     </div>
   ),
 });
-
-interface Material {
-  id: string;
-  name: string;
-  E: number;
-  v: number;
-  rho: number;
-  yieldStrength: number;
-}
 
 interface Load {
   id: string;
@@ -139,14 +131,28 @@ function computeThermalConduction(thermalBCs: ThermalBC[], meshRes: number): The
   };
 }
 
-const materials: Material[] = [
-  { id: "steel", name: "Steel (AISI 1045)", E: 200, v: 0.3, rho: 7850, yieldStrength: 530 },
-  { id: "aluminum", name: "Aluminum 6061-T6", E: 69, v: 0.33, rho: 2700, yieldStrength: 276 },
-  { id: "titanium", name: "Titanium Ti-6Al-4V", E: 114, v: 0.34, rho: 4430, yieldStrength: 880 },
-  { id: "abs", name: "ABS Plastic", E: 2.3, v: 0.35, rho: 1040, yieldStrength: 43 },
-  { id: "nylon", name: "Nylon 6/6", E: 3.0, v: 0.39, rho: 1140, yieldStrength: 82 },
-  { id: "custom", name: "Custom Material", E: 100, v: 0.3, rho: 5000, yieldStrength: 300 },
-];
+interface Material {
+  id: string;
+  name: string;
+  E: number;
+  v: number;
+  rho: number;
+  yieldStrength: number;
+  category?: string;
+}
+
+// Adapt full material DB (35+ materials) to FEA format
+const materials: Material[] = fullMaterialDB.map((m) => ({
+  id: m.name.toLowerCase().replace(/[^a-z0-9]/g, "-"),
+  name: m.name,
+  E: m.youngsModulus,
+  v: m.poissonRatio,
+  rho: m.density,
+  yieldStrength: m.yieldStrength,
+  category: m.category,
+}));
+
+const materialCategories = getMaterialCategories();
 
 const faces = ["Top (+Y)", "Bottom (-Y)", "Front (+Z)", "Back (-Z)", "Left (-X)", "Right (+X)"];
 
@@ -297,7 +303,7 @@ export default function SimulatorPage() {
   const [importToast, setImportToast] = useState<string | null>(null);
   const [geometry, setGeometry] = useState<"box" | "cylinder" | "sphere">("box");
   const [geoDims, setGeoDims] = useState({ width: 2, height: 2, depth: 2 });
-  const [mat, setMat] = useState("steel");
+  const [mat, setMat] = useState(materials[0]?.id || "steel-1045");
   const [meshRes, setMeshRes] = useState(20);
   const [elementType, setElementType] = useState<"tet4" | "tet10" | "hex8">("tet4");
   const [showWireframe, setShowWireframe] = useState(false);
@@ -311,12 +317,19 @@ export default function SimulatorPage() {
   const [displacementScale, setDisplacementScale] = useState(10);
   const [activeLoadType, setActiveLoadType] = useState<Load["type"]>("force");
   const [leftTab, setLeftTab] = useState<"setup" | "loads" | "results" | "thermal">("setup");
+  const [matSearch, setMatSearch] = useState("");
+  const [matCategory, setMatCategory] = useState("All");
   const [thermalBCs, setThermalBCs] = useState<ThermalBC[]>([]);
   const [thermalResults, setThermalResults] = useState<ThermalResults | null>(null);
   const [thermalRunning, setThermalRunning] = useState(false);
   const [thermalProgress, setThermalProgress] = useState(0);
 
   const material = materials.find((m) => m.id === mat) || materials[0];
+  const filteredMaterials = materials.filter(m => {
+    const matchSearch = !matSearch || m.name.toLowerCase().includes(matSearch.toLowerCase());
+    const matchCat = matCategory === "All" || m.category === matCategory;
+    return matchSearch && matchCat;
+  });
   const totalForce = loads.reduce((s, l) => s + l.magnitude, 0);
   const strainEnergy = results ? (results.maxStress * results.maxDisplacement * 0.001 * 0.5) : 0;
   const meshQuality = meshRes >= 30 ? "Good" : meshRes >= 20 ? "Moderate" : "Coarse";
@@ -455,20 +468,42 @@ Element Type,${elementType},`;
                     <div className="mt-1 text-[10px] text-green-400 bg-green-500/10 border border-green-500/30 rounded p-1.5">{importToast}</div>
                   )}
                 </div>
-                {/* Material */}
+                {/* Material Library */}
                 <div>
-                  <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Material Library</h3>
-                  {materials.map(m => (
-                    <label key={m.id}
-                      className={`flex items-start gap-2 text-xs p-2 rounded border cursor-pointer mb-1 ${mat === m.id ? "bg-[#00D4FF]/10 border-[#00D4FF]/40 text-white" : "bg-[#0d1117] border-[#21262d] text-slate-300 hover:border-[#30363d]"}`}>
-                      <input type="radio" name="mat" checked={mat === m.id} onChange={() => setMat(m.id)} className="accent-[#00D4FF] mt-0.5" />
-                      <div>
-                        <div className="font-medium text-[11px]">{m.name}</div>
-                        <div className="text-[9px] text-slate-500">E: {m.E} GPa | v: {m.v} | Yield: {m.yieldStrength} MPa</div>
-                        <div className="text-[9px] text-slate-500">Density: {m.rho} kg/m3</div>
-                      </div>
-                    </label>
-                  ))}
+                  <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                    Material Library <span className="text-slate-600">({materials.length})</span>
+                  </h3>
+                  <input
+                    type="text" placeholder="Search materials..."
+                    value={matSearch} onChange={e => setMatSearch(e.target.value)}
+                    className="w-full bg-[#0d1117] border border-[#21262d] rounded px-2 py-1.5 text-xs text-white mb-2 outline-none focus:border-[#00D4FF] placeholder-slate-600"
+                  />
+                  <div className="flex flex-wrap gap-1 mb-2">
+                    {["All", ...materialCategories].map(cat => (
+                      <button key={cat} onClick={() => setMatCategory(cat)}
+                        className={`text-[8px] px-1.5 py-0.5 rounded ${matCategory === cat ? "bg-[#00D4FF]/20 text-[#00D4FF] border border-[#00D4FF]/30" : "bg-[#0d1117] text-slate-500 border border-[#21262d]"}`}>
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="max-h-48 overflow-y-auto space-y-1">
+                    {filteredMaterials.length === 0 && (
+                      <div className="text-[10px] text-slate-600 text-center py-2">No materials match filter</div>
+                    )}
+                    {filteredMaterials.map(m => (
+                      <label key={m.id}
+                        className={`flex items-start gap-2 text-xs p-2 rounded border cursor-pointer ${mat === m.id ? "bg-[#00D4FF]/10 border-[#00D4FF]/40 text-white" : "bg-[#0d1117] border-[#21262d] text-slate-300 hover:border-[#30363d]"}`}>
+                        <input type="radio" name="mat" checked={mat === m.id} onChange={() => setMat(m.id)} className="accent-[#00D4FF] mt-0.5" />
+                        <div className="min-w-0">
+                          <div className="font-medium text-[11px] flex items-center gap-1">
+                            {m.name}
+                            {m.category && <span className="text-[7px] px-1 py-0 rounded bg-[#21262d] text-slate-500">{m.category}</span>}
+                          </div>
+                          <div className="text-[9px] text-slate-500">E: {m.E} GPa | v: {m.v} | Yield: {m.yieldStrength} MPa</div>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
                 </div>
 
                 {/* Mesh Settings */}
