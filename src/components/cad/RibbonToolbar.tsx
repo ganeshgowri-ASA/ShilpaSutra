@@ -138,7 +138,7 @@ const cameraViews = [
   { label: "Iso", shortcut: "0" },
 ];
 
-export default function RibbonToolbar({ onExtrude, onRevolve, onMassProps, onRefGeometry, onAppearance, onConfigManager, onHoleWizard }: { onExtrude?: () => void; onRevolve?: () => void; onMassProps?: () => void; onRefGeometry?: () => void; onAppearance?: () => void; onConfigManager?: () => void; onHoleWizard?: () => void } = {}) {
+export default function RibbonToolbar({ onExtrude, onRevolve, onMassProps, onRefGeometry, onAppearance, onConfigManager, onHoleWizard, onAITool }: { onExtrude?: () => void; onRevolve?: () => void; onMassProps?: () => void; onRefGeometry?: () => void; onAppearance?: () => void; onConfigManager?: () => void; onHoleWizard?: () => void; onAITool?: (tool: "ai_text_to_cad" | "ai_suggest" | "ai_optimize" | "ai_explain") => void } = {}) {
   const router = useRouter();
   const saveProject = useCallback(() => {
     const state = useCadStore.getState();
@@ -234,6 +234,11 @@ export default function RibbonToolbar({ onExtrude, onRevolve, onMassProps, onRef
         return;
       }
       // Extrude/Revolve: open dialog
+      // AI tools: open inline panels via callback
+      if (id === "ai_text_to_cad" || id === "ai_suggest" || id === "ai_optimize" || id === "ai_explain") {
+        onAITool?.(id as "ai_text_to_cad" | "ai_suggest" | "ai_optimize" | "ai_explain");
+        return;
+      }
       if (id === "ai_fea") {
         router.push("/simulator?auto=true");
         return;
@@ -296,7 +301,7 @@ export default function RibbonToolbar({ onExtrude, onRevolve, onMassProps, onRef
       }
       setActiveTool(id as ToolId);
     },
-    [setActiveTool, setActiveOperation, addObject, booleanUnion, booleanSubtract, booleanIntersect, selectedId, selectedIds, onExtrude, onRevolve, onMassProps, onRefGeometry, onAppearance, onConfigManager, onHoleWizard, router]
+    [setActiveTool, setActiveOperation, addObject, booleanUnion, booleanSubtract, booleanIntersect, selectedId, selectedIds, onExtrude, onRevolve, onMassProps, onRefGeometry, onAppearance, onConfigManager, onHoleWizard, onAITool, router]
   );
 
   const handleTabDoubleClick = useCallback(() => {
