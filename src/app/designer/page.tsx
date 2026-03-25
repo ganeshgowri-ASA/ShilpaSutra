@@ -2,7 +2,7 @@
 import React, { useState, useCallback, useRef, Component, type ErrorInfo, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import { useCadStore } from "@/stores/cad-store";
-import { Package, History, Layers, RulerIcon } from "lucide-react";
+import { Package, History, Layers, RulerIcon, Settings2 } from "lucide-react";
 import type { SelectionFilterType } from "@/components/cad/SelectionFilter";
 
 /* ── Error Boundary to prevent full-page crashes ── */
@@ -88,6 +88,7 @@ const SketchGrid = dynamic(() => import("@/components/cad/SketchGrid"), { ssr: f
 const LayerPanel = dynamic(() => import("@/components/cad/LayerPanel"), { ssr: false });
 const DimensionTools = dynamic(() => import("@/components/cad/DimensionTools"), { ssr: false });
 const SnapIndicatorOverlay = dynamic(() => import("@/components/cad/SnapIndicator"), { ssr: false });
+const EntityPropertiesPanel = dynamic(() => import("@/components/cad/EntityPropertiesPanel"), { ssr: false });
 
 export default function DesignerPage() {
   const activeTool = useCadStore((s) => s.activeTool);
@@ -119,6 +120,7 @@ export default function DesignerPage() {
   const [showAppearance, setShowAppearance] = useState(false);
   const [showLayerPanel, setShowLayerPanel] = useState(false);
   const [showDimensionTools, setShowDimensionTools] = useState(false);
+  const [showEntityProps, setShowEntityProps] = useState(false);
   const [selectionFilters, setSelectionFilters] = useState<Set<SelectionFilterType>>(
     () => new Set<SelectionFilterType>(["vertex", "edge", "face", "body", "component"])
   );
@@ -299,12 +301,31 @@ export default function DesignerPage() {
                 <RulerIcon size={12} />
                 Dims
               </button>
+              <button
+                onClick={() => setShowEntityProps(!showEntityProps)}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-medium transition-all duration-150 backdrop-blur-md shadow-panel ${
+                  showEntityProps
+                    ? "bg-[#00D4FF]/15 text-[#00D4FF] border border-[#00D4FF]/30"
+                    : "text-slate-400 hover:text-white bg-[#0d1117]/80 hover:bg-[#21262d] border border-[#21262d]"
+                }`}
+                title="Toggle Entity Properties"
+              >
+                <Settings2 size={12} />
+                Props
+              </button>
             </div>
 
             {/* Dimension Tools Panel */}
             {showDimensionTools && (
               <div className="absolute top-14 left-[310px] z-20 pointer-events-auto animate-scale-in">
                 <DimensionTools onClose={() => setShowDimensionTools(false)} />
+              </div>
+            )}
+
+            {/* Entity Properties Panel */}
+            {showEntityProps && (
+              <div className="absolute top-14 right-3 z-20 pointer-events-auto animate-scale-in">
+                <EntityPropertiesPanel onClose={() => setShowEntityProps(false)} />
               </div>
             )}
 
