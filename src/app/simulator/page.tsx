@@ -3,6 +3,7 @@ import { useState, useMemo, useCallback } from "react";
 import dynamic from "next/dynamic";
 import ConvergenceMonitor from "@/components/ConvergenceMonitor";
 import ResultVisualization from "@/components/ResultVisualization";
+import SimulationComparison, { type SimulationRun } from "@/components/SimulationComparison";
 import { materials as fullMaterialDB, getMaterialCategories } from "@/lib/materials";
 
 const SimulatorViewport = dynamic(() => import("@/components/SimulatorViewport"), {
@@ -324,6 +325,8 @@ export default function SimulatorPage() {
   const [thermalResults, setThermalResults] = useState<ThermalResults | null>(null);
   const [thermalRunning, setThermalRunning] = useState(false);
   const [thermalProgress, setThermalProgress] = useState(0);
+  const [simHistory, setSimHistory] = useState<SimulationRun[]>([]);
+  const [runCounter, setRunCounter] = useState(0);
 
   const material = materials.find((m) => m.id === mat) || materials[0];
   const filteredMaterials = materials.filter(m => {
@@ -366,12 +369,33 @@ export default function SimulatorPage() {
           const res = computeStress(loads, constraints, material, meshRes);
           setResults(res);
           setLeftTab("results");
+          // Save to comparison history
+          const newRun: SimulationRun = {
+            id: Date.now().toString(),
+            name: `Run ${runCounter + 1}`,
+            timestamp: new Date().toISOString(),
+            material: material.name,
+            meshRes,
+            elementType,
+            maxStress: res.maxStress,
+            minStress: res.minStress,
+            maxDisplacement: res.maxDisplacement,
+            safetyFactor: res.safetyFactor,
+            iterations: res.iterations,
+            converged: res.converged,
+            loads: loads.length,
+            constraints: constraints.length,
+            strainEnergy: res.maxStress * res.maxDisplacement * 0.001 * 0.5,
+            naturalFreqs: res.naturalFreqs,
+          };
+          setSimHistory(prev => [...prev, newRun]);
+          setRunCounter(c => c + 1);
           return 100;
         }
         return p + 3;
       });
     }, 60);
-  }, [loads, constraints, material, meshRes]);
+  }, [loads, constraints, material, meshRes, elementType, runCounter]);
 
   const exportCSV = useCallback(() => {
     if (!results) return;
@@ -739,6 +763,14 @@ Element Type,${elementType},`;
                     isRunning={running}
                     converged={results.converged}
                     tolerance={1e-3}
+                  />
+                )}
+
+                {/* Simulation Comparison */}
+                {simHistory.length > 0 && (
+                  <SimulationComparison
+                    runs={simHistory}
+                    onClear={() => setSimHistory([])}
                   />
                 )}
 
