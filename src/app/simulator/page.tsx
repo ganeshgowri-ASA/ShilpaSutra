@@ -2,6 +2,7 @@
 import { useState, useMemo, useCallback } from "react";
 import dynamic from "next/dynamic";
 import ConvergenceMonitor from "@/components/ConvergenceMonitor";
+import ResultVisualization from "@/components/ResultVisualization";
 import { materials as fullMaterialDB, getMaterialCategories } from "@/lib/materials";
 
 const SimulatorViewport = dynamic(() => import("@/components/SimulatorViewport"), {
@@ -715,6 +716,16 @@ Element Type,${elementType},`;
                     ))}
                   </div>
                 )}
+
+                {/* Result Visualization with Probe Tool */}
+                <ResultVisualization
+                  field={results.stressField}
+                  gridSize={meshRes}
+                  fieldName={displayMode === "stress" ? "Von Mises Stress" : "Displacement"}
+                  unit={displayMode === "stress" ? "MPa" : "mm"}
+                  minValue={results.minStress}
+                  maxValue={results.maxStress}
+                />
 
                 {/* Convergence Monitor */}
                 {results.residualHistory && (
