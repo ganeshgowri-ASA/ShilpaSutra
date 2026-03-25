@@ -2,7 +2,7 @@
 import React, { useState, useCallback, useRef, Component, type ErrorInfo, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import { useCadStore } from "@/stores/cad-store";
-import { Package, History, Layers, RulerIcon, Settings2 } from "lucide-react";
+import { Package, History, Layers, RulerIcon, Settings2, Grid3X3 } from "lucide-react";
 import type { SelectionFilterType } from "@/components/cad/SelectionFilter";
 
 /* ── Error Boundary to prevent full-page crashes ── */
@@ -89,6 +89,8 @@ const LayerPanel = dynamic(() => import("@/components/cad/LayerPanel"), { ssr: f
 const DimensionTools = dynamic(() => import("@/components/cad/DimensionTools"), { ssr: false });
 const SnapIndicatorOverlay = dynamic(() => import("@/components/cad/SnapIndicator"), { ssr: false });
 const EntityPropertiesPanel = dynamic(() => import("@/components/cad/EntityPropertiesPanel"), { ssr: false });
+const GridControls = dynamic(() => import("@/components/cad/GridControls"), { ssr: false });
+const CoordinateInput = dynamic(() => import("@/components/cad/CoordinateInput"), { ssr: false });
 
 export default function DesignerPage() {
   const activeTool = useCadStore((s) => s.activeTool);
@@ -121,6 +123,7 @@ export default function DesignerPage() {
   const [showLayerPanel, setShowLayerPanel] = useState(false);
   const [showDimensionTools, setShowDimensionTools] = useState(false);
   const [showEntityProps, setShowEntityProps] = useState(false);
+  const [showGridControls, setShowGridControls] = useState(false);
   const [selectionFilters, setSelectionFilters] = useState<Set<SelectionFilterType>>(
     () => new Set<SelectionFilterType>(["vertex", "edge", "face", "body", "component"])
   );
@@ -313,6 +316,18 @@ export default function DesignerPage() {
                 <Settings2 size={12} />
                 Props
               </button>
+              <button
+                onClick={() => setShowGridControls(!showGridControls)}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-medium transition-all duration-150 backdrop-blur-md shadow-panel ${
+                  showGridControls
+                    ? "bg-[#00D4FF]/15 text-[#00D4FF] border border-[#00D4FF]/30"
+                    : "text-slate-400 hover:text-white bg-[#0d1117]/80 hover:bg-[#21262d] border border-[#21262d]"
+                }`}
+                title="Toggle Grid Controls"
+              >
+                <Grid3X3 size={12} />
+                Grid
+              </button>
             </div>
 
             {/* Dimension Tools Panel */}
@@ -326,6 +341,13 @@ export default function DesignerPage() {
             {showEntityProps && (
               <div className="absolute top-14 right-3 z-20 pointer-events-auto animate-scale-in">
                 <EntityPropertiesPanel onClose={() => setShowEntityProps(false)} />
+              </div>
+            )}
+
+            {/* Grid Controls Panel */}
+            {showGridControls && (
+              <div className="absolute bottom-28 left-3 z-20 pointer-events-auto animate-scale-in">
+                <GridControls onClose={() => setShowGridControls(false)} />
               </div>
             )}
 
@@ -502,12 +524,14 @@ export default function DesignerPage() {
         {aiOpen && aiMode === "zookeeper" && <AIChatAssistantEnhanced onClose={() => setAiOpen(false)} />}
       </div>
 
-      {/* Timeline toggle + Command Bar */}
+      {/* Timeline toggle + Coordinate Input + Command Bar */}
       <div className="flex items-center gap-2 px-3 py-1 bg-[#0d1117] border-t border-[#21262d]">
         <button onClick={() => setTimelineOpen(!timelineOpen)}
           className={`text-[9px] font-semibold px-2.5 py-0.5 rounded-md border transition-all duration-150 ${timelineOpen ? "border-[#00D4FF]/30 text-[#00D4FF] bg-[#00D4FF]/10" : "border-[#21262d] text-slate-500 hover:text-slate-300 hover:border-[#30363d]"}`}>
           Timeline
         </button>
+        <div className="h-3 w-px bg-[#21262d]" />
+        <CoordinateInput />
       </div>
 
       {/* Command Bar (bottom) */}
