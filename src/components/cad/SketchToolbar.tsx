@@ -8,6 +8,11 @@ import {
   mirrorLine,
   sketchFillet,
   sketchChamfer,
+  breakLine,
+  joinLines,
+  lengthenLine,
+  filletPreview,
+  chamferPreview,
   type SketchEntity2D,
 } from "@/lib/sketch-engine";
 import {
@@ -62,7 +67,11 @@ export type SketchOperation =
   | "copy_entities"
   | "rotate_entities"
   | "linear_sketch_pattern"
-  | "circular_sketch_pattern";
+  | "circular_sketch_pattern"
+  | "break"
+  | "join"
+  | "stretch"
+  | "lengthen";
 
 export type SnapMode =
   | "endpoint"
@@ -120,6 +129,10 @@ const sketchOperations: {
   { id: "power_trim", icon: <Scissors size={14} />, label: "P.Trim" },
   { id: "extend", icon: <ArrowRight size={14} />, label: "Extend", shortcut: "X" },
   { id: "split_entities", icon: <Scissors size={14} />, label: "Split" },
+  { id: "break", icon: <GitBranch size={14} />, label: "Break", shortcut: "B" },
+  { id: "join", icon: <Route size={14} />, label: "Join", shortcut: "J" },
+  { id: "stretch", icon: <ArrowUpDown size={14} />, label: "Stretch" },
+  { id: "lengthen", icon: <ArrowRight size={14} />, label: "Lengthen" },
   { id: "offset", icon: <Minus size={14} />, label: "Offset", shortcut: "O" },
   { id: "offset_entities", icon: <Minus size={14} />, label: "Off.Ent" },
   { id: "convert_entities", icon: <ArrowRight size={14} />, label: "Convert" },
@@ -422,6 +435,82 @@ export default function SketchToolbar({ visible, onSelectPlane }: SketchToolbarP
             const lp = selected.linePoints;
             cadStore.updateObject(selected.id, {
               linePoints: lp.map((p) => [p[0] + 0.5, p[1], p[2] + 0.5] as [number, number, number]),
+            });
+          }
+          setActiveOp(null);
+          break;
+        }
+
+        case "break": {
+          // Break a line at its midpoint
+          if (selected.type === "line" && selected.linePoints && selected.linePoints.length >= 2) {
+            const lp = selected.linePoints;
+            const midPt: [number, number] = [(lp[0][0] + lp[1][0]) / 2, (lp[0][2] + lp[1][2]) / 2];
+            const result = breakLine(
+              [lp[0][0], lp[0][2]], [lp[1][0], lp[1][2]], midPt
+            );
+            if (result) {
+              cadStore.pushHistory();
+              const SKETCH_Y = 0.02;
+              cadStore.deleteObject(selected.id);
+              cadStore.addLine([
+                [result.seg1.start[0], SKETCH_Y, result.seg1.start[1]],
+                [result.seg1.end[0], SKETCH_Y, result.seg1.end[1]],
+              ]);
+              cadStore.addLine([
+                [result.seg2.start[0], SKETCH_Y, result.seg2.start[1]],
+                [result.seg2.end[0], SKETCH_Y, result.seg2.end[1]],
+              ]);
+            }
+          }
+          setActiveOp(null);
+          break;
+        }
+
+        case "join": {
+          // Join two selected lines into one
+          const joinIds = cadStore.selectedIds;
+          if (joinIds.length >= 2) {
+            const line1 = cadStore.objects.find((o) => o.id === joinIds[0]);
+            const line2 = cadStore.objects.find((o) => o.id === joinIds[1]);
+            if (line1?.type === "line" && line2?.type === "line" &&
+                line1.linePoints?.length === 2 && line2.linePoints?.length === 2) {
+              const result = joinLines(
+                [line1.linePoints[0][0], line1.linePoints[0][2]],
+                [line1.linePoints[1][0], line1.linePoints[1][2]],
+                [line2.linePoints[0][0], line2.linePoints[0][2]],
+                [line2.linePoints[1][0], line2.linePoints[1][2]]
+              );
+              if (result) {
+                cadStore.pushHistory();
+                const SKETCH_Y = 0.02;
+                cadStore.deleteObject(line1.id);
+                cadStore.deleteObject(line2.id);
+                cadStore.addLine([
+                  [result.start[0], SKETCH_Y, result.start[1]],
+                  [result.end[0], SKETCH_Y, result.end[1]],
+                ]);
+              }
+            }
+          }
+          setActiveOp(null);
+          break;
+        }
+
+        case "lengthen": {
+          // Lengthen/shorten selected line by 0.5 units
+          if (selected.type === "line" && selected.linePoints && selected.linePoints.length >= 2) {
+            const lp = selected.linePoints;
+            const result = lengthenLine(
+              [lp[0][0], lp[0][2]], [lp[1][0], lp[1][2]], 0.5, "end"
+            );
+            cadStore.pushHistory();
+            const SKETCH_Y = 0.02;
+            cadStore.updateObject(selected.id, {
+              linePoints: [
+                [result.start[0], SKETCH_Y, result.start[1]],
+                [result.end[0], SKETCH_Y, result.end[1]],
+              ],
             });
           }
           setActiveOp(null);

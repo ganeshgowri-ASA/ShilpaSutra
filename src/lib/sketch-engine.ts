@@ -1205,3 +1205,136 @@ function getCharSegments(
   }
   return segs;
 }
+
+// ─── Additional Modify Operations ──────────────────────────────────────────
+
+/**
+ * Break a line at a given point, producing two segments.
+ * The breakPoint must lie on or near the line (within tolerance).
+ */
+export function breakLine(
+  start: [number, number],
+  end: [number, number],
+  breakPoint: [number, number],
+  tolerance: number = 0.1
+): { seg1: { start: [number, number]; end: [number, number] }; seg2: { start: [number, number]; end: [number, number] } } | null {
+  const lineDir = sub(end, start);
+  const lineLen = length(lineDir);
+  if (lineLen < EPS) return null;
+
+  const toPoint = sub(breakPoint, start);
+  const t = dot(toPoint, lineDir) / (lineLen * lineLen);
+  if (t < 0 || t > 1) return null;
+
+  const projected: [number, number] = add(start, scale(lineDir, t));
+  if (dist(projected, breakPoint) > tolerance) return null;
+
+  return {
+    seg1: { start, end: projected },
+    seg2: { start: projected, end },
+  };
+}
+
+/**
+ * Join two collinear or touching line segments into one.
+ * Returns null if lines can't be joined (too far apart or not collinear enough).
+ */
+export function joinLines(
+  line1Start: [number, number],
+  line1End: [number, number],
+  line2Start: [number, number],
+  line2End: [number, number],
+  tolerance: number = 0.15
+): { start: [number, number]; end: [number, number] } | null {
+  // Find the closest pair of endpoints
+  const pairs: [number, [number, number], [number, number], [number, number], [number, number]][] = [
+    [dist(line1End, line2Start), line1Start, line1End, line2Start, line2End],
+    [dist(line1End, line2End), line1Start, line1End, line2End, line2Start],
+    [dist(line1Start, line2Start), line1End, line1Start, line2Start, line2End],
+    [dist(line1Start, line2End), line1End, line1Start, line2End, line2Start],
+  ];
+  pairs.sort((a, b) => a[0] - b[0]);
+
+  const [gap, outerA, innerA, innerB, outerB] = pairs[0];
+  if (gap > tolerance) return null;
+
+  return { start: outerA, end: outerB };
+}
+
+/**
+ * Stretch line endpoints within a selection window by a delta.
+ * Points inside the window are moved; points outside stay fixed.
+ */
+export function stretchLine(
+  start: [number, number],
+  end: [number, number],
+  windowMin: [number, number],
+  windowMax: [number, number],
+  delta: [number, number]
+): { start: [number, number]; end: [number, number] } {
+  const inWindow = (p: [number, number]) =>
+    p[0] >= windowMin[0] && p[0] <= windowMax[0] &&
+    p[1] >= windowMin[1] && p[1] <= windowMax[1];
+
+  const newStart: [number, number] = inWindow(start)
+    ? [start[0] + delta[0], start[1] + delta[1]]
+    : start;
+  const newEnd: [number, number] = inWindow(end)
+    ? [end[0] + delta[0], end[1] + delta[1]]
+    : end;
+
+  return { start: newStart, end: newEnd };
+}
+
+/**
+ * Lengthen or shorten a line by a delta distance from one end.
+ * Positive delta extends, negative shortens.
+ */
+export function lengthenLine(
+  start: [number, number],
+  end: [number, number],
+  delta: number,
+  fromEnd: "start" | "end" = "end"
+): { start: [number, number]; end: [number, number] } {
+  const dir = sub(end, start);
+  const len = length(dir);
+  if (len < EPS) return { start, end };
+
+  const unitDir: [number, number] = [dir[0] / len, dir[1] / len];
+
+  if (fromEnd === "end") {
+    const newEnd: [number, number] = [end[0] + unitDir[0] * delta, end[1] + unitDir[1] * delta];
+    return { start, end: newEnd };
+  } else {
+    const newStart: [number, number] = [start[0] - unitDir[0] * delta, start[1] - unitDir[1] * delta];
+    return { start: newStart, end };
+  }
+}
+
+/**
+ * Fillet with preview: returns the fillet arc and trimmed lines for visual preview
+ * before committing. Same as sketchFillet but named for clarity.
+ */
+export function filletPreview(
+  line1Start: [number, number],
+  line1End: [number, number],
+  line2Start: [number, number],
+  line2End: [number, number],
+  radius: number
+): SketchFilletResult | null {
+  return sketchFillet(line1Start, line1End, line2Start, line2End, radius);
+}
+
+/**
+ * Chamfer with preview: returns chamfer line and trimmed lines.
+ */
+export function chamferPreview(
+  line1Start: [number, number],
+  line1End: [number, number],
+  line2Start: [number, number],
+  line2End: [number, number],
+  dist1: number,
+  dist2?: number
+): SketchChamferResult | null {
+  return sketchChamfer(line1Start, line1End, line2Start, line2End, dist1, dist2);
+}
