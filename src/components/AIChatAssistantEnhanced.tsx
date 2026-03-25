@@ -708,11 +708,14 @@ I'm context-aware and know what's in your scene. Try asking "what's in the scene
         <div className="flex items-center gap-1">
           <button
             onClick={() => setShowThinking(!showThinking)}
-            title="Toggle thinking chain"
-            className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${
-              showThinking ? "border-blue-500/40 text-blue-400 bg-blue-500/10" : "border-[#21262d] text-slate-600"
+            title={showThinking ? "Hide chain-of-thought reasoning" : "Show chain-of-thought reasoning"}
+            className={`text-[10px] px-1.5 py-0.5 rounded border transition-all duration-200 flex items-center gap-1 ${
+              showThinking
+                ? "border-blue-500/40 text-blue-400 bg-blue-500/10 shadow-[0_0_6px_rgba(59,130,246,0.15)]"
+                : "border-[#21262d] text-slate-600 hover:text-slate-400 hover:border-[#30363d]"
             }`}
           >
+            {showThinking && <span className="w-1 h-1 rounded-full bg-blue-400 animate-pulse" />}
             Think
           </button>
           <button
@@ -769,14 +772,20 @@ I'm context-aware and know what's in your scene. Try asking "what's in the scene
                     </div>
                   )}
 
-                  {/* Thinking steps (collapsible) */}
+                  {/* Thinking steps (chain-of-thought, collapsible) */}
                   {showThinking && msg.thinkingSteps && msg.thinkingSteps.length > 0 && (
-                    <div className="mb-2 pl-2 border-l-2 border-purple-500/30 space-y-0.5">
-                      {msg.thinkingSteps.map((step, i) => (
-                        <div key={i} className="text-[10px] text-purple-400/70 font-mono">
-                          {step}
-                        </div>
-                      ))}
+                    <div className="mb-2 rounded-md bg-blue-500/5 border border-blue-500/10 p-2">
+                      <div className="text-[8px] uppercase tracking-wider text-blue-500/60 font-bold mb-1.5 flex items-center gap-1">
+                        <span className="w-1 h-1 rounded-full bg-blue-400/50" />
+                        Chain of Thought
+                      </div>
+                      <div className="pl-2 border-l-2 border-blue-500/20 space-y-0.5">
+                        {msg.thinkingSteps.map((step, i) => (
+                          <div key={i} className="text-[10px] text-blue-400/70 font-mono leading-relaxed">
+                            <span className="text-blue-500/40 mr-1">{i + 1}.</span>{step}
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )}
 
