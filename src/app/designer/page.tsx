@@ -143,6 +143,7 @@ export default function DesignerPage() {
   }, []);
 
   // Keyboard shortcut: Ctrl+Shift+G to open Text-to-CAD inline
+  // Also listen for AI tool events from context menu
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "G") {
@@ -150,8 +151,16 @@ export default function DesignerPage() {
         setActiveAITool((prev) => (prev === "ai_text_to_cad" ? null : "ai_text_to_cad"));
       }
     };
+    const handleAIToolEvent = (e: Event) => {
+      const tool = (e as CustomEvent).detail?.tool as AIToolType;
+      if (tool) setActiveAITool(tool);
+    };
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener("shilpasutra:ai-tool", handleAIToolEvent);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("shilpasutra:ai-tool", handleAIToolEvent);
+    };
   }, []);
 
   const handleToggleFilter = useCallback((filter: SelectionFilterType) => {

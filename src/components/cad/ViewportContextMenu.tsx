@@ -4,16 +4,17 @@ import { useCadStore } from "@/stores/cad-store";
 import {
   Copy, Clipboard, Trash2, CopyPlus, EyeOff, Eye, Settings2,
   Scissors, ArrowRight, FlipHorizontal, Minus, Ruler, Pencil, RotateCw,
-  Layers, Palette, Lock,
+  Layers, Palette, Lock, Sparkles, MessageSquare, Wand2, Zap, HelpCircle,
 } from "lucide-react";
 
 interface ContextMenuProps {
   x: number;
   y: number;
   onClose: () => void;
+  onAITool?: (tool: "ai_text_to_cad" | "ai_suggest" | "ai_optimize" | "ai_explain") => void;
 }
 
-export default function ViewportContextMenu({ x, y, onClose }: ContextMenuProps) {
+export default function ViewportContextMenu({ x, y, onClose, onAITool }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const selectedId = useCadStore((s) => s.selectedId);
   const selectedIds = useCadStore((s) => s.selectedIds);
@@ -100,6 +101,15 @@ export default function ViewportContextMenu({ x, y, onClose }: ContextMenuProps)
   const isSketchMode = !!sketchPlane;
   const sketchTools = ["line", "arc", "circle", "rectangle", "polygon", "spline", "ellipse", "construction_line"];
   const isDrawing = sketchTools.includes(activeTool);
+
+  const dispatchAITool = (tool: string) => {
+    if (onAITool) {
+      onAITool(tool as "ai_text_to_cad" | "ai_suggest" | "ai_optimize" | "ai_explain");
+    } else {
+      // Fallback: dispatch custom event for designer page to catch
+      window.dispatchEvent(new CustomEvent("shilpasutra:ai-tool", { detail: { tool } }));
+    }
+  };
 
   const handleSetTool = (tool: string) => {
     setActiveTool(tool as import("@/stores/cad-store").ToolId);
@@ -226,6 +236,42 @@ export default function ViewportContextMenu({ x, y, onClose }: ContextMenuProps)
       },
     ] : []),
     { type: "separator" as const },
+    // AI Actions submenu
+    ...(!isSketchMode ? [
+      {
+        label: "AI: Suggest Fix",
+        icon: <Wand2 size={13} />,
+        shortcut: "",
+        action: () => { dispatchAITool("ai_suggest"); onClose(); },
+        disabled: !hasSelection,
+        ai: true,
+      },
+      {
+        label: "AI: Optimize",
+        icon: <Zap size={13} />,
+        shortcut: "",
+        action: () => { dispatchAITool("ai_optimize"); onClose(); },
+        disabled: !hasSelection,
+        ai: true,
+      },
+      {
+        label: "AI: Explain",
+        icon: <HelpCircle size={13} />,
+        shortcut: "",
+        action: () => { dispatchAITool("ai_explain"); onClose(); },
+        disabled: !hasSelection,
+        ai: true,
+      },
+      {
+        label: "AI: Text to CAD",
+        icon: <MessageSquare size={13} />,
+        shortcut: "Ctrl+Shift+G",
+        action: () => { dispatchAITool("ai_text_to_cad"); onClose(); },
+        disabled: false,
+        ai: true,
+      },
+      { type: "separator" as const },
+    ] : []),
     {
       label: "Properties",
       icon: <Settings2 size={13} />,
@@ -276,10 +322,12 @@ export default function ViewportContextMenu({ x, y, onClose }: ContextMenuProps)
                 ? "opacity-40 cursor-not-allowed text-slate-500"
                 : item.danger
                 ? "text-red-400 hover:bg-red-900/30 cursor-pointer"
+                : (item as { ai?: boolean }).ai
+                ? "text-purple-300 hover:bg-purple-900/30 hover:text-purple-200 cursor-pointer"
                 : "text-slate-300 hover:bg-[#0f3460] hover:text-white cursor-pointer",
             ].join(" ")}
           >
-            <span className="w-4 flex items-center justify-center text-slate-400">
+            <span className={`w-4 flex items-center justify-center ${(item as { ai?: boolean }).ai ? "text-purple-400" : "text-slate-400"}`}>
               {item.icon}
             </span>
             <span className="flex-1 text-left">{item.label}</span>
