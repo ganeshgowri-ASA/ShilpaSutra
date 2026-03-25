@@ -43,6 +43,8 @@ interface SimulatorViewportProps {
   results: SimResults | null;
   showContour: boolean;
   meshRes: number;
+  showWireframe?: boolean;
+  elementType?: string;
 }
 
 const facePositions: Record<string, { pos: [number, number, number]; dir: [number, number, number] }> = {
@@ -302,6 +304,203 @@ function FixedSupport({ constraint, dimensions }: { constraint: Constraint; dime
   );
 }
 
+/* ── Pinned support visualization ── */
+function PinnedSupport({ constraint, dimensions }: { constraint: Constraint; dimensions: { width: number; height: number; depth: number } }) {
+  const faceInfo = facePositions[constraint.face];
+  if (!faceInfo) return null;
+
+  const hw = dimensions.width / 2;
+  const hh = dimensions.height / 2;
+  const hd = dimensions.depth / 2;
+  const pos: [number, number, number] = [
+    faceInfo.pos[0] * hw,
+    faceInfo.pos[1] * hh + dimensions.height / 2,
+    faceInfo.pos[2] * hd,
+  ];
+
+  return (
+    <group>
+      {/* Pin triangle */}
+      <mesh position={[pos[0], pos[1] - 0.15, pos[2]]} rotation={[0, 0, Math.PI]}>
+        <coneGeometry args={[0.2, 0.3, 3]} />
+        <meshBasicMaterial color="#44bb44" transparent opacity={0.7} />
+      </mesh>
+      {/* Pin circle */}
+      <mesh position={pos}>
+        <sphereGeometry args={[0.08, 12, 12]} />
+        <meshBasicMaterial color="#44bb44" />
+      </mesh>
+    </group>
+  );
+}
+
+/* ── Roller support visualization ── */
+function RollerSupport({ constraint, dimensions }: { constraint: Constraint; dimensions: { width: number; height: number; depth: number } }) {
+  const faceInfo = facePositions[constraint.face];
+  if (!faceInfo) return null;
+
+  const hw = dimensions.width / 2;
+  const hh = dimensions.height / 2;
+  const hd = dimensions.depth / 2;
+  const pos: [number, number, number] = [
+    faceInfo.pos[0] * hw,
+    faceInfo.pos[1] * hh + dimensions.height / 2,
+    faceInfo.pos[2] * hd,
+  ];
+
+  const rollers: [number, number, number][] = [];
+  for (let i = -1; i <= 1; i++) {
+    const offset = i * 0.25;
+    if (Math.abs(faceInfo.dir[1]) > 0.5) {
+      rollers.push([pos[0] + offset, pos[1] - 0.2 * Math.sign(faceInfo.dir[1]), pos[2]]);
+    } else if (Math.abs(faceInfo.dir[0]) > 0.5) {
+      rollers.push([pos[0] - 0.2 * Math.sign(faceInfo.dir[0]), pos[1] + offset, pos[2]]);
+    } else {
+      rollers.push([pos[0] + offset, pos[1], pos[2] - 0.2 * Math.sign(faceInfo.dir[2])]);
+    }
+  }
+
+  return (
+    <group>
+      {rollers.map((rPos, i) => (
+        <mesh key={i} position={rPos} rotation={[0, 0, Math.PI / 2]}>
+          <cylinderGeometry args={[0.06, 0.06, 0.12, 12]} />
+          <meshBasicMaterial color="#dddd44" />
+        </mesh>
+      ))}
+      {/* Ground line beneath rollers */}
+      <Line
+        points={[
+          [rollers[0][0] - 0.1, rollers[0][1] - 0.08, rollers[0][2]],
+          [rollers[2][0] + 0.1, rollers[2][1] - 0.08, rollers[2][2]],
+        ]}
+        color="#dddd44"
+        lineWidth={2}
+      />
+    </group>
+  );
+}
+
+/* ── Spring support visualization ── */
+function SpringSupport({ constraint, dimensions }: { constraint: Constraint; dimensions: { width: number; height: number; depth: number } }) {
+  const faceInfo = facePositions[constraint.face];
+  if (!faceInfo) return null;
+
+  const hw = dimensions.width / 2;
+  const hh = dimensions.height / 2;
+  const hd = dimensions.depth / 2;
+  const pos: [number, number, number] = [
+    faceInfo.pos[0] * hw,
+    faceInfo.pos[1] * hh + dimensions.height / 2,
+    faceInfo.pos[2] * hd,
+  ];
+
+  // Zigzag spring along the face normal direction
+  const springPts: [number, number, number][] = [];
+  const coils = 5;
+  const springLen = 0.8;
+  const amplitude = 0.12;
+  const dir = faceInfo.dir;
+
+  for (let i = 0; i <= coils * 4; i++) {
+    const t = i / (coils * 4);
+    const along = t * springLen;
+    const lateral = (i % 2 === 0 ? 1 : -1) * amplitude * (i > 0 && i < coils * 4 ? 1 : 0);
+    springPts.push([
+      pos[0] + dir[0] * along + (Math.abs(dir[1]) > 0.5 ? lateral : 0),
+      pos[1] + dir[1] * along + (Math.abs(dir[0]) > 0.5 ? lateral : Math.abs(dir[2]) > 0.5 ? lateral : 0),
+      pos[2] + dir[2] * along,
+    ]);
+  }
+
+  return (
+    <group>
+      <Line points={springPts} color="#bb44ff" lineWidth={2.5} />
+      <mesh position={[pos[0] + dir[0] * springLen, pos[1] + dir[1] * springLen, pos[2] + dir[2] * springLen]}>
+        <boxGeometry args={[0.3, 0.05, 0.3]} />
+        <meshBasicMaterial color="#bb44ff" transparent opacity={0.6} />
+      </mesh>
+    </group>
+  );
+}
+
+/* ── Pressure load visualization (distributed arrows) ── */
+function PressureArrows({ load, dimensions }: { load: Load; dimensions: { width: number; height: number; depth: number } }) {
+  const faceInfo = facePositions[load.face];
+  if (!faceInfo) return null;
+
+  const hw = dimensions.width / 2;
+  const hh = dimensions.height / 2;
+  const hd = dimensions.depth / 2;
+
+  const basePos: [number, number, number] = [
+    faceInfo.pos[0] * hw,
+    faceInfo.pos[1] * hh + dimensions.height / 2,
+    faceInfo.pos[2] * hd,
+  ];
+
+  const arrows: [number, number, number][] = [];
+  const grid = 3;
+  for (let i = -1; i <= 1; i++) {
+    for (let j = -1; j <= 1; j++) {
+      const spread = 0.3;
+      if (Math.abs(faceInfo.dir[1]) > 0.5) {
+        arrows.push([basePos[0] + i * spread, basePos[1], basePos[2] + j * spread]);
+      } else if (Math.abs(faceInfo.dir[0]) > 0.5) {
+        arrows.push([basePos[0], basePos[1] + i * spread, basePos[2] + j * spread]);
+      } else {
+        arrows.push([basePos[0] + i * spread, basePos[1] + j * spread, basePos[2]]);
+      }
+    }
+  }
+
+  const dir = load.direction;
+  const arrowLen = 0.6;
+
+  return (
+    <group>
+      {arrows.map((aPos, idx) => {
+        const tip: [number, number, number] = [
+          aPos[0] + dir[0] * arrowLen,
+          aPos[1] + dir[1] * arrowLen,
+          aPos[2] + dir[2] * arrowLen,
+        ];
+        return (
+          <group key={idx}>
+            <Line points={[aPos, tip]} color="#ff8844" lineWidth={2} />
+            <mesh position={tip}>
+              <coneGeometry args={[0.06, 0.15, 6]} />
+              <meshBasicMaterial color="#ff8844" />
+            </mesh>
+          </group>
+        );
+      })}
+    </group>
+  );
+}
+
+/* ── Select constraint visualization by type ── */
+function ConstraintVis({ constraint, dimensions }: { constraint: Constraint; dimensions: { width: number; height: number; depth: number } }) {
+  switch (constraint.type) {
+    case "pinned":
+      return <PinnedSupport constraint={constraint} dimensions={dimensions} />;
+    case "roller":
+      return <RollerSupport constraint={constraint} dimensions={dimensions} />;
+    case "spring":
+      return <SpringSupport constraint={constraint} dimensions={dimensions} />;
+    default:
+      return <FixedSupport constraint={constraint} dimensions={dimensions} />;
+  }
+}
+
+/* ── Select load visualization by type ── */
+function LoadVis({ load, dimensions }: { load: Load; dimensions: { width: number; height: number; depth: number } }) {
+  if (load.type === "pressure" || load.type === "distributed") {
+    return <PressureArrows load={load} dimensions={dimensions} />;
+  }
+  return <ForceArrow load={load} dimensions={dimensions} />;
+}
+
 export default function SimulatorViewport({
   geometry,
   dimensions,
@@ -310,6 +509,7 @@ export default function SimulatorViewport({
   results,
   showContour,
   meshRes,
+  showWireframe,
 }: SimulatorViewportProps) {
   return (
     <div className="w-full h-full bg-[#0a0e17]">
@@ -344,14 +544,30 @@ export default function SimulatorViewport({
           meshRes={meshRes}
         />
 
-        {/* Force arrows */}
+        {/* Wireframe overlay (toggled) */}
+        {showWireframe && (
+          <group position={[0, dimensions.height / 2, 0]}>
+            <mesh>
+              {geometry === "box" ? (
+                <boxGeometry args={[dimensions.width, dimensions.height, dimensions.depth, meshRes, meshRes, meshRes]} />
+              ) : geometry === "cylinder" ? (
+                <cylinderGeometry args={[dimensions.width, dimensions.width, dimensions.height, 32, meshRes]} />
+              ) : (
+                <sphereGeometry args={[dimensions.width, meshRes, meshRes]} />
+              )}
+              <meshBasicMaterial wireframe color="#00D4FF" transparent opacity={0.15} />
+            </mesh>
+          </group>
+        )}
+
+        {/* Load visualizations (type-aware) */}
         {loads.map((load) => (
-          <ForceArrow key={load.id} load={load} dimensions={dimensions} />
+          <LoadVis key={load.id} load={load} dimensions={dimensions} />
         ))}
 
-        {/* Constraint indicators */}
+        {/* Constraint visualizations (type-aware) */}
         {constraints.map((c) => (
-          <FixedSupport key={c.id} constraint={c} dimensions={dimensions} />
+          <ConstraintVis key={c.id} constraint={c} dimensions={dimensions} />
         ))}
 
         <OrbitControls makeDefault enableDamping dampingFactor={0.05} />

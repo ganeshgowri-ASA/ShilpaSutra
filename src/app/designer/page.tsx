@@ -1,8 +1,8 @@
 "use client";
-import React, { useState, useCallback, useRef, Component, type ErrorInfo, type ReactNode } from "react";
+import React, { useState, useCallback, useRef, useEffect, Component, type ErrorInfo, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import { useCadStore } from "@/stores/cad-store";
-import { Package, History, Layers, RulerIcon, Settings2, Grid3X3 } from "lucide-react";
+import { Package, History, Layers, RulerIcon, Settings2, Grid3X3, MessageSquare } from "lucide-react";
 import type { SelectionFilterType } from "@/components/cad/SelectionFilter";
 
 /* ── Error Boundary to prevent full-page crashes ── */
@@ -91,6 +91,9 @@ const SnapIndicatorOverlay = dynamic(() => import("@/components/cad/SnapIndicato
 const EntityPropertiesPanel = dynamic(() => import("@/components/cad/EntityPropertiesPanel"), { ssr: false });
 const GridControls = dynamic(() => import("@/components/cad/GridControls"), { ssr: false });
 const CoordinateInput = dynamic(() => import("@/components/cad/CoordinateInput"), { ssr: false });
+const AIToolPanel = dynamic(() => import("@/components/cad/AIToolPanel"), { ssr: false });
+
+type AIToolType = "ai_text_to_cad" | "ai_suggest" | "ai_optimize" | "ai_explain" | null;
 
 export default function DesignerPage() {
   const activeTool = useCadStore((s) => s.activeTool);
@@ -106,7 +109,7 @@ export default function DesignerPage() {
 
   const viewportRef = useRef<HTMLDivElement>(null);
   const [aiOpen, setAiOpen] = useState(false);
-  const [aiMode, setAiMode] = useState<"basic" | "zookeeper">("zookeeper");
+  const [aiMode, setAiMode] = useState<"basic" | "enhanced">("enhanced");
   const [parametricOpen, setParametricOpen] = useState(false);
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [showExtrudeDialog, setShowExtrudeDialog] = useState(false);
@@ -124,6 +127,7 @@ export default function DesignerPage() {
   const [showDimensionTools, setShowDimensionTools] = useState(false);
   const [showEntityProps, setShowEntityProps] = useState(false);
   const [showGridControls, setShowGridControls] = useState(false);
+  const [activeAITool, setActiveAITool] = useState<AIToolType>(null);
   const [selectionFilters, setSelectionFilters] = useState<Set<SelectionFilterType>>(
     () => new Set<SelectionFilterType>(["vertex", "edge", "face", "body", "component"])
   );
@@ -145,6 +149,31 @@ export default function DesignerPage() {
   const handleConfigManager = useCallback(() => setShowConfigManager(true), []);
   const handleHoleWizard = useCallback(() => setShowHoleWizard(true), []);
 
+  const handleAITool = useCallback((tool: "ai_text_to_cad" | "ai_suggest" | "ai_optimize" | "ai_explain") => {
+    setActiveAITool((prev) => (prev === tool ? null : tool));
+  }, []);
+
+  // Keyboard shortcut: Ctrl+Shift+G to open Text-to-CAD inline
+  // Also listen for AI tool events from context menu
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "G") {
+        e.preventDefault();
+        setActiveAITool((prev) => (prev === "ai_text_to_cad" ? null : "ai_text_to_cad"));
+      }
+    };
+    const handleAIToolEvent = (e: Event) => {
+      const tool = (e as CustomEvent).detail?.tool as AIToolType;
+      if (tool) setActiveAITool(tool);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("shilpasutra:ai-tool", handleAIToolEvent);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("shilpasutra:ai-tool", handleAIToolEvent);
+    };
+  }, []);
+
   const handleToggleFilter = useCallback((filter: SelectionFilterType) => {
     setSelectionFilters((prev) => {
       const next = new Set(prev);
@@ -165,6 +194,7 @@ export default function DesignerPage() {
         onAppearance={handleAppearance}
         onConfigManager={handleConfigManager}
         onHoleWizard={handleHoleWizard}
+        onAITool={handleAITool}
       />
 
       {/* Main workspace area */}
@@ -399,14 +429,14 @@ export default function DesignerPage() {
                 </button>
                 {aiOpen && (
                   <button
-                    onClick={() => setAiMode(aiMode === "basic" ? "zookeeper" : "basic")}
+                    onClick={() => setAiMode(aiMode === "basic" ? "enhanced" : "basic")}
                     className={`text-[10px] px-2 py-1 rounded-md border font-medium transition-all duration-150 backdrop-blur-md ${
-                      aiMode === "zookeeper"
+                      aiMode === "enhanced"
                         ? "border-purple-500/30 text-purple-400 bg-purple-500/10"
                         : "border-[#21262d] text-slate-500 bg-[#0d1117]/80"
                     }`}
                   >
-                    {aiMode === "zookeeper" ? "Zookeeper" : "Basic"}
+                    {aiMode === "enhanced" ? "ShilpaSutra AI" : "Basic"}
                   </button>
                 )}
                 <button
@@ -482,6 +512,23 @@ export default function DesignerPage() {
               <AppearanceEditor onClose={() => setShowAppearance(false)} />
             )}
 
+            {/* Quick Text-to-CAD button (floating, bottom right) */}
+            {!activeAITool && !isSketchMode && (
+              <button
+                onClick={() => setActiveAITool("ai_text_to_cad")}
+                title="Text to CAD (Ctrl+Shift+G)"
+                className="absolute bottom-3 right-3 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-purple-600/90 hover:bg-purple-500 text-white text-[10px] font-medium shadow-lg shadow-purple-900/30 backdrop-blur-md transition-all duration-200 hover:shadow-purple-500/20 hover:scale-105 pointer-events-auto"
+              >
+                <MessageSquare size={12} />
+                Text to CAD
+              </button>
+            )}
+
+            {/* AI Tool Panel (floating, top center) */}
+            {activeAITool && (
+              <AIToolPanel toolType={activeAITool} onClose={() => setActiveAITool(null)} />
+            )}
+
             {/* History Timeline (floating, bottom right) */}
             <HistoryTimeline />
           </div>
@@ -521,7 +568,7 @@ export default function DesignerPage() {
 
         {/* AI Chat Sidebar */}
         {aiOpen && aiMode === "basic" && <AIChatSidebar onClose={() => setAiOpen(false)} />}
-        {aiOpen && aiMode === "zookeeper" && <AIChatAssistantEnhanced onClose={() => setAiOpen(false)} />}
+        {aiOpen && aiMode === "enhanced" && <AIChatAssistantEnhanced onClose={() => setAiOpen(false)} />}
       </div>
 
       {/* Timeline toggle + Coordinate Input + Command Bar */}
