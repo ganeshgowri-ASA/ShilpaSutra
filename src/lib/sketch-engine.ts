@@ -1336,5 +1336,5 @@ export function chamferPreview(
   dist1: number,
   dist2?: number
 ): SketchChamferResult | null {
-  return sketchChamfer(line1Start, line1End, line2Start, line2End, dist1, dist2);
+  return sketchChamfer(line1Start, line1End, line2Start, line2End, dist2 ?? dist1);
 }

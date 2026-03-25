@@ -202,7 +202,7 @@ export function findClosestSnap(
   cursorPos: [number, number],
   snapPoints: SnapPoint[],
   snapRadius: number = 0.3,
-  enabledTypes: Set<SnapType> = new Set(["endpoint", "midpoint", "center", "intersection", "tangent", "perpendicular", "nearest", "quadrant", "origin"])
+  enabledTypes: Set<SnapType> = new Set<SnapType>(["endpoint", "midpoint", "center", "intersection", "tangent", "perpendicular", "nearest", "quadrant", "origin"])
 ): SnapPoint | null {
   let closest: SnapPoint | null = null;
   let closestDist = snapRadius;
