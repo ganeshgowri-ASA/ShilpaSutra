@@ -517,3 +517,312 @@ export function generateColorLegend(
   }
   return legend;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FEA Solver - 2D Plane Stress CST (Constant Strain Triangle) Elements
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export interface FEASolverNode {
+  id: number;
+  x: number;
+  y: number;
+}
+
+export interface FEASolverElement {
+  id: number;
+  nodes: [number, number, number]; // triangle vertex indices
+  materialId: string;
+}
+
+export interface FEASolverMaterial {
+  id: string;
+  name: string;
+  E: number;        // Young's modulus (Pa)
+  nu: number;       // Poisson's ratio
+  density: number;  // kg/m³
+  yieldStress: number;
+}
+
+export interface FEASolverBC {
+  nodeId: number;
+  type: 'fixed' | 'roller_x' | 'roller_y' | 'prescribed';
+  dx?: number;
+  dy?: number;
+}
+
+export interface FEASolverLoad {
+  type: 'point' | 'distributed' | 'pressure';
+  nodeId?: number;
+  elementId?: number;
+  fx?: number;
+  fy?: number;
+  magnitude?: number;
+}
+
+export interface FEASolverMesh {
+  nodes: FEASolverNode[];
+  elements: FEASolverElement[];
+}
+
+export interface FEASolverResult {
+  displacements: Float64Array;
+  elementStresses: { sigmaX: number; sigmaY: number; tauXY: number; vonMises: number }[];
+  maxDisplacement: number;
+  maxVonMises: number;
+  safetyFactor: number;
+  strainEnergy: number;
+}
+
+// ── Rectangular mesh generator ───────────────────────────────────────────────
+
+export function createRectMesh(width: number, height: number, nx: number, ny: number): FEASolverMesh {
+  const nodes: FEASolverNode[] = [];
+  const elements: FEASolverElement[] = [];
+
+  // Generate nodes
+  for (let j = 0; j <= ny; j++) {
+    for (let i = 0; i <= nx; i++) {
+      nodes.push({ id: j * (nx + 1) + i, x: (i / nx) * width, y: (j / ny) * height });
+    }
+  }
+
+  // Generate triangular elements (2 per quad)
+  let elemId = 0;
+  for (let j = 0; j < ny; j++) {
+    for (let i = 0; i < nx; i++) {
+      const bl = j * (nx + 1) + i;
+      const br = bl + 1;
+      const tl = (j + 1) * (nx + 1) + i;
+      const tr = tl + 1;
+      elements.push({ id: elemId++, nodes: [bl, br, tl], materialId: 'default' });
+      elements.push({ id: elemId++, nodes: [br, tr, tl], materialId: 'default' });
+    }
+  }
+
+  return { nodes, elements };
+}
+
+// ── Common materials ─────────────────────────────────────────────────────────
+
+export function getCommonFEAMaterials(): Map<string, FEASolverMaterial> {
+  const m = new Map<string, FEASolverMaterial>();
+  m.set('default', { id: 'default', name: 'Steel AISI 1045', E: 205e9, nu: 0.29, density: 7850, yieldStress: 530e6 });
+  m.set('aluminum', { id: 'aluminum', name: 'Aluminum 6061-T6', E: 69e9, nu: 0.33, density: 2700, yieldStress: 276e6 });
+  m.set('titanium', { id: 'titanium', name: 'Ti-6Al-4V', E: 114e9, nu: 0.34, density: 4430, yieldStress: 880e6 });
+  m.set('abs', { id: 'abs', name: 'ABS Plastic', E: 2.3e9, nu: 0.35, density: 1040, yieldStress: 40e6 });
+  m.set('nylon', { id: 'nylon', name: 'Nylon 6/6', E: 3.3e9, nu: 0.39, density: 1140, yieldStress: 70e6 });
+  m.set('copper', { id: 'copper', name: 'Copper C110', E: 117e9, nu: 0.34, density: 8940, yieldStress: 210e6 });
+  return m;
+}
+
+// ── Von Mises ────────────────────────────────────────────────────────────────
+
+export function computeVonMises2D(sx: number, sy: number, txy: number): number {
+  return Math.sqrt(sx * sx - sx * sy + sy * sy + 3 * txy * txy);
+}
+
+// ── CST Element Stiffness ────────────────────────────────────────────────────
+
+function cstStiffness(
+  x1: number, y1: number, x2: number, y2: number, x3: number, y3: number,
+  E: number, nu: number, thickness: number
+): { K: number[][]; area: number } {
+  // Element area
+  const area = 0.5 * Math.abs((x2 - x1) * (y3 - y1) - (x3 - x1) * (y2 - y1));
+  if (area < 1e-20) return { K: Array.from({ length: 6 }, () => Array(6).fill(0)), area: 0 };
+
+  const A2 = 2 * area;
+  // B matrix components
+  const b1 = (y2 - y3) / A2, b2 = (y3 - y1) / A2, b3 = (y1 - y2) / A2;
+  const c1 = (x3 - x2) / A2, c2 = (x1 - x3) / A2, c3 = (x2 - x1) / A2;
+
+  // Plane stress D matrix
+  const factor = E / (1 - nu * nu);
+  const D = [
+    [factor, factor * nu, 0],
+    [factor * nu, factor, 0],
+    [0, 0, factor * (1 - nu) / 2],
+  ];
+
+  // B matrix (3x6)
+  const B = [
+    [b1, 0, b2, 0, b3, 0],
+    [0, c1, 0, c2, 0, c3],
+    [c1, b1, c2, b2, c3, b3],
+  ];
+
+  // K = t * A * B^T * D * B
+  const K: number[][] = Array.from({ length: 6 }, () => Array(6).fill(0));
+
+  // Compute B^T * D * B
+  for (let i = 0; i < 6; i++) {
+    for (let j = 0; j < 6; j++) {
+      let sum = 0;
+      for (let m = 0; m < 3; m++) {
+        for (let n = 0; n < 3; n++) {
+          sum += B[m][i] * D[m][n] * B[n][j];
+        }
+      }
+      K[i][j] = sum * thickness * area;
+    }
+  }
+
+  return { K, area };
+}
+
+// ── FEA Solver (direct Gaussian elimination) ────────────────────────────────
+
+export function solveFEA(
+  mesh: FEASolverMesh,
+  materials: Map<string, FEASolverMaterial>,
+  bcs: FEASolverBC[],
+  loads: FEASolverLoad[],
+  thickness: number = 1
+): FEASolverResult {
+  const n = mesh.nodes.length;
+  const dof = n * 2;
+
+  // Global stiffness matrix (sparse as dense for simplicity up to ~500 nodes)
+  const K = Array.from({ length: dof }, () => new Float64Array(dof));
+  const F = new Float64Array(dof);
+
+  // Assemble global stiffness
+  for (const elem of mesh.elements) {
+    const [i, j, k] = elem.nodes;
+    const n1 = mesh.nodes[i], n2 = mesh.nodes[j], n3 = mesh.nodes[k];
+    const mat = materials.get(elem.materialId) || materials.get('default')!;
+
+    const { K: Ke } = cstStiffness(n1.x, n1.y, n2.x, n2.y, n3.x, n3.y, mat.E, mat.nu, thickness);
+
+    const dofs = [i * 2, i * 2 + 1, j * 2, j * 2 + 1, k * 2, k * 2 + 1];
+    for (let a = 0; a < 6; a++) {
+      for (let b = 0; b < 6; b++) {
+        K[dofs[a]][dofs[b]] += Ke[a][b];
+      }
+    }
+  }
+
+  // Apply loads
+  for (const load of loads) {
+    if (load.type === 'point' && load.nodeId !== undefined) {
+      if (load.fx) F[load.nodeId * 2] += load.fx;
+      if (load.fy) F[load.nodeId * 2 + 1] += load.fy;
+    }
+  }
+
+  // Apply boundary conditions (penalty method)
+  const penalty = 1e30;
+  for (const bc of bcs) {
+    const ux = bc.nodeId * 2;
+    const uy = bc.nodeId * 2 + 1;
+    if (bc.type === 'fixed') {
+      K[ux][ux] += penalty;
+      K[uy][uy] += penalty;
+      F[ux] += penalty * (bc.dx || 0);
+      F[uy] += penalty * (bc.dy || 0);
+    } else if (bc.type === 'roller_x') {
+      K[uy][uy] += penalty; // fix y
+      F[uy] += penalty * (bc.dy || 0);
+    } else if (bc.type === 'roller_y') {
+      K[ux][ux] += penalty; // fix x
+      F[ux] += penalty * (bc.dx || 0);
+    } else if (bc.type === 'prescribed') {
+      if (bc.dx !== undefined) { K[ux][ux] += penalty; F[ux] += penalty * bc.dx; }
+      if (bc.dy !== undefined) { K[uy][uy] += penalty; F[uy] += penalty * bc.dy; }
+    }
+  }
+
+  // Solve Ku=F using Gaussian elimination with partial pivoting
+  const u = new Float64Array(dof);
+  const A = K.map(row => Float64Array.from(row));
+  const b = Float64Array.from(F);
+
+  for (let col = 0; col < dof; col++) {
+    // Partial pivoting
+    let maxVal = Math.abs(A[col][col]);
+    let maxRow = col;
+    for (let row = col + 1; row < dof; row++) {
+      if (Math.abs(A[row][col]) > maxVal) {
+        maxVal = Math.abs(A[row][col]);
+        maxRow = row;
+      }
+    }
+    if (maxRow !== col) {
+      const tmp = A[col]; A[col] = A[maxRow]; A[maxRow] = tmp;
+      const tmpB = b[col]; b[col] = b[maxRow]; b[maxRow] = tmpB;
+    }
+
+    if (Math.abs(A[col][col]) < 1e-30) continue;
+
+    // Forward elimination
+    for (let row = col + 1; row < dof; row++) {
+      const factor = A[row][col] / A[col][col];
+      for (let c = col; c < dof; c++) {
+        A[row][c] -= factor * A[col][c];
+      }
+      b[row] -= factor * b[col];
+    }
+  }
+
+  // Back substitution
+  for (let row = dof - 1; row >= 0; row--) {
+    let sum = b[row];
+    for (let col = row + 1; col < dof; col++) {
+      sum -= A[row][col] * u[col];
+    }
+    u[row] = Math.abs(A[row][row]) > 1e-30 ? sum / A[row][row] : 0;
+  }
+
+  // Compute element stresses
+  const elementStresses: { sigmaX: number; sigmaY: number; tauXY: number; vonMises: number }[] = [];
+  let strainEnergy = 0;
+
+  for (const elem of mesh.elements) {
+    const [i, j, k] = elem.nodes;
+    const n1 = mesh.nodes[i], n2 = mesh.nodes[j], n3 = mesh.nodes[k];
+    const mat = materials.get(elem.materialId) || materials.get('default')!;
+
+    const area = 0.5 * Math.abs((n2.x - n1.x) * (n3.y - n1.y) - (n3.x - n1.x) * (n2.y - n1.y));
+    if (area < 1e-20) { elementStresses.push({ sigmaX: 0, sigmaY: 0, tauXY: 0, vonMises: 0 }); continue; }
+
+    const A2 = 2 * area;
+    const b1 = (n2.y - n3.y) / A2, b2 = (n3.y - n1.y) / A2, b3 = (n1.y - n2.y) / A2;
+    const c1 = (n3.x - n2.x) / A2, c2 = (n1.x - n3.x) / A2, c3 = (n2.x - n1.x) / A2;
+
+    // Strain = B * u_e
+    const ue = [u[i*2], u[i*2+1], u[j*2], u[j*2+1], u[k*2], u[k*2+1]];
+    const epsilonX = b1*ue[0] + b2*ue[2] + b3*ue[4];
+    const epsilonY = c1*ue[1] + c2*ue[3] + c3*ue[5];
+    const gammaXY = c1*ue[0] + b1*ue[1] + c2*ue[2] + b2*ue[3] + c3*ue[4] + b3*ue[5];
+
+    // Stress = D * epsilon
+    const factor = mat.E / (1 - mat.nu * mat.nu);
+    const sigmaX = factor * (epsilonX + mat.nu * epsilonY);
+    const sigmaY = factor * (mat.nu * epsilonX + epsilonY);
+    const tauXY = factor * (1 - mat.nu) / 2 * gammaXY;
+
+    const vonMises = computeVonMises2D(sigmaX, sigmaY, tauXY);
+    elementStresses.push({ sigmaX, sigmaY, tauXY, vonMises });
+
+    // Strain energy = 0.5 * u_e^T * K_e * u_e
+    strainEnergy += 0.5 * thickness * area * (sigmaX * epsilonX + sigmaY * epsilonY + tauXY * gammaXY);
+  }
+
+  const maxDisplacement = Math.max(
+    ...Array.from({ length: n }, (_, idx) =>
+      Math.sqrt(u[idx * 2] ** 2 + u[idx * 2 + 1] ** 2)
+    )
+  );
+  const maxVonMises = Math.max(...elementStresses.map(s => s.vonMises), 0);
+  const yieldStress = (materials.get('default') || materials.values().next().value)!.yieldStress;
+  const safetyFactor = maxVonMises > 0 ? yieldStress / maxVonMises : 999;
+
+  return {
+    displacements: u,
+    elementStresses,
+    maxDisplacement,
+    maxVonMises,
+    safetyFactor: Math.min(safetyFactor, 999),
+    strainEnergy,
+  };
+}
