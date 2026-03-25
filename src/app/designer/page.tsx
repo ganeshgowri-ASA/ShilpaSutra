@@ -120,8 +120,9 @@ export default function DesignerPage() {
     () => new Set<SelectionFilterType>(["vertex", "edge", "face", "body", "component"])
   );
 
-  const sketchTools = ["line", "arc", "circle", "rectangle", "polygon", "spline", "ellipse", "construction_line",
-    "arc_3point", "arc_tangent", "circle_3point", "center_rectangle", "slot", "point", "centerline"];
+  const sketchTools = ["line", "polyline", "arc", "circle", "rectangle", "polygon", "spline", "ellipse", "construction_line",
+    "arc_3point", "arc_tangent", "circle_3point", "center_rectangle", "slot", "point", "centerline",
+    "hatch", "revision_cloud", "infinite_line", "multiline"];
   const isSketchMode = sketchTools.includes(activeTool) || !!sketchPlane;
 
   const handleCloseOperation = useCallback(() => {

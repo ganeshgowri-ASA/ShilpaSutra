@@ -15,11 +15,13 @@ import {
   Minus, Scissors, FlipHorizontal, ArrowRight,
   RulerIcon, Construction, Ellipsis, MousePointer2, X,
   Grid3X3, Magnet, CornerDownRight, Hash,
-  Octagon, ChevronDown,
+  Octagon, ChevronDown, Route, Cloud, PaintBucket,
+  ArrowUpDown, GitBranch,
 } from "lucide-react";
 
 export type SketchEntity =
   | "line"
+  | "polyline"
   | "arc"
   | "arc_3point"
   | "arc_tangent"
@@ -37,6 +39,9 @@ export type SketchEntity =
   | "slot_arc"
   | "parabola"
   | "sketch_text"
+  | "hatch"
+  | "revision_cloud"
+  | "infinite_line"
   | "fillet_sketch"
   | "chamfer_sketch";
 
@@ -82,6 +87,7 @@ const sketchEntities: {
   shortcut?: string;
 }[] = [
   { id: "line", icon: <Pencil size={14} />, label: "Line", toolId: "line", shortcut: "L" },
+  { id: "polyline", icon: <Route size={14} />, label: "Polyline", toolId: "polyline", shortcut: "P" },
   { id: "arc", icon: <Spline size={14} />, label: "Arc", toolId: "arc", shortcut: "A" },
   { id: "arc_3point", icon: <Spline size={14} />, label: "3P Arc", toolId: "arc_3point" },
   { id: "arc_tangent", icon: <Spline size={14} />, label: "Tan Arc", toolId: "arc_tangent" },
@@ -99,6 +105,9 @@ const sketchEntities: {
   { id: "point", icon: <Octagon size={14} />, label: "Point", toolId: "point" },
   { id: "centerline", icon: <Construction size={14} />, label: "C.Line", toolId: "centerline" },
   { id: "construction_line", icon: <Construction size={14} />, label: "Constr.", toolId: "construction_line" },
+  { id: "infinite_line", icon: <ArrowUpDown size={14} />, label: "Inf.Line", toolId: "infinite_line" },
+  { id: "hatch", icon: <PaintBucket size={14} />, label: "Hatch", toolId: "hatch" },
+  { id: "revision_cloud", icon: <Cloud size={14} />, label: "Rev.Cloud", toolId: "revision_cloud" },
 ];
 
 const sketchOperations: {
