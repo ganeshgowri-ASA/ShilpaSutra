@@ -68,20 +68,58 @@ function parseDimensions(prompt: string): ParsedDimensions {
   const lower = prompt.toLowerCase();
   const dims: ParsedDimensions = {};
 
+  // ── Unit conversion: value + unit string → millimeters ──
+  const UNIT_TO_MM: Record<string, number> = {
+    mm: 1, millimeter: 1, millimeters: 1, millimetre: 1, millimetres: 1,
+    cm: 10, centimeter: 10, centimeters: 10, centimetre: 10, centimetres: 10,
+    m: 1000, meter: 1000, meters: 1000, metre: 1000, metres: 1000,
+    in: 25.4, inch: 25.4, inches: 25.4,
+    ft: 304.8, foot: 304.8, feet: 304.8,
+  };
+
+  // Regex fragment matching supported unit tokens
+  const U = "(?:mm|cm|millimeters?|millimetres?|centimeters?|centimetres?|meters?|metres?|m(?!m|e)|inch(?:es)?|in|feet|foot|ft)";
+
+  function toMM(value: number, unit: string | undefined): number {
+    if (!unit) return value; // no unit → assume mm
+    const key = unit.toLowerCase().replace(/\s/g, "");
+    return value * (UNIT_TO_MM[key] ?? 1);
+  }
+
+  // Helper: extract number+unit from a regex match (groups 1=value, 2=unit)
+  function parseWithUnit(match: RegExpMatchArray | null): number | null {
+    if (!match) return null;
+    const val = parseFloat(match[1]);
+    const unit = match[2] || "mm";
+    return toMM(val, unit);
+  }
+
+  // "2m x 1m x 35mm" - mixed unit triple
+  const mixedTripleRe = new RegExp(`(\\d+(?:\\.\\d+)?)\\s*(${U})\\s*x\\s*(\\d+(?:\\.\\d+)?)\\s*(${U})\\s*x\\s*(\\d+(?:\\.\\d+)?)\\s*(${U})`);
+  const mixedTriple = lower.match(mixedTripleRe);
+  if (mixedTriple) {
+    dims.width = toMM(parseFloat(mixedTriple[1]), mixedTriple[2]);
+    dims.height = toMM(parseFloat(mixedTriple[3]), mixedTriple[4]);
+    dims.depth = toMM(parseFloat(mixedTriple[5]), mixedTriple[6]);
+    return dims;
+  }
+
   // "100x50x30mm" or "100 x 50 x 30 mm"
-  const wxhxd = lower.match(/(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)\s*(?:mm|cm|m)?/);
+  const wxhxd = lower.match(new RegExp(`(\\d+(?:\\.\\d+)?)\\s*x\\s*(\\d+(?:\\.\\d+)?)\\s*x\\s*(\\d+(?:\\.\\d+)?)\\s*(${U})?`));
   if (wxhxd) {
-    dims.width = parseFloat(wxhxd[1]);
-    dims.height = parseFloat(wxhxd[2]);
-    dims.depth = parseFloat(wxhxd[3]);
+    const unit = wxhxd[4];
+    dims.width = toMM(parseFloat(wxhxd[1]), unit);
+    dims.height = toMM(parseFloat(wxhxd[2]), unit);
+    dims.depth = toMM(parseFloat(wxhxd[3]), unit);
   }
 
   // "100x50mm" (2D)
   if (!wxhxd) {
-    const wxh = lower.match(/(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)\s*(?:mm|cm|m)?/);
+    const wxh = lower.match(new RegExp(`(\\d+(?:\\.\\d+)?)\\s*x\\s*(\\d+(?:\\.\\d+)?)\\s*(${U})?`));
     if (wxh) {
-      dims.width = parseFloat(wxh[1]);
-      dims.height = parseFloat(wxh[2]);
+      const unit = wxh[3];
+      dims.width = toMM(parseFloat(wxh[1]), unit);
+      dims.height = toMM(parseFloat(wxh[2]), unit);
     }
   }
 
@@ -108,26 +146,37 @@ function parseDimensions(prompt: string): ParsedDimensions {
   }
 
   // "radius 25mm" or "r25"
-  const radiusMatch = lower.match(/(?:radius|r)\s*(\d+(?:\.\d+)?)\s*(?:mm|cm|m)?/);
-  if (radiusMatch) dims.radius = parseFloat(radiusMatch[1]);
+  const radiusMatch = lower.match(new RegExp(`(?:radius|r)\\s*(\\d+(?:\\.\\d+)?)\\s*(${U})?`));
+  if (radiusMatch) dims.radius = parseWithUnit(radiusMatch) ?? undefined;
 
-  // "thickness 3mm" or "3mm thick"
-  const thickMatch = lower.match(/(?:thickness|thick)\s*(\d+(?:\.\d+)?)\s*(?:mm|cm|m)?/) ||
-                     lower.match(/(\d+(?:\.\d+)?)\s*(?:mm|cm|m)?\s*thick/);
-  if (thickMatch) dims.thickness = parseFloat(thickMatch[1]);
+  // "length 2 meter" or "length 100mm" or "2 meter long" or "100mm long"
+  const lenMatch = lower.match(new RegExp(`(\\d+(?:\\.\\d+)?)\\s*(${U})\\s*long`)) ||
+                   lower.match(new RegExp(`length\\s*(\\d+(?:\\.\\d+)?)\\s*(${U})?`));
+  if (lenMatch) dims.length = parseWithUnit(lenMatch) ?? undefined;
+
+  // "width 1 meter" or "width 100mm" or "1 meter wide" or "100mm wide"
+  const widthMatch = lower.match(new RegExp(`(\\d+(?:\\.\\d+)?)\\s*(${U})\\s*wide`)) ||
+                     lower.match(new RegExp(`width\\s*(\\d+(?:\\.\\d+)?)\\s*(${U})?`));
+  if (widthMatch) dims.width = parseWithUnit(widthMatch) ?? undefined;
+
+  // "height 50mm" or "height 2m" or "50mm tall"
+  const heightMatch = lower.match(new RegExp(`(\\d+(?:\\.\\d+)?)\\s*(${U})\\s*tall`)) ||
+                      lower.match(new RegExp(`height\\s*(\\d+(?:\\.\\d+)?)\\s*(${U})?`));
+  if (heightMatch) dims.height = parseWithUnit(heightMatch) ?? undefined;
+
+  // "thickness 3mm" or "3mm thick" or "thickness 2m"
+  const thickMatch = lower.match(new RegExp(`(?:thickness|thick)\\s*(\\d+(?:\\.\\d+)?)\\s*(${U})?`)) ||
+                     lower.match(new RegExp(`(\\d+(?:\\.\\d+)?)\\s*(${U})?\\s*thick`));
+  if (thickMatch) dims.thickness = parseWithUnit(thickMatch) ?? undefined;
 
   // "wall 2mm" or "wall thickness 2mm"
-  const wallMatch = lower.match(/wall\s*(?:thickness)?\s*(\d+(?:\.\d+)?)\s*(?:mm|cm|m)?/);
-  if (wallMatch) dims.wallThickness = parseFloat(wallMatch[1]);
-
-  // "length 100mm"
-  const lenMatch = lower.match(/length\s*(\d+(?:\.\d+)?)\s*(?:mm|cm|m)?/);
-  if (lenMatch) dims.length = parseFloat(lenMatch[1]);
+  const wallMatch = lower.match(new RegExp(`wall\\s*(?:thickness)?\\s*(\\d+(?:\\.\\d+)?)\\s*(${U})?`));
+  if (wallMatch) dims.wallThickness = parseWithUnit(wallMatch) ?? undefined;
 
   // Generic "NNmm" (first occurrence if no other dims found)
   if (!dims.width && !dims.diameter && !dims.radius) {
-    const genericMm = lower.match(/(\d+(?:\.\d+)?)\s*mm/);
-    if (genericMm) dims.width = parseFloat(genericMm[1]);
+    const genericMm = lower.match(new RegExp(`(\\d+(?:\\.\\d+)?)\\s*(${U})`));
+    if (genericMm) dims.width = parseWithUnit(genericMm) ?? undefined;
   }
 
   return dims;
