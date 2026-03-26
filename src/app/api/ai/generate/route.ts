@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
+import {
+  runReasoningEngine,
+  type ReasoningStep,
+  type BOMEntry,
+  type AssemblyPart,
+} from "@/lib/ai-reasoning-engine";
 
 // ─── Type Definitions ────────────────────────────────────────────────
 
@@ -25,6 +31,7 @@ interface GenerateRequest {
   prompt: string;
   messages?: ConversationMessage[];
   conversationId?: string;
+  useReasoning?: boolean;
 }
 
 interface GenerateResponse {
@@ -33,9 +40,14 @@ interface GenerateResponse {
   operations?: CADOperation[];
   kclCode?: string;
   message: string;
-  source: "ai" | "parametric";
+  source: "ai" | "parametric" | "reasoning";
   conversationId?: string;
   fallback?: boolean;
+  // Reasoning engine fields
+  reasoning?: ReasoningStep[];
+  assemblyParts?: AssemblyPart[];
+  bom?: BOMEntry[];
+  isAssembly?: boolean;
 }
 
 // ─── Dimension Parsing ───────────────────────────────────────────────
@@ -646,7 +658,36 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Fallback: use built-in parametric generators
+    // ── Reasoning Engine: try multi-part assembly generation first ──
+    try {
+      const reasoningResult = runReasoningEngine(activePrompt);
+      if (reasoningResult.parts.length > 1) {
+        // Multi-part assembly detected
+        const primaryPart = reasoningResult.parts[0];
+        const response: GenerateResponse = {
+          success: true,
+          object: {
+            type: primaryPart.type,
+            name: reasoningResult.objectType,
+            dimensions: primaryPart.dimensions,
+            description: reasoningResult.summary,
+          },
+          kclCode: reasoningResult.kclCode,
+          message: reasoningResult.summary,
+          source: "reasoning",
+          conversationId: currentConversationId,
+          reasoning: reasoningResult.reasoning,
+          assemblyParts: reasoningResult.parts,
+          bom: reasoningResult.bom,
+          isAssembly: true,
+        };
+        return NextResponse.json(response);
+      }
+    } catch {
+      // Reasoning engine failed, fall through to parametric
+    }
+
+    // Fallback: use built-in parametric generators for simple shapes
     const object = generateFromPrompt(activePrompt);
     const operations = buildOperations(object, activePrompt);
     const kclCode = generateKCLCode(object, operations);

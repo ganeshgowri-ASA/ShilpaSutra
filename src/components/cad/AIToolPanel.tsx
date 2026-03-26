@@ -3,9 +3,40 @@ import { useState, useRef, useEffect } from "react";
 import { useCadStore } from "@/stores/cad-store";
 import {
   X, Loader2, Send, MessageSquare, Wand2, Zap, HelpCircle,
+  ChevronDown, ChevronRight, Package, CheckCircle2, Circle,
 } from "lucide-react";
 
 type AIToolType = "ai_text_to_cad" | "ai_suggest" | "ai_optimize" | "ai_explain" | "ai_fea" | "ai_cfd";
+
+interface ReasoningStep {
+  step: number;
+  action: string;
+  detail: string;
+  status: string;
+}
+
+interface BOMEntry {
+  partName: string;
+  quantity: number;
+  material: string;
+  dimensions: string;
+  color: string;
+}
+
+interface AssemblyResponse {
+  reasoning?: ReasoningStep[];
+  bom?: BOMEntry[];
+  assemblyParts?: Array<{
+    type: string;
+    name: string;
+    position: [number, number, number];
+    dimensions: { width: number; height: number; depth: number };
+    material: string;
+    color: string;
+    [key: string]: unknown;
+  }>;
+  isAssembly?: boolean;
+}
 
 const TOOL_CONFIG: Record<AIToolType, {
   title: string;
@@ -77,6 +108,9 @@ export default function AIToolPanel({ toolType, onClose }: AIToolPanelProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [assemblyData, setAssemblyData] = useState<AssemblyResponse | null>(null);
+  const [showBOM, setShowBOM] = useState(false);
+  const [showReasoning, setShowReasoning] = useState(true);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const selectedId = useCadStore((s) => s.selectedId);
@@ -96,6 +130,7 @@ export default function AIToolPanel({ toolType, onClose }: AIToolPanelProps) {
     setIsLoading(true);
     setResult(null);
     setError(null);
+    setAssemblyData(null);
 
     try {
       const res = await fetch("/api/ai/generate", {
@@ -120,8 +155,18 @@ export default function AIToolPanel({ toolType, onClose }: AIToolPanelProps) {
 
       if (data.error) {
         setError(data.error);
+      } else if (data.isAssembly && data.assemblyParts) {
+        // Multi-part assembly from reasoning engine
+        const aData = data as AssemblyResponse;
+        setAssemblyData(aData);
+        for (const part of data.assemblyParts) {
+          addGeneratedObject(part);
+        }
+        setResult(`Assembly: ${data.object?.name || "Generated"}  |  ${data.assemblyParts.length} parts created. ${data.message || ""}`);
+        setShowReasoning(true);
+        setShowBOM(true);
       } else {
-        // If the response contains geometry, add it to the scene
+        // Single object
         if (data.object) {
           addGeneratedObject(data.object);
           setResult(`Created "${data.object.name}" successfully. ${data.message || ""}`);
@@ -196,7 +241,7 @@ export default function AIToolPanel({ toolType, onClose }: AIToolPanelProps) {
   const needsSelection = toolType !== "ai_text_to_cad" && !selectedObj;
 
   return (
-    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 w-[420px] animate-scale-in">
+    <div className={`absolute top-3 left-1/2 -translate-x-1/2 z-20 animate-scale-in ${assemblyData ? "w-[520px]" : "w-[420px]"} max-h-[80vh] overflow-y-auto`}>
       <div className={`bg-[#0d1117]/95 backdrop-blur-xl border ${colors.border} rounded-xl shadow-2xl shadow-black/40 overflow-hidden`}>
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-2.5 border-b border-[#21262d]">
@@ -261,6 +306,62 @@ export default function AIToolPanel({ toolType, onClose }: AIToolPanelProps) {
           </div>
         </div>
 
+        {/* Reasoning Steps */}
+        {assemblyData?.reasoning && showReasoning && (
+          <div className="px-4 pb-2">
+            <button onClick={() => setShowReasoning(!showReasoning)} className="flex items-center gap-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+              {showReasoning ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+              Reasoning Steps
+            </button>
+            <div className="space-y-1">
+              {assemblyData.reasoning.map((step) => (
+                <div key={step.step} className="flex items-start gap-1.5 text-[10px]">
+                  <span className="mt-0.5 shrink-0">
+                    {step.status === "done" ? <CheckCircle2 size={10} className="text-emerald-400" /> : <Circle size={10} className="text-slate-600" />}
+                  </span>
+                  <span className="text-slate-500 font-medium shrink-0">{step.action}:</span>
+                  <span className="text-slate-300">{step.detail}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* BOM (Bill of Materials) */}
+        {assemblyData?.bom && showBOM && (
+          <div className="px-4 pb-2">
+            <button onClick={() => setShowBOM(!showBOM)} className="flex items-center gap-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+              <Package size={10} />
+              Bill of Materials ({assemblyData.bom.length})
+            </button>
+            <div className="bg-[#161b22] rounded-lg border border-[#21262d] overflow-hidden">
+              <table className="w-full text-[9px]">
+                <thead>
+                  <tr className="border-b border-[#21262d] text-slate-500">
+                    <th className="text-left px-2 py-1">Part</th>
+                    <th className="text-center px-1 py-1">Qty</th>
+                    <th className="text-left px-1 py-1">Material</th>
+                    <th className="text-left px-1 py-1">Dims</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {assemblyData.bom.map((entry, i) => (
+                    <tr key={i} className="border-b border-[#21262d]/50">
+                      <td className="px-2 py-1 text-slate-300 flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-sm shrink-0" style={{ backgroundColor: entry.color }} />
+                        {entry.partName}
+                      </td>
+                      <td className="text-center px-1 py-1 text-slate-400">{entry.quantity}</td>
+                      <td className="px-1 py-1 text-slate-500">{entry.material}</td>
+                      <td className="px-1 py-1 text-slate-500 font-mono">{entry.dimensions}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
         {/* Result area */}
         {(result || error) && (
           <div className="px-4 pb-3">
@@ -279,7 +380,7 @@ export default function AIToolPanel({ toolType, onClose }: AIToolPanelProps) {
           <div className="px-4 pb-3">
             <div className={`flex items-center gap-2 ${colors.text} text-xs`}>
               <Loader2 size={12} className="animate-spin" />
-              <span>Processing with ShilpaSutra AI...</span>
+              <span>Reasoning engine analyzing...</span>
             </div>
           </div>
         )}
