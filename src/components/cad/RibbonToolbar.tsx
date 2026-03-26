@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import {
   useCadStore,
   type RibbonTab,
@@ -17,8 +18,10 @@ import {
   MessageSquare, Wand2, Zap, HelpCircle,
   Undo2, Redo2, ChevronDown, ChevronUp,
   Activity, Wind,
-  HardDrive, FolderOpen, Trash2, X,
+  HardDrive, FolderOpen, Trash2, X, Download,
 } from "lucide-react";
+
+const ExportPanel = dynamic(() => import("@/components/cad/ExportPanel"), { ssr: false });
 
 // ── localStorage Save/Load Drawings ─────────────────────────────────────
 const DRAWINGS_KEY = "shilpasutra_saved_drawings";
@@ -263,6 +266,7 @@ export default function RibbonToolbar({ onExtrude, onRevolve, onMassProps, onRef
   // ── localStorage Save/Load state ──
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showLoadModal, setShowLoadModal] = useState(false);
+  const [showExportPanel, setShowExportPanel] = useState(false);
   const [saveName, setSaveName] = useState("");
   const [savedDrawings, setSavedDrawings] = useState<SavedDrawing[]>([]);
 
@@ -449,6 +453,10 @@ export default function RibbonToolbar({ onExtrude, onRevolve, onMassProps, onRef
             className="px-2.5 py-1 rounded-md text-[10px] font-medium bg-[#21262d] hover:bg-[#30363d] text-slate-300 border border-[#30363d] hover:border-[#484f58] transition-all duration-150">
             Load
           </button>
+          <button onClick={() => setShowExportPanel(true)} title="Export model (PNG, PDF, STL, OBJ, DXF, JSON)"
+            className="px-2.5 py-1 rounded-md text-[10px] font-bold bg-cyan-500/10 hover:bg-cyan-500/25 text-cyan-400 border border-cyan-500/20 hover:border-cyan-500/40 transition-all duration-150 flex items-center gap-1">
+            <Download size={10} /> Export
+          </button>
           <div className="w-px h-4 bg-[#21262d] mx-0.5" />
           <button onClick={openSaveModal} title="Quick save to browser storage"
             className="px-2.5 py-1 rounded-md text-[10px] font-medium bg-purple-500/10 hover:bg-purple-500/25 text-purple-400 border border-purple-500/20 hover:border-purple-500/40 transition-all duration-150 flex items-center gap-1">
@@ -542,6 +550,9 @@ export default function RibbonToolbar({ onExtrude, onRevolve, onMassProps, onRef
           )}
         </div>
       )}
+
+      {/* Export Panel Modal */}
+      {showExportPanel && <ExportPanel onClose={() => setShowExportPanel(false)} />}
 
       {/* Save Drawing Modal */}
       {showSaveModal && (
