@@ -327,7 +327,7 @@ function buildSolarPVModule(dims: ParsedDims, prompt: string): { parts: Assembly
   const L = (dims.length || 2000) * MM;  // scene units
   const W = (dims.width || 1000) * MM;
   const H = (dims.thickness || dims.height || 35) * MM;
-  const frameT = 2 * MM; // frame cross-section thickness
+  const frameT = H; // frame cross-section depth matches module thickness (e.g. 35mm)
   const glassT = 3.2 * MM;
   const cellT = 0.2 * MM;
   const evaT = 0.5 * MM;
@@ -379,7 +379,7 @@ function buildSolarPVModule(dims: ParsedDims, prompt: string): { parts: Assembly
     dimensions: { width: frameT, height: H, depth: W - frameT * 2 },
     material: al.name, color: al.color, metalness: al.metalness, roughness: al.roughness,
   }));
-  bom.push({ partName: "Aluminum Frame Rail", quantity: 4, material: al.name, dimensions: `${(dims.length || 2000)}x${(dims.thickness || dims.height || 35)}x${20}mm`, color: al.color });
+  bom.push({ partName: "Aluminum Frame Rail", quantity: 4, material: al.name, dimensions: `${(dims.length || 2000)}x${(dims.thickness || dims.height || 35)}x${(dims.thickness || dims.height || 35)}mm`, color: al.color });
 
   // Front Glass
   const innerL = L - frameT * 2;
