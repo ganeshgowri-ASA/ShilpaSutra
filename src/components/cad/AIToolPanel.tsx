@@ -1,6 +1,7 @@
 "use client";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useCadStore } from "@/stores/cad-store";
+import { runReasoningEngine } from "@/lib/ai-reasoning-engine";
 import {
   X, Loader2, Send, MessageSquare, Wand2, Zap, HelpCircle,
   ChevronDown, ChevronRight, Package, CheckCircle2, Circle,
@@ -191,6 +192,7 @@ export default function AIToolPanel({ toolType, onClose }: AIToolPanelProps) {
   const selectedId = useCadStore((s) => s.selectedId);
   const objects = useCadStore((s) => s.objects);
   const addGeneratedObject = useCadStore((s) => s.addGeneratedObject);
+  const addAssemblyFromParts = useCadStore((s) => s.addAssemblyFromParts);
   const selectedObj = objects.find((o) => o.id === selectedId);
 
   const config = TOOL_CONFIG[toolType];
@@ -241,34 +243,15 @@ export default function AIToolPanel({ toolType, onClose }: AIToolPanelProps) {
 
       if (data.error) {
         setError(data.error);
-      } else if (data.isAssembly && data.assemblyParts) {
-        // Multi-part assembly from reasoning engine
+      } else if (data.assemblyParts && data.assemblyParts.length > 0) {
+        // Multi-part or single-part from reasoning engine
         const aData = data as AssemblyResponse;
         setAssemblyData(aData);
-        for (const part of data.assemblyParts) {
-          addGeneratedObject(part);
-        }
-        const msg = `Assembly: ${data.object?.name || "Generated"}  |  ${data.assemblyParts.length} parts created. ${data.message || ""}`;
+        addAssemblyFromParts(data.assemblyParts, data.object?.name || "Assembly");
+        const msg = `Created "${data.object?.name || "Part"}" with ${data.assemblyParts.length} part${data.assemblyParts.length > 1 ? "s" : ""}. ${data.message || ""}`;
         setResultWithMemory(msg);
         setShowReasoning(true);
-        setShowBOM(true);
-        savePromptToHistory({ prompt: input, tool: toolType, result: msg });
-        refreshHistory();
-      } else if (data.assemblyParts && data.assemblyParts.length > 0) {
-        // Single or multi-part from reasoning engine (isAssembly=false)
-        for (const part of data.assemblyParts) {
-          addGeneratedObject(part);
-        }
-        const msg = `Created "${data.object?.name || "Part"}" (${data.assemblyParts.length} part${data.assemblyParts.length > 1 ? "s" : ""}). ${data.message || ""}`;
-        setResultWithMemory(msg);
-        if (data.reasoning) {
-          setAssemblyData(data as AssemblyResponse);
-          setShowReasoning(true);
-        }
-        if (data.bom) {
-          setAssemblyData((prev) => ({ ...prev, bom: data.bom } as AssemblyResponse));
-          setShowBOM(true);
-        }
+        if (data.bom) setShowBOM(true);
         savePromptToHistory({ prompt: input, tool: toolType, result: msg });
         refreshHistory();
       } else {
@@ -314,35 +297,30 @@ export default function AIToolPanel({ toolType, onClose }: AIToolPanelProps) {
           : "Select an object to run flow analysis. The analysis simulates airflow around the geometry."
         );
       } else if (toolType === "ai_text_to_cad") {
-        // Attempt to create a basic object from the prompt
-        const lower = input.toLowerCase();
-        let type: "box" | "cylinder" | "sphere" | "cone" = "box";
-        if (lower.includes("cylinder") || lower.includes("tube") || lower.includes("pipe")) type = "cylinder";
-        else if (lower.includes("sphere") || lower.includes("ball")) type = "sphere";
-        else if (lower.includes("cone") || lower.includes("funnel")) type = "cone";
-
-        const dimMatch = lower.match(/(\d+)\s*(?:mm|cm|x)/);
-        const size = dimMatch ? parseFloat(dimMatch[1]) / 10 : 1;
-
-        addGeneratedObject({
-          type,
-          name: input.slice(0, 30),
-          position: [0, size / 2, 0],
-          rotation: [0, 0, 0],
-          scale: [1, 1, 1],
-          dimensions: { width: size, height: size, depth: size },
-          material: "steel",
-          color: "#6366f1",
-          visible: true,
-          locked: false,
-          opacity: 1,
-          metalness: 0.8,
-          roughness: 0.3,
-        });
-        const fallbackMsg = `Created a ${type} from your description. Refine it using the AI chat or property panel.`;
-        setResult(fallbackMsg);
-        savePromptToHistory({ prompt: input, tool: toolType, result: fallbackMsg });
-        refreshHistory();
+        // Use local reasoning engine as fallback (no API needed)
+        try {
+          const reasoningResult = runReasoningEngine(input);
+          if (reasoningResult.parts.length > 0) {
+            addAssemblyFromParts(reasoningResult.parts, reasoningResult.objectType);
+            const asmData = {
+              reasoning: reasoningResult.reasoning,
+              bom: reasoningResult.bom,
+              assemblyParts: reasoningResult.parts as unknown as AssemblyResponse["assemblyParts"],
+              isAssembly: reasoningResult.parts.length > 1,
+            } as AssemblyResponse;
+            setAssemblyData(asmData);
+            setShowReasoning(true);
+            if (reasoningResult.bom.length > 0) setShowBOM(true);
+            const fallbackMsg = `Created "${reasoningResult.objectType}" with ${reasoningResult.parts.length} part(s) (offline mode). ${reasoningResult.summary}`;
+            setResultWithMemory(fallbackMsg);
+            savePromptToHistory({ prompt: input, tool: toolType, result: fallbackMsg });
+            refreshHistory();
+          } else {
+            setResult("Could not parse your description. Try: 'PV module length 2m width 1m' or 'gear 20 teeth'.");
+          }
+        } catch {
+          setResult("Failed to generate geometry. Try a simpler description like 'box 50x30x20mm'.");
+        }
       }
     } finally {
       setIsLoading(false);

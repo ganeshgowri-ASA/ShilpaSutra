@@ -1,6 +1,7 @@
 "use client";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useCadStore, type CadObject, getMaterialColor, materialList } from "@/stores/cad-store";
+import { runReasoningEngine } from "@/lib/ai-reasoning-engine";
 
 /* ── Types ── */
 interface Message {
@@ -618,6 +619,7 @@ I'm context-aware and know what's in your scene. Try asking "what's in the scene
   const selectedId = useCadStore((s) => s.selectedId);
   const addObject = useCadStore((s) => s.addObject);
   const addGeneratedObject = useCadStore((s) => s.addGeneratedObject);
+  const addAssemblyFromParts = useCadStore((s) => s.addAssemblyFromParts);
   const updateObject = useCadStore((s) => s.updateObject);
   const deleteObject = useCadStore((s) => s.deleteObject);
   const selectObject = useCadStore((s) => s.selectObject);
@@ -664,7 +666,8 @@ I'm context-aware and know what's in your scene. Try asking "what's in the scene
       /(?:pv module|solar panel|dumbbell|barbell|gear.*teeth|\d+\s*teeth|bracket|pipe|tube|plate|flange|heat\s*sink|heatsink|enclosure|bolt)/i.test(prompt.toLowerCase());
 
     if (isCreateCmd) {
-      // Route through reasoning engine API for multi-part geometry
+      // Route through reasoning engine API, with local fallback
+      let handled = false;
       try {
         const res = await fetch("/api/ai/generate", {
           method: "POST",
@@ -674,7 +677,6 @@ I'm context-aware and know what's in your scene. Try asking "what's in the scene
         const data = await res.json();
         let msg = "Failed to generate geometry.";
         const steps: string[] = [];
-        let objId: string | undefined;
 
         if (data.reasoning) {
           for (const step of data.reasoning) {
@@ -683,33 +685,65 @@ I'm context-aware and know what's in your scene. Try asking "what's in the scene
         }
 
         if (data.assemblyParts && data.assemblyParts.length > 0) {
-          for (const part of data.assemblyParts) {
-            const id = addGeneratedObject(part);
-            if (!objId) objId = id;
-          }
+          const ids = addAssemblyFromParts(data.assemblyParts, data.object?.name || "Assembly");
           msg = `Created "${data.object?.name || "Part"}" with ${data.assemblyParts.length} part${data.assemblyParts.length > 1 ? "s" : ""}. ${data.message || ""}`;
+          handled = true;
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === processingId
+                ? { ...m, content: msg, generating: false, objectId: ids[0], thinkingSteps: steps, commandType: "create" }
+                : m
+            )
+          );
         } else if (data.object) {
-          objId = addGeneratedObject(data.object);
+          const objId = addGeneratedObject(data.object);
           msg = `Created "${data.object.name}". ${data.message || ""}`;
-        } else if (data.error) {
-          msg = data.error;
+          handled = true;
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === processingId
+                ? { ...m, content: msg, generating: false, objectId: objId, thinkingSteps: steps, commandType: "create" }
+                : m
+            )
+          );
         }
-
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === processingId
-              ? { ...m, content: msg, generating: false, objectId: objId, thinkingSteps: steps, commandType: "create" }
-              : m
-          )
-        );
       } catch {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === processingId
-              ? { ...m, content: "API call failed. Falling back to local generation.", generating: false, commandType: "create" }
-              : m
-          )
-        );
+        // API failed — ignore, will use local fallback below
+      }
+
+      // Local reasoning engine fallback
+      if (!handled) {
+        try {
+          const result = runReasoningEngine(prompt);
+          const steps = result.reasoning.map((s) => `${s.action}: ${s.detail}`);
+          if (result.parts.length > 0) {
+            const ids = addAssemblyFromParts(result.parts, result.objectType);
+            const msg = `Created "${result.objectType}" (${result.parts.length} parts, local engine). ${result.summary}`;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === processingId
+                  ? { ...m, content: msg, generating: false, objectId: ids[0], thinkingSteps: steps, commandType: "create" }
+                  : m
+              )
+            );
+          } else {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === processingId
+                  ? { ...m, content: "Could not parse. Try: 'create PV module 2m x 1m'.", generating: false, commandType: "create" }
+                  : m
+              )
+            );
+          }
+        } catch {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === processingId
+                ? { ...m, content: "Generation failed. Try a simpler description.", generating: false, commandType: "create" }
+                : m
+            )
+          );
+        }
       }
       setIsProcessing(false);
       return;

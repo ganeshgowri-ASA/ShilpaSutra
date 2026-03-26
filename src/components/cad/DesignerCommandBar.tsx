@@ -1,6 +1,7 @@
 "use client";
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useCadStore } from "@/stores/cad-store";
+import { runReasoningEngine } from "@/lib/ai-reasoning-engine";
 import { Terminal, Grid3X3, Sparkles, X, CheckCircle2, AlertCircle } from "lucide-react";
 
 const COMMANDS = [
@@ -130,6 +131,7 @@ export default function DesignerCommandBar() {
   const selectedId = useCadStore((s) => s.selectedId);
   const objects = useCadStore((s) => s.objects);
   const addGeneratedObject = useCadStore((s) => s.addGeneratedObject);
+  const addAssemblyFromParts = useCadStore((s) => s.addAssemblyFromParts);
   const aiFilletSelected = useCadStore((s) => s.aiFilletSelected);
   const aiChamferSelected = useCadStore((s) => s.aiChamferSelected);
   const aiShell = useCadStore((s) => s.aiShell);
@@ -212,7 +214,7 @@ export default function DesignerCommandBar() {
         return;
       }
 
-      // For create/generate commands → call reasoning engine API
+      // For create/generate commands → use reasoning engine (local + API)
       if (isCreateCommand(cmd)) {
         setCommandResponse({ success: true, message: "Generating geometry..." });
         try {
@@ -223,9 +225,7 @@ export default function DesignerCommandBar() {
           });
           const data = await res.json();
           if (data.assemblyParts && data.assemblyParts.length > 0) {
-            for (const part of data.assemblyParts) {
-              addGeneratedObject(part);
-            }
+            addAssemblyFromParts(data.assemblyParts, data.object?.name || "Assembly");
             setCommandResponse({
               success: true,
               message: `Created "${data.object?.name || "Part"}" (${data.assemblyParts.length} part${data.assemblyParts.length > 1 ? "s" : ""}). ${data.message || ""}`,
@@ -240,7 +240,21 @@ export default function DesignerCommandBar() {
             setCommandResponse({ success: false, message: data.error || "Failed to generate." });
           }
         } catch {
-          setCommandResponse({ success: false, message: "API call failed. Check your connection." });
+          // Fallback: use local reasoning engine directly (no API needed)
+          try {
+            const result = runReasoningEngine(cmd);
+            if (result.parts.length > 0) {
+              addAssemblyFromParts(result.parts, result.objectType);
+              setCommandResponse({
+                success: true,
+                message: `Created "${result.objectType}" (${result.parts.length} parts, offline). ${result.summary}`,
+              });
+            } else {
+              setCommandResponse({ success: false, message: "Could not parse. Try: 'create box 50x30x20mm'." });
+            }
+          } catch {
+            setCommandResponse({ success: false, message: "Generation failed. Try a simpler description." });
+          }
         }
         return;
       }
@@ -249,7 +263,7 @@ export default function DesignerCommandBar() {
       executeCommand(cmd);
       setCommandResponse({ success: false, message: `Unknown command: "${cmd}". Try "create a PV module" or "fillet 3mm".` });
     },
-    [input, executeCommand, selectedObj, objects.length, addGeneratedObject, aiFilletSelected, aiChamferSelected, aiShell, aiMirror]
+    [input, executeCommand, selectedObj, objects.length, addGeneratedObject, addAssemblyFromParts, aiFilletSelected, aiChamferSelected, aiShell, aiMirror]
   );
 
   const handleKeyDown = useCallback(

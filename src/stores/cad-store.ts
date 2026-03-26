@@ -708,6 +708,7 @@ interface CadState {
   addPolygon: (points: [number, number, number][], sides: number) => string;
   addEllipse: (center: [number, number, number], rx: number, ry: number) => string;
   addGeneratedObject: (obj: Partial<CadObject> & { type: CadObject["type"]; name: string }) => string;
+  addAssemblyFromParts: (parts: Array<Partial<CadObject> & { type: CadObject["type"]; name: string }>, assemblyName: string) => string[];
   selectObject: (id: string | null) => void;
   toggleSelectObject: (id: string) => void;
   selectAll: () => void;
@@ -1457,6 +1458,171 @@ export const useCadStore = create<CadState>((set, get) => ({
       locked: false,
     });
     return id;
+  },
+
+  addAssemblyFromParts: (parts, assemblyName) => {
+    get().pushHistory();
+    const ids: string[] = [];
+
+    // Create a sketch group for this assembly
+    const sketchGroupId = `sketch_asm_${Date.now()}`;
+    get().addFeature({
+      id: sketchGroupId,
+      type: "sketch_group",
+      name: `${assemblyName} - Sketches`,
+      objectId: sketchGroupId,
+      visible: true,
+      locked: false,
+    });
+
+    for (const part of parts) {
+      const id = `obj_${++idCounter}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      const obj: CadObject = {
+        id,
+        position: [0, 1, 0],
+        rotation: [0, 0, 0],
+        scale: [1, 1, 1],
+        dimensions: { width: 2, height: 2, depth: 2 },
+        material: "Steel (AISI 1045)",
+        color: getMaterialColor("Steel (AISI 1045)"),
+        visible: true,
+        locked: false,
+        opacity: 1,
+        metalness: 0.4,
+        roughness: 0.5,
+        ...part,
+      };
+      set((s) => ({ objects: [...s.objects, obj] }));
+      get().addFeature({
+        id: `feat_${id}`,
+        type: obj.type,
+        name: obj.name,
+        objectId: id,
+        visible: true,
+        locked: false,
+        parentId: sketchGroupId,
+      });
+      ids.push(id);
+
+      // Auto-generate 2D sketch profile for this part
+      const pos = obj.position;
+      const dim = obj.dimensions;
+      const sketchId = `sketch_profile_${id}`;
+      if (obj.type === "box") {
+        // Rectangle sketch on XZ plane at the part's Y-base
+        const hw = dim.width / 2;
+        const hd = dim.depth / 2;
+        const sketchY = pos[1] - dim.height / 2 + 0.001;
+        const rectObj: CadObject = {
+          id: sketchId,
+          type: "rectangle",
+          name: `${obj.name} - Profile`,
+          position: [0, 0, 0],
+          rotation: [0, 0, 0],
+          scale: [1, 1, 1],
+          dimensions: { width: dim.width, height: 0, depth: dim.depth },
+          material: "Steel (AISI 1045)",
+          color: "#00ffff",
+          visible: true,
+          locked: true,
+          opacity: 1,
+          metalness: 0,
+          roughness: 1,
+          rectCorners: [
+            [pos[0] - hw, sketchY, pos[2] - hd],
+            [pos[0] + hw, sketchY, pos[2] + hd],
+          ],
+          sketchId: sketchGroupId,
+          sketchPlane: "xz",
+          isProfile: true,
+        };
+        set((s) => ({ objects: [...s.objects, rectObj] }));
+      } else if (obj.type === "cylinder" || obj.type === "cone") {
+        // Circle sketch on XZ plane at the part's Y-base
+        const sketchY = pos[1] - dim.height / 2 + 0.001;
+        const circObj: CadObject = {
+          id: sketchId,
+          type: "circle",
+          name: `${obj.name} - Profile`,
+          position: [0, 0, 0],
+          rotation: [0, 0, 0],
+          scale: [1, 1, 1],
+          dimensions: { width: dim.width, height: 0, depth: dim.width },
+          material: "Steel (AISI 1045)",
+          color: "#00ffff",
+          visible: true,
+          locked: true,
+          opacity: 1,
+          metalness: 0,
+          roughness: 1,
+          circleCenter: [pos[0], sketchY, pos[2]],
+          circleRadius: dim.width,
+          sketchId: sketchGroupId,
+          sketchPlane: "xz",
+          isProfile: true,
+        };
+        set((s) => ({ objects: [...s.objects, circObj] }));
+      } else if (obj.type === "sphere") {
+        // Circle sketch at sphere center
+        const circObj: CadObject = {
+          id: sketchId,
+          type: "circle",
+          name: `${obj.name} - Profile`,
+          position: [0, 0, 0],
+          rotation: [0, 0, 0],
+          scale: [1, 1, 1],
+          dimensions: { width: dim.width, height: 0, depth: dim.width },
+          material: "Steel (AISI 1045)",
+          color: "#00ffff",
+          visible: true,
+          locked: true,
+          opacity: 1,
+          metalness: 0,
+          roughness: 1,
+          circleCenter: [pos[0], pos[1], pos[2]],
+          circleRadius: dim.width,
+          sketchId: sketchGroupId,
+          sketchPlane: "xz",
+          isProfile: true,
+        };
+        set((s) => ({ objects: [...s.objects, circObj] }));
+      }
+    }
+
+    // Select the first part
+    if (ids.length > 0) {
+      set({ selectedId: ids[0], selectedIds: ids });
+    }
+
+    // Auto-refinement pass: check for identical positions and nudge
+    const allObjs = get().objects;
+    const assemblyObjs = allObjs.filter((o) => ids.includes(o.id));
+    for (let i = 0; i < assemblyObjs.length; i++) {
+      for (let j = i + 1; j < assemblyObjs.length; j++) {
+        const a = assemblyObjs[i];
+        const b = assemblyObjs[j];
+        // Check if two objects are at exact same position with same dimensions (overlap)
+        if (
+          a.position[0] === b.position[0] &&
+          a.position[1] === b.position[1] &&
+          a.position[2] === b.position[2] &&
+          a.dimensions.width === b.dimensions.width &&
+          a.dimensions.height === b.dimensions.height &&
+          a.dimensions.depth === b.dimensions.depth
+        ) {
+          // Nudge the second one slightly in Y
+          set((s) => ({
+            objects: s.objects.map((o) =>
+              o.id === b.id
+                ? { ...o, position: [o.position[0], o.position[1] + 0.01, o.position[2]] as [number, number, number] }
+                : o
+            ),
+          }));
+        }
+      }
+    }
+
+    return ids;
   },
 
   updateObject: (id, updates) =>
