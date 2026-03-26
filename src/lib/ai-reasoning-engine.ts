@@ -326,7 +326,7 @@ function buildSolarPVModule(dims: ParsedDims, prompt: string): { parts: Assembly
   const t = prompt.toLowerCase();
   const L = (dims.length || 2000) * MM;  // scene units
   const W = (dims.width || 1000) * MM;
-  const H = (dims.height || 35) * MM;
+  const H = (dims.thickness || dims.height || 35) * MM;
   const frameT = 2 * MM; // frame cross-section thickness
   const glassT = 3.2 * MM;
   const cellT = 0.2 * MM;
@@ -340,7 +340,7 @@ function buildSolarPVModule(dims: ParsedDims, prompt: string): { parts: Assembly
 
   const reasoning: ReasoningStep[] = [
     { step: 1, action: "Identify object", detail: `Solar PV Module (${isBifacial ? "bifacial glass-to-glass" : "monofacial"})`, status: "done" },
-    { step: 2, action: "Parse dimensions", detail: `${(dims.length || 2000)}mm x ${(dims.width || 1000)}mm x ${(dims.height || 35)}mm`, status: "done" },
+    { step: 2, action: "Parse dimensions", detail: `${(dims.length || 2000)}mm x ${(dims.width || 1000)}mm x ${(dims.thickness || dims.height || 35)}mm`, status: "done" },
     { step: 3, action: "Detect materials", detail: "Aluminum frame, tempered glass, EVA, silicon cells", status: "done" },
     { step: 4, action: "Decompose assembly", detail: `${isBifacial ? 10 : 9} sub-parts: 4 frame pieces, front glass, ${isBifacial ? "back glass" : "backsheet"}, EVA x2, cell array, junction box`, status: "done" },
     { step: 5, action: "Generate geometry", detail: "Positioning all parts relative to frame origin", status: "done" },
@@ -379,7 +379,7 @@ function buildSolarPVModule(dims: ParsedDims, prompt: string): { parts: Assembly
     dimensions: { width: frameT, height: H, depth: W - frameT * 2 },
     material: al.name, color: al.color, metalness: al.metalness, roughness: al.roughness,
   }));
-  bom.push({ partName: "Aluminum Frame Rail", quantity: 4, material: al.name, dimensions: `${(dims.length || 2000)}x${(dims.height || 35)}x${20}mm`, color: al.color });
+  bom.push({ partName: "Aluminum Frame Rail", quantity: 4, material: al.name, dimensions: `${(dims.length || 2000)}x${(dims.thickness || dims.height || 35)}x${20}mm`, color: al.color });
 
   // Front Glass
   const innerL = L - frameT * 2;
