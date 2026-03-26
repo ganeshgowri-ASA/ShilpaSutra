@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import Anthropic from "@anthropic-ai/sdk";
 
 interface GenerateCADRequest {
   prompt: string;
@@ -745,6 +746,70 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
     }
 
+    // ── Try Claude API for AI-powered geometry generation ──
+    const anthropicKey = process.env.ANTHROPIC_API_KEY;
+    if (anthropicKey) {
+      try {
+        const client = new Anthropic({ apiKey: anthropicKey });
+        const claudeResponse = await client.messages.create({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 1500,
+          temperature: 0,
+          system: `You are a CAD geometry parameter generator. Given a text description of a 3D part, return ONLY a JSON object with these fields:
+{
+  "type": "gear"|"bolt"|"bracket"|"flange"|"housing"|"heatsink"|"washer"|"nut"|"spring"|"box"|"cylinder"|"sphere"|"cone",
+  "name": "descriptive name",
+  "params": { key-value pairs of numeric parameters relevant to the type },
+  "cadScript": "CadQuery Python script to generate this geometry"
+}
+
+Parameter keys by type:
+- gear: teeth, module, faceWidth
+- bolt: size, length
+- bracket: width, height, thickness, holes, fillet
+- flange: outerRadius, innerRadius, thickness, boltCircle, boltCount, boltHoleRadius
+- housing: bore
+- heatsink: fins, baseW, finH
+- washer: outerRadius, innerRadius, thickness
+- nut: size
+- spring: coilRadius, wireRadius, coils, height
+- box/cylinder/sphere/cone: width, height, depth (in mm, divide by 10 for display units)
+
+All dimensions in mm. Return ONLY valid JSON, no markdown.`,
+          messages: [{ role: "user", content: prompt }],
+        });
+
+        const textBlock = claudeResponse.content.find((b) => b.type === "text");
+        if (textBlock && textBlock.type === "text") {
+          const cleaned = textBlock.text.replace(/```json\n?/g, "").replace(/```/g, "").trim();
+          const aiResult = JSON.parse(cleaned);
+          const aiType = aiResult.type || "bracket";
+          const aiParams = aiResult.params || {};
+
+          const generator = generators[aiType] || generators.bracket;
+          const geometry = generator(aiParams);
+          geometry.format = format || "STEP";
+          if (aiResult.name) geometry.name = aiResult.name;
+
+          return NextResponse.json({
+            success: true,
+            geometry,
+            metadata: {
+              engine: "ShilpaSutra AI Engine v1.0 + Claude",
+              source: "claude-api",
+              parsedType: aiType,
+              parsedParams: aiParams,
+              cadScript: aiResult.cadScript,
+              supportedFormats: ["STEP", "STL", "OBJ", "IGES", "3MF", "GLB", "GLTF", "FBX", "DXF", "PLY"],
+            },
+          });
+        }
+      } catch {
+        // Claude API failed, fall through to parametric
+      }
+    }
+
+    // ── Fallback: local parametric generation ──
     const { type, params } = parsePrompt(prompt);
     const generator = generators[type] || generators.bracket;
     const geometry = generator(params);
@@ -755,6 +820,7 @@ export async function POST(request: NextRequest) {
       geometry,
       metadata: {
         engine: "ShilpaSutra AI Engine v1.0",
+        source: "parametric",
         parsedType: type,
         parsedParams: params,
         supportedFormats: ["STEP", "STL", "OBJ", "IGES", "3MF", "GLB", "GLTF", "FBX", "DXF", "PLY"],

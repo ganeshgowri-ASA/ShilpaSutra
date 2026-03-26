@@ -1,5 +1,5 @@
 "use client";
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   useCadStore,
@@ -17,7 +17,56 @@ import {
   MessageSquare, Wand2, Zap, HelpCircle,
   Undo2, Redo2, ChevronDown, ChevronUp,
   Activity, Wind,
+  HardDrive, FolderOpen, Trash2, X,
 } from "lucide-react";
+
+// ── localStorage Save/Load Drawings ─────────────────────────────────────
+const DRAWINGS_KEY = "shilpasutra_saved_drawings";
+
+interface SavedDrawing {
+  id: string;
+  name: string;
+  timestamp: number;
+  objectCount: number;
+  objects: unknown[];
+}
+
+function getSavedDrawings(): SavedDrawing[] {
+  if (typeof window === "undefined") return [];
+  try {
+    return JSON.parse(localStorage.getItem(DRAWINGS_KEY) || "[]");
+  } catch {
+    return [];
+  }
+}
+
+function saveDrawingToStorage(name: string): SavedDrawing {
+  const state = useCadStore.getState();
+  const drawings = getSavedDrawings();
+  const entry: SavedDrawing = {
+    id: crypto.randomUUID(),
+    name,
+    timestamp: Date.now(),
+    objectCount: state.objects.length,
+    objects: state.objects,
+  };
+  drawings.unshift(entry);
+  localStorage.setItem(DRAWINGS_KEY, JSON.stringify(drawings));
+  return entry;
+}
+
+function loadDrawingFromStorage(id: string): boolean {
+  const drawings = getSavedDrawings();
+  const drawing = drawings.find((d) => d.id === id);
+  if (!drawing) return false;
+  useCadStore.setState({ objects: drawing.objects as ReturnType<typeof useCadStore.getState>["objects"] });
+  return true;
+}
+
+function deleteDrawingFromStorage(id: string) {
+  const drawings = getSavedDrawings().filter((d) => d.id !== id);
+  localStorage.setItem(DRAWINGS_KEY, JSON.stringify(drawings));
+}
 
 interface ToolButton {
   id: ToolId | string;
@@ -211,6 +260,39 @@ export default function RibbonToolbar({ onExtrude, onRevolve, onMassProps, onRef
 
   const addObject = useCadStore((s) => s.addObject);
 
+  // ── localStorage Save/Load state ──
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [showLoadModal, setShowLoadModal] = useState(false);
+  const [saveName, setSaveName] = useState("");
+  const [savedDrawings, setSavedDrawings] = useState<SavedDrawing[]>([]);
+
+  const openSaveModal = useCallback(() => {
+    const d = new Date();
+    setSaveName(`Drawing ${d.toLocaleDateString()} ${d.toLocaleTimeString()}`);
+    setShowSaveModal(true);
+  }, []);
+
+  const openLoadModal = useCallback(() => {
+    setSavedDrawings(getSavedDrawings());
+    setShowLoadModal(true);
+  }, []);
+
+  const handleSaveDrawing = useCallback(() => {
+    if (!saveName.trim()) return;
+    saveDrawingToStorage(saveName.trim());
+    setShowSaveModal(false);
+  }, [saveName]);
+
+  const handleLoadDrawing = useCallback((id: string) => {
+    loadDrawingFromStorage(id);
+    setShowLoadModal(false);
+  }, []);
+
+  const handleDeleteDrawing = useCallback((id: string) => {
+    deleteDrawingFromStorage(id);
+    setSavedDrawings(getSavedDrawings());
+  }, []);
+
   const handleToolClick = useCallback(
     (id: string) => {
       if (id === "delete") {
@@ -367,6 +449,15 @@ export default function RibbonToolbar({ onExtrude, onRevolve, onMassProps, onRef
             className="px-2.5 py-1 rounded-md text-[10px] font-medium bg-[#21262d] hover:bg-[#30363d] text-slate-300 border border-[#30363d] hover:border-[#484f58] transition-all duration-150">
             Load
           </button>
+          <div className="w-px h-4 bg-[#21262d] mx-0.5" />
+          <button onClick={openSaveModal} title="Quick save to browser storage"
+            className="px-2.5 py-1 rounded-md text-[10px] font-medium bg-purple-500/10 hover:bg-purple-500/25 text-purple-400 border border-purple-500/20 hover:border-purple-500/40 transition-all duration-150 flex items-center gap-1">
+            <HardDrive size={10} /> Quick Save
+          </button>
+          <button onClick={openLoadModal} title="Load from browser storage"
+            className="px-2.5 py-1 rounded-md text-[10px] font-medium bg-purple-500/10 hover:bg-purple-500/25 text-purple-400 border border-purple-500/20 hover:border-purple-500/40 transition-all duration-150 flex items-center gap-1">
+            <FolderOpen size={10} /> Quick Load
+          </button>
         </div>
 
         <button
@@ -449,6 +540,67 @@ export default function RibbonToolbar({ onExtrude, onRevolve, onMassProps, onRef
               </button>
             ))
           )}
+        </div>
+      )}
+
+      {/* Save Drawing Modal */}
+      {showSaveModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-[#0d1117] border border-[#21262d] rounded-xl shadow-2xl w-[360px] p-4">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm font-bold text-white">Save Drawing</span>
+              <button onClick={() => setShowSaveModal(false)} className="text-slate-500 hover:text-white"><X size={14} /></button>
+            </div>
+            <input
+              autoFocus
+              value={saveName}
+              onChange={(e) => setSaveName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") handleSaveDrawing(); if (e.key === "Escape") setShowSaveModal(false); }}
+              placeholder="Drawing name..."
+              className="w-full bg-[#161b22] text-xs text-slate-200 rounded-lg px-3 py-2 outline-none border border-[#21262d] focus:border-purple-500/50 mb-3"
+            />
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setShowSaveModal(false)} className="px-3 py-1.5 text-[10px] rounded-md bg-[#21262d] text-slate-400 hover:text-white transition-colors">Cancel</button>
+              <button onClick={handleSaveDrawing} className="px-3 py-1.5 text-[10px] rounded-md bg-purple-600 text-white hover:bg-purple-700 transition-colors">Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Load Drawing Modal */}
+      {showLoadModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-[#0d1117] border border-[#21262d] rounded-xl shadow-2xl w-[420px] max-h-[70vh] flex flex-col p-4">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-sm font-bold text-white">Load Drawing</span>
+              <button onClick={() => setShowLoadModal(false)} className="text-slate-500 hover:text-white"><X size={14} /></button>
+            </div>
+            {savedDrawings.length === 0 ? (
+              <div className="text-xs text-slate-500 text-center py-8">No saved drawings found.</div>
+            ) : (
+              <div className="space-y-1.5 overflow-y-auto flex-1 pr-1">
+                {savedDrawings.map((d) => (
+                  <div key={d.id} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#161b22] border border-[#21262d] hover:border-purple-500/30 group transition-colors">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs text-slate-200 truncate">{d.name}</div>
+                      <div className="text-[9px] text-slate-600">{d.objectCount} objects &middot; {new Date(d.timestamp).toLocaleString()}</div>
+                    </div>
+                    <button
+                      onClick={() => handleLoadDrawing(d.id)}
+                      className="px-2 py-1 text-[9px] rounded bg-purple-600 text-white hover:bg-purple-700 transition-colors shrink-0"
+                    >Load</button>
+                    <button
+                      onClick={() => handleDeleteDrawing(d.id)}
+                      className="p-1 text-slate-600 hover:text-red-400 transition-colors shrink-0"
+                    ><Trash2 size={11} /></button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex justify-end mt-3">
+              <button onClick={() => setShowLoadModal(false)} className="px-3 py-1.5 text-[10px] rounded-md bg-[#21262d] text-slate-400 hover:text-white transition-colors">Close</button>
+            </div>
+          </div>
         </div>
       )}
     </div>

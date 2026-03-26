@@ -1,10 +1,47 @@
 "use client";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useCadStore } from "@/stores/cad-store";
 import {
   X, Loader2, Send, MessageSquare, Wand2, Zap, HelpCircle,
   ChevronDown, ChevronRight, Package, CheckCircle2, Circle,
+  History, Trash2,
 } from "lucide-react";
+
+// ── Prompt History Persistence ──────────────────────────────────────────
+const HISTORY_KEY = "shilpasutra_prompt_history";
+const MAX_HISTORY = 50;
+
+interface PromptHistoryEntry {
+  id: string;
+  prompt: string;
+  tool: string;
+  result: string;
+  timestamp: number;
+}
+
+function loadPromptHistory(): PromptHistoryEntry[] {
+  if (typeof window === "undefined") return [];
+  try {
+    return JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+  } catch {
+    return [];
+  }
+}
+
+function savePromptToHistory(entry: Omit<PromptHistoryEntry, "id" | "timestamp">) {
+  const history = loadPromptHistory();
+  history.unshift({
+    ...entry,
+    id: crypto.randomUUID(),
+    timestamp: Date.now(),
+  });
+  if (history.length > MAX_HISTORY) history.length = MAX_HISTORY;
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+}
+
+function clearPromptHistory() {
+  localStorage.removeItem(HISTORY_KEY);
+}
 
 type AIToolType = "ai_text_to_cad" | "ai_suggest" | "ai_optimize" | "ai_explain" | "ai_fea" | "ai_cfd";
 
@@ -111,7 +148,17 @@ export default function AIToolPanel({ toolType, onClose }: AIToolPanelProps) {
   const [assemblyData, setAssemblyData] = useState<AssemblyResponse | null>(null);
   const [showBOM, setShowBOM] = useState(false);
   const [showReasoning, setShowReasoning] = useState(true);
+  const [showHistory, setShowHistory] = useState(false);
+  const [history, setHistory] = useState<PromptHistoryEntry[]>([]);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  const refreshHistory = useCallback(() => {
+    setHistory(loadPromptHistory().filter((h) => h.tool === toolType));
+  }, [toolType]);
+
+  useEffect(() => {
+    refreshHistory();
+  }, [refreshHistory]);
 
   const selectedId = useCadStore((s) => s.selectedId);
   const objects = useCadStore((s) => s.objects);
@@ -162,21 +209,26 @@ export default function AIToolPanel({ toolType, onClose }: AIToolPanelProps) {
         for (const part of data.assemblyParts) {
           addGeneratedObject(part);
         }
-        setResult(`Assembly: ${data.object?.name || "Generated"}  |  ${data.assemblyParts.length} parts created. ${data.message || ""}`);
+        const msg = `Assembly: ${data.object?.name || "Generated"}  |  ${data.assemblyParts.length} parts created. ${data.message || ""}`;
+        setResult(msg);
         setShowReasoning(true);
         setShowBOM(true);
+        savePromptToHistory({ prompt: input, tool: toolType, result: msg });
+        refreshHistory();
       } else {
         // Single object
+        let msg = "AI processed your request. Check the viewport for changes.";
         if (data.object) {
           addGeneratedObject(data.object);
-          setResult(`Created "${data.object.name}" successfully. ${data.message || ""}`);
+          msg = `Created "${data.object.name}" successfully. ${data.message || ""}`;
         } else if (data.message) {
-          setResult(data.message);
+          msg = data.message;
         } else if (data.response) {
-          setResult(data.response);
-        } else {
-          setResult("AI processed your request. Check the viewport for changes.");
+          msg = data.response;
         }
+        setResult(msg);
+        savePromptToHistory({ prompt: input, tool: toolType, result: msg });
+        refreshHistory();
       }
     } catch {
       // Provide a helpful offline/fallback response
@@ -231,7 +283,10 @@ export default function AIToolPanel({ toolType, onClose }: AIToolPanelProps) {
           metalness: 0.8,
           roughness: 0.3,
         });
-        setResult(`Created a ${type} from your description. Refine it using the AI chat or property panel.`);
+        const fallbackMsg = `Created a ${type} from your description. Refine it using the AI chat or property panel.`;
+        setResult(fallbackMsg);
+        savePromptToHistory({ prompt: input, tool: toolType, result: fallbackMsg });
+        refreshHistory();
       }
     } finally {
       setIsLoading(false);
@@ -359,6 +414,42 @@ export default function AIToolPanel({ toolType, onClose }: AIToolPanelProps) {
                 </tbody>
               </table>
             </div>
+          </div>
+        )}
+
+        {/* History toggle */}
+        <div className="px-4 pb-1">
+          <button
+            onClick={() => setShowHistory(!showHistory)}
+            className="flex items-center gap-1 text-[10px] text-slate-500 hover:text-slate-300 transition-colors"
+          >
+            <History size={10} />
+            {showHistory ? "Hide" : "Show"} History ({history.length})
+          </button>
+        </div>
+
+        {/* Prompt History */}
+        {showHistory && history.length > 0 && (
+          <div className="px-4 pb-2 max-h-[160px] overflow-y-auto">
+            <div className="space-y-1">
+              {history.map((entry) => (
+                <button
+                  key={entry.id}
+                  onClick={() => setInput(entry.prompt)}
+                  className="w-full text-left px-2 py-1.5 rounded-md bg-[#161b22] hover:bg-[#21262d] border border-[#21262d] transition-colors group"
+                >
+                  <div className="text-[10px] text-slate-300 truncate">{entry.prompt}</div>
+                  <div className="text-[9px] text-slate-600 truncate">{entry.result}</div>
+                  <div className="text-[8px] text-slate-700">{new Date(entry.timestamp).toLocaleString()}</div>
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => { clearPromptHistory(); refreshHistory(); }}
+              className="mt-1.5 flex items-center gap-1 text-[9px] text-red-500/60 hover:text-red-400 transition-colors"
+            >
+              <Trash2 size={9} /> Clear History
+            </button>
           </div>
         )}
 
