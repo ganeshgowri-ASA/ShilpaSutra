@@ -228,25 +228,41 @@ export type DomainType =
   | "bearing"
   | "pcb_enclosure"
   | "pipe_fitting"
+  | "dumbbell"
+  | "pipe_tube"
+  | "plate_with_holes"
+  | "cone_part"
+  | "sphere_part"
+  | "cylinder_part"
+  | "box_part"
   | "generic";
 
 export function detectDomain(prompt: string): DomainType {
   const t = prompt.toLowerCase();
+  if (t.includes("dumbbell") || t.includes("dumb bell") || t.includes("barbell")) return "dumbbell";
   if (t.includes("solar") && (t.includes("panel") || t.includes("module") || t.includes("pv"))) return "solar_pv_module";
+  if (t.includes("pv") && (t.includes("module") || t.includes("panel"))) return "solar_pv_module";
   if ((t.includes("bolt") || t.includes("screw")) && (t.includes("nut") || t.includes("washer") || t.includes("hex"))) return "hex_bolt_assembly";
   if (t.includes("l-bracket") || t.includes("l bracket") || (t.includes("bracket") && t.includes("mounting"))) return "l_bracket";
   if (t.includes("heat sink") || t.includes("heatsink") || (t.includes("heat") && t.includes("fin"))) return "heat_sink";
   if (t.includes("enclosure") && (t.includes("electronic") || t.includes("lid") || t.includes("ventilation"))) return "electronics_enclosure";
   if (t.includes("enclosure") || t.includes("housing") || t.includes("case")) return "electronics_enclosure";
   if (t.includes("flange") && t.includes("pipe")) return "pipe_flange";
-  if (t.includes("gear") || t.includes("spur gear")) return "gear";
+  if (t.includes("gear") || t.includes("spur gear") || /\d+\s*teeth/.test(t)) return "gear";
   if (t.includes("bearing")) return "bearing";
   if (t.includes("pcb") && t.includes("enclosure")) return "pcb_enclosure";
   if (t.includes("pipe") && t.includes("fitting")) return "pipe_fitting";
+  if (t.includes("pipe") || t.includes("tube")) return "pipe_tube";
+  if ((t.includes("plate") || t.includes("panel")) && t.includes("hole")) return "plate_with_holes";
   if (t.includes("bracket")) return "l_bracket";
   if (t.includes("bolt") || t.includes("screw")) return "hex_bolt_assembly";
   if (t.includes("heat") && t.includes("sink")) return "heat_sink";
   if (t.includes("enclosure")) return "electronics_enclosure";
+  if (t.includes("cone") || t.includes("taper") || t.includes("funnel")) return "cone_part";
+  if (t.includes("sphere") || t.includes("ball")) return "sphere_part";
+  if (t.includes("cylinder") || t.includes("rod") || t.includes("shaft")) return "cylinder_part";
+  if (t.includes("box") || t.includes("cube") || t.includes("block")) return "box_part";
+  if (t.includes("plate") || t.includes("panel") || t.includes("sheet")) return "plate_with_holes";
   return "generic";
 }
 
@@ -702,6 +718,308 @@ function buildElectronicsEnclosure(dims: ParsedDims, prompt: string): { parts: A
   return { parts, bom, reasoning };
 }
 
+function buildDumbbell(dims: ParsedDims, prompt: string): { parts: AssemblyPart[]; bom: BOMEntry[]; reasoning: ReasoningStep[] } {
+  const barLen = (dims.length || 10) * MM;
+  const sphereDia = (dims.diameter || 5) * MM;
+  const barDia = sphereDia * 0.3;
+  const mat = detectMaterial(prompt);
+
+  const reasoning: ReasoningStep[] = [
+    { step: 1, action: "Identify object", detail: `Dumbbell / Barbell`, status: "done" },
+    { step: 2, action: "Parse dimensions", detail: `Bar length: ${(dims.length || 10)}mm, Sphere diameter: ${(dims.diameter || 5)}mm`, status: "done" },
+    { step: 3, action: "Decompose", detail: "1 cylindrical bar + 2 spheres at each end", status: "done" },
+    { step: 4, action: "Generate geometry", detail: "3 parts positioned along X axis", status: "done" },
+  ];
+
+  const parts: AssemblyPart[] = [];
+  const bom: BOMEntry[] = [];
+
+  // Central bar (cylinder)
+  parts.push(makePart({
+    type: "cylinder", name: "Bar",
+    position: [0, barLen / 2, 0],
+    dimensions: { width: barDia / 2, height: barLen, depth: barDia / 2 },
+    material: mat.name, color: mat.color, metalness: mat.metalness, roughness: mat.roughness,
+  }));
+  bom.push({ partName: "Cylindrical Bar", quantity: 1, material: mat.name, dimensions: `D${(barDia / MM).toFixed(1)}mm x L${(barLen / MM).toFixed(0)}mm`, color: mat.color });
+
+  // Left sphere
+  parts.push(makePart({
+    type: "sphere", name: "Weight - Left",
+    position: [0, 0, 0],
+    dimensions: { width: sphereDia / 2, height: sphereDia / 2, depth: sphereDia / 2 },
+    material: mat.name, color: "#4a4a5a", metalness: mat.metalness, roughness: mat.roughness,
+  }));
+
+  // Right sphere
+  parts.push(makePart({
+    type: "sphere", name: "Weight - Right",
+    position: [0, barLen, 0],
+    dimensions: { width: sphereDia / 2, height: sphereDia / 2, depth: sphereDia / 2 },
+    material: mat.name, color: "#4a4a5a", metalness: mat.metalness, roughness: mat.roughness,
+  }));
+  bom.push({ partName: "Spherical Weight", quantity: 2, material: mat.name, dimensions: `D${(sphereDia / MM).toFixed(1)}mm`, color: "#4a4a5a" });
+
+  return { parts, bom, reasoning };
+}
+
+function buildGear(dims: ParsedDims, prompt: string): { parts: AssemblyPart[]; bom: BOMEntry[]; reasoning: ReasoningStep[] } {
+  const t = prompt.toLowerCase();
+  const teethMatch = t.match(/(\d+)\s*teeth/);
+  const teeth = teethMatch ? parseInt(teethMatch[1]) : 20;
+  const mod = 2; // module in mm
+  const pitchR = (teeth * mod) / 2;
+  const outerR = (pitchR + mod) * MM;
+  const rootR = (pitchR - 1.25 * mod) * MM;
+  const faceWidth = (dims.thickness || dims.height || 10) * MM;
+  const boreD = (dims.diameter || pitchR * 0.4) * MM;
+  const mat = detectMaterial(prompt);
+
+  const reasoning: ReasoningStep[] = [
+    { step: 1, action: "Identify object", detail: `Spur Gear with ${teeth} teeth`, status: "done" },
+    { step: 2, action: "Engineering calc", detail: `Module ${mod}mm, pitch radius ${pitchR.toFixed(1)}mm, outer ${(pitchR + mod).toFixed(1)}mm`, status: "done" },
+    { step: 3, action: "Decompose", detail: "Gear body (cylinder) + hub + bore indicator", status: "done" },
+    { step: 4, action: "Generate geometry", detail: `${teeth} teeth profile, face width ${(faceWidth / MM).toFixed(0)}mm`, status: "done" },
+  ];
+
+  const parts: AssemblyPart[] = [];
+  const bom: BOMEntry[] = [];
+
+  // Gear outer body (cylinder representing outer diameter)
+  parts.push(makePart({
+    type: "cylinder", name: `Gear Body (${teeth}T)`,
+    position: [0, faceWidth / 2, 0],
+    dimensions: { width: outerR, height: faceWidth, depth: outerR },
+    material: mat.name, color: mat.color, metalness: mat.metalness, roughness: mat.roughness,
+  }));
+
+  // Root circle (slightly smaller, darker to show teeth profile)
+  parts.push(makePart({
+    type: "cylinder", name: "Root Circle",
+    position: [0, faceWidth / 2, 0],
+    dimensions: { width: rootR, height: faceWidth * 1.01, depth: rootR },
+    material: mat.name, color: "#555566", metalness: mat.metalness, roughness: mat.roughness,
+  }));
+
+  // Hub (thicker center section)
+  const hubR = boreD * 1.5;
+  const hubH = faceWidth * 1.2;
+  parts.push(makePart({
+    type: "cylinder", name: "Hub",
+    position: [0, hubH / 2, 0],
+    dimensions: { width: hubR, height: hubH, depth: hubR },
+    material: mat.name, color: "#666677", metalness: mat.metalness, roughness: mat.roughness,
+  }));
+
+  // Bore hole indicator
+  parts.push(makePart({
+    type: "cylinder", name: "Bore",
+    position: [0, hubH / 2, 0],
+    dimensions: { width: boreD / 2, height: hubH * 1.05, depth: boreD / 2 },
+    material: "Hole", color: "#0d1117", metalness: 0, roughness: 1,
+  }));
+
+  bom.push({ partName: `Spur Gear ${teeth}T`, quantity: 1, material: mat.name, dimensions: `OD${((outerR / MM) * 2).toFixed(0)}mm, ${(faceWidth / MM).toFixed(0)}mm face`, color: mat.color });
+  bom.push({ partName: "Bore", quantity: 1, material: "-", dimensions: `D${(boreD / MM).toFixed(1)}mm`, color: "#0d1117" });
+
+  return { parts, bom, reasoning };
+}
+
+function buildPipeTube(dims: ParsedDims, prompt: string): { parts: AssemblyPart[]; bom: BOMEntry[]; reasoning: ReasoningStep[] } {
+  const od = (dims.diameter || 50) * MM;
+  const wall = (dims.wallThickness || dims.thickness || 3) * MM;
+  const id = od - wall * 2;
+  const len = (dims.length || dims.height || 100) * MM;
+  const mat = detectMaterial(prompt);
+
+  const reasoning: ReasoningStep[] = [
+    { step: 1, action: "Identify object", detail: `Pipe / Tube`, status: "done" },
+    { step: 2, action: "Parse dimensions", detail: `OD ${(od / MM).toFixed(0)}mm, wall ${(wall / MM).toFixed(1)}mm, length ${(len / MM).toFixed(0)}mm`, status: "done" },
+    { step: 3, action: "Decompose", detail: "Outer cylinder + inner bore", status: "done" },
+    { step: 4, action: "Generate geometry", detail: `ID ${(id / MM).toFixed(0)}mm`, status: "done" },
+  ];
+
+  const parts: AssemblyPart[] = [];
+  const bom: BOMEntry[] = [];
+
+  // Outer cylinder
+  parts.push(makePart({
+    type: "cylinder", name: "Pipe Outer",
+    position: [0, len / 2, 0],
+    dimensions: { width: od / 2, height: len, depth: od / 2 },
+    material: mat.name, color: mat.color, metalness: mat.metalness, roughness: mat.roughness,
+  }));
+
+  // Inner bore (dark cylinder to represent hollow)
+  parts.push(makePart({
+    type: "cylinder", name: "Pipe Bore",
+    position: [0, len / 2, 0],
+    dimensions: { width: id / 2, height: len * 1.01, depth: id / 2 },
+    material: "Hole", color: "#0d1117", metalness: 0, roughness: 1,
+  }));
+
+  bom.push({ partName: "Pipe", quantity: 1, material: mat.name, dimensions: `OD${(od / MM).toFixed(0)} x ID${(id / MM).toFixed(0)} x L${(len / MM).toFixed(0)}mm`, color: mat.color });
+
+  return { parts, bom, reasoning };
+}
+
+function buildPlateWithHoles(dims: ParsedDims, prompt: string): { parts: AssemblyPart[]; bom: BOMEntry[]; reasoning: ReasoningStep[] } {
+  const L = (dims.length || 100) * MM;
+  const W = (dims.width || dims.length || 100) * MM;
+  const T = (dims.thickness || dims.height || 5) * MM;
+  const holeCount = dims.holeCount || 4;
+  const holeDia = (dims.holeDiameter || 8) * MM;
+  const mat = detectMaterial(prompt);
+
+  const reasoning: ReasoningStep[] = [
+    { step: 1, action: "Identify object", detail: `Plate with ${holeCount} holes`, status: "done" },
+    { step: 2, action: "Parse dimensions", detail: `${(L / MM).toFixed(0)}x${(W / MM).toFixed(0)}x${(T / MM).toFixed(0)}mm`, status: "done" },
+    { step: 3, action: "Decompose", detail: `Base plate + ${holeCount} holes`, status: "done" },
+    { step: 4, action: "Generate geometry", detail: `Hole dia ${(holeDia / MM).toFixed(1)}mm`, status: "done" },
+  ];
+
+  const parts: AssemblyPart[] = [];
+  const bom: BOMEntry[] = [];
+
+  // Base plate
+  parts.push(makePart({
+    type: "box", name: "Plate",
+    position: [0, T / 2, 0],
+    dimensions: { width: L, height: T, depth: W },
+    material: mat.name, color: mat.color, metalness: mat.metalness, roughness: mat.roughness,
+  }));
+  bom.push({ partName: "Base Plate", quantity: 1, material: mat.name, dimensions: `${(L / MM).toFixed(0)}x${(W / MM).toFixed(0)}x${(T / MM).toFixed(0)}mm`, color: mat.color });
+
+  // Holes arranged in grid pattern
+  const cols = Math.ceil(Math.sqrt(holeCount));
+  const rows = Math.ceil(holeCount / cols);
+  const margin = L * 0.15;
+  const spacingX = cols > 1 ? (L - margin * 2) / (cols - 1) : 0;
+  const spacingZ = rows > 1 ? (W - margin * 2) / (rows - 1) : 0;
+
+  let placed = 0;
+  for (let r = 0; r < rows && placed < holeCount; r++) {
+    for (let c = 0; c < cols && placed < holeCount; c++) {
+      const x = cols > 1 ? -L / 2 + margin + c * spacingX : 0;
+      const z = rows > 1 ? -W / 2 + margin + r * spacingZ : 0;
+      parts.push(makePart({
+        type: "cylinder", name: `Hole ${placed + 1}`,
+        position: [x, T / 2, z],
+        dimensions: { width: holeDia / 2, height: T * 1.1, depth: holeDia / 2 },
+        material: "Hole", color: "#0d1117", metalness: 0, roughness: 1,
+      }));
+      placed++;
+    }
+  }
+  bom.push({ partName: `Hole M${(holeDia / MM).toFixed(0)}`, quantity: holeCount, material: "-", dimensions: `D${(holeDia / MM).toFixed(1)}mm`, color: "#0d1117" });
+
+  return { parts, bom, reasoning };
+}
+
+function buildConePart(dims: ParsedDims, prompt: string): { parts: AssemblyPart[]; bom: BOMEntry[]; reasoning: ReasoningStep[] } {
+  const r = (dims.radius || (dims.diameter ? dims.diameter / 2 : 25)) * MM;
+  const h = (dims.height || dims.length || 50) * MM;
+  const mat = detectMaterial(prompt);
+
+  const reasoning: ReasoningStep[] = [
+    { step: 1, action: "Identify object", detail: `Cone`, status: "done" },
+    { step: 2, action: "Parse dimensions", detail: `Base radius ${(r / MM).toFixed(0)}mm, height ${(h / MM).toFixed(0)}mm`, status: "done" },
+    { step: 3, action: "Generate geometry", detail: "Single cone primitive", status: "done" },
+  ];
+
+  const parts: AssemblyPart[] = [
+    makePart({
+      type: "cone", name: "Cone",
+      position: [0, h / 2, 0],
+      dimensions: { width: r, height: h, depth: r },
+      material: mat.name, color: mat.color, metalness: mat.metalness, roughness: mat.roughness,
+    }),
+  ];
+  const bom: BOMEntry[] = [
+    { partName: "Cone", quantity: 1, material: mat.name, dimensions: `R${(r / MM).toFixed(0)}mm x H${(h / MM).toFixed(0)}mm`, color: mat.color },
+  ];
+
+  return { parts, bom, reasoning };
+}
+
+function buildSpherePart(dims: ParsedDims, prompt: string): { parts: AssemblyPart[]; bom: BOMEntry[]; reasoning: ReasoningStep[] } {
+  const r = (dims.radius || (dims.diameter ? dims.diameter / 2 : 25)) * MM;
+  const mat = detectMaterial(prompt);
+
+  const reasoning: ReasoningStep[] = [
+    { step: 1, action: "Identify object", detail: `Sphere`, status: "done" },
+    { step: 2, action: "Parse dimensions", detail: `Radius ${(r / MM).toFixed(0)}mm`, status: "done" },
+    { step: 3, action: "Generate geometry", detail: "Single sphere primitive", status: "done" },
+  ];
+
+  const parts: AssemblyPart[] = [
+    makePart({
+      type: "sphere", name: "Sphere",
+      position: [0, r, 0],
+      dimensions: { width: r, height: r, depth: r },
+      material: mat.name, color: mat.color, metalness: mat.metalness, roughness: mat.roughness,
+    }),
+  ];
+  const bom: BOMEntry[] = [
+    { partName: "Sphere", quantity: 1, material: mat.name, dimensions: `R${(r / MM).toFixed(0)}mm`, color: mat.color },
+  ];
+
+  return { parts, bom, reasoning };
+}
+
+function buildCylinderPart(dims: ParsedDims, prompt: string): { parts: AssemblyPart[]; bom: BOMEntry[]; reasoning: ReasoningStep[] } {
+  const dia = (dims.diameter || dims.width || 20) * MM;
+  const h = (dims.height || dims.length || dia * 2 / MM) * MM;
+  const mat = detectMaterial(prompt);
+
+  const reasoning: ReasoningStep[] = [
+    { step: 1, action: "Identify object", detail: `Cylinder / Rod / Shaft`, status: "done" },
+    { step: 2, action: "Parse dimensions", detail: `Diameter ${(dia / MM).toFixed(0)}mm, height ${(h / MM).toFixed(0)}mm`, status: "done" },
+    { step: 3, action: "Generate geometry", detail: "Single cylinder primitive", status: "done" },
+  ];
+
+  const parts: AssemblyPart[] = [
+    makePart({
+      type: "cylinder", name: prompt.slice(0, 40),
+      position: [0, h / 2, 0],
+      dimensions: { width: dia / 2, height: h, depth: dia / 2 },
+      material: mat.name, color: mat.color, metalness: mat.metalness, roughness: mat.roughness,
+    }),
+  ];
+  const bom: BOMEntry[] = [
+    { partName: prompt.slice(0, 40), quantity: 1, material: mat.name, dimensions: `D${(dia / MM).toFixed(0)}mm x H${(h / MM).toFixed(0)}mm`, color: mat.color },
+  ];
+
+  return { parts, bom, reasoning };
+}
+
+function buildBoxPart(dims: ParsedDims, prompt: string): { parts: AssemblyPart[]; bom: BOMEntry[]; reasoning: ReasoningStep[] } {
+  const w = (dims.length || dims.width || 50) * MM;
+  const h = (dims.height || 50) * MM;
+  const d = (dims.width || dims.length || 50) * MM;
+  const mat = detectMaterial(prompt);
+
+  const reasoning: ReasoningStep[] = [
+    { step: 1, action: "Identify object", detail: `Box / Cube / Block`, status: "done" },
+    { step: 2, action: "Parse dimensions", detail: `${(w / MM).toFixed(0)}x${(h / MM).toFixed(0)}x${(d / MM).toFixed(0)}mm`, status: "done" },
+    { step: 3, action: "Generate geometry", detail: "Single box primitive", status: "done" },
+  ];
+
+  const parts: AssemblyPart[] = [
+    makePart({
+      type: "box", name: prompt.slice(0, 40),
+      position: [0, h / 2, 0],
+      dimensions: { width: w, height: h, depth: d },
+      material: mat.name, color: mat.color, metalness: mat.metalness, roughness: mat.roughness,
+    }),
+  ];
+  const bom: BOMEntry[] = [
+    { partName: prompt.slice(0, 40), quantity: 1, material: mat.name, dimensions: `${(w / MM).toFixed(0)}x${(h / MM).toFixed(0)}x${(d / MM).toFixed(0)}mm`, color: mat.color },
+  ];
+
+  return { parts, bom, reasoning };
+}
+
 function buildGenericPart(dims: ParsedDims, prompt: string): { parts: AssemblyPart[]; bom: BOMEntry[]; reasoning: ReasoningStep[] } {
   const mat = detectMaterial(prompt);
   const t = prompt.toLowerCase();
@@ -802,6 +1120,32 @@ export function runReasoningEngine(prompt: string): ReasoningResult {
     case "electronics_enclosure":
     case "pcb_enclosure":
       result = buildElectronicsEnclosure(dims, prompt);
+      break;
+    case "dumbbell":
+      result = buildDumbbell(dims, prompt);
+      break;
+    case "gear":
+      result = buildGear(dims, prompt);
+      break;
+    case "pipe_tube":
+    case "pipe_fitting":
+    case "pipe_flange":
+      result = buildPipeTube(dims, prompt);
+      break;
+    case "plate_with_holes":
+      result = buildPlateWithHoles(dims, prompt);
+      break;
+    case "cone_part":
+      result = buildConePart(dims, prompt);
+      break;
+    case "sphere_part":
+      result = buildSpherePart(dims, prompt);
+      break;
+    case "cylinder_part":
+      result = buildCylinderPart(dims, prompt);
+      break;
+    case "box_part":
+      result = buildBoxPart(dims, prompt);
       break;
     default:
       result = buildGenericPart(dims, prompt);

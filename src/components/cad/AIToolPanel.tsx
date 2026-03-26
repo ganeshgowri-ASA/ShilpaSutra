@@ -4,7 +4,7 @@ import { useCadStore } from "@/stores/cad-store";
 import {
   X, Loader2, Send, MessageSquare, Wand2, Zap, HelpCircle,
   ChevronDown, ChevronRight, Package, CheckCircle2, Circle,
-  History, Trash2,
+  History, Trash2, Minus, Maximize2,
 } from "lucide-react";
 
 // ── Prompt History Persistence ──────────────────────────────────────────
@@ -140,6 +140,32 @@ interface AIToolPanelProps {
   onClose: () => void;
 }
 
+// Conversation memory persistence
+const CONVERSATION_KEY = "shilpasutra_conversation";
+
+interface ConversationEntry {
+  role: "user" | "assistant";
+  content: string;
+  timestamp: number;
+}
+
+function loadConversation(): ConversationEntry[] {
+  if (typeof window === "undefined") return [];
+  try {
+    return JSON.parse(localStorage.getItem(CONVERSATION_KEY) || "[]");
+  } catch {
+    return [];
+  }
+}
+
+function saveConversationEntry(entry: Omit<ConversationEntry, "timestamp">) {
+  const conv = loadConversation();
+  conv.push({ ...entry, timestamp: Date.now() });
+  // Keep last 100 messages
+  if (conv.length > 100) conv.splice(0, conv.length - 100);
+  localStorage.setItem(CONVERSATION_KEY, JSON.stringify(conv));
+}
+
 export default function AIToolPanel({ toolType, onClose }: AIToolPanelProps) {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -150,6 +176,8 @@ export default function AIToolPanel({ toolType, onClose }: AIToolPanelProps) {
   const [showReasoning, setShowReasoning] = useState(true);
   const [showHistory, setShowHistory] = useState(false);
   const [history, setHistory] = useState<PromptHistoryEntry[]>([]);
+  const [minimized, setMinimized] = useState(false);
+  const [conversation, setConversation] = useState<ConversationEntry[]>([]);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const refreshHistory = useCallback(() => {
@@ -170,14 +198,25 @@ export default function AIToolPanel({ toolType, onClose }: AIToolPanelProps) {
 
   useEffect(() => {
     inputRef.current?.focus();
+    setConversation(loadConversation());
   }, []);
 
   const handleSubmit = async () => {
     if (!input.trim() || isLoading) return;
+    const userPrompt = input.trim();
     setIsLoading(true);
     setResult(null);
     setError(null);
     setAssemblyData(null);
+
+    // Save user prompt to conversation memory
+    saveConversationEntry({ role: "user", content: userPrompt });
+
+    const setResultWithMemory = (msg: string) => {
+      setResult(msg);
+      saveConversationEntry({ role: "assistant", content: msg });
+      setConversation(loadConversation());
+    };
 
     try {
       const res = await fetch("/api/ai/generate", {
@@ -210,9 +249,26 @@ export default function AIToolPanel({ toolType, onClose }: AIToolPanelProps) {
           addGeneratedObject(part);
         }
         const msg = `Assembly: ${data.object?.name || "Generated"}  |  ${data.assemblyParts.length} parts created. ${data.message || ""}`;
-        setResult(msg);
+        setResultWithMemory(msg);
         setShowReasoning(true);
         setShowBOM(true);
+        savePromptToHistory({ prompt: input, tool: toolType, result: msg });
+        refreshHistory();
+      } else if (data.assemblyParts && data.assemblyParts.length > 0) {
+        // Single or multi-part from reasoning engine (isAssembly=false)
+        for (const part of data.assemblyParts) {
+          addGeneratedObject(part);
+        }
+        const msg = `Created "${data.object?.name || "Part"}" (${data.assemblyParts.length} part${data.assemblyParts.length > 1 ? "s" : ""}). ${data.message || ""}`;
+        setResultWithMemory(msg);
+        if (data.reasoning) {
+          setAssemblyData(data as AssemblyResponse);
+          setShowReasoning(true);
+        }
+        if (data.bom) {
+          setAssemblyData((prev) => ({ ...prev, bom: data.bom } as AssemblyResponse));
+          setShowBOM(true);
+        }
         savePromptToHistory({ prompt: input, tool: toolType, result: msg });
         refreshHistory();
       } else {
@@ -226,7 +282,7 @@ export default function AIToolPanel({ toolType, onClose }: AIToolPanelProps) {
         } else if (data.response) {
           msg = data.response;
         }
-        setResult(msg);
+        setResultWithMemory(msg);
         savePromptToHistory({ prompt: input, tool: toolType, result: msg });
         refreshHistory();
       }
@@ -295,6 +351,43 @@ export default function AIToolPanel({ toolType, onClose }: AIToolPanelProps) {
 
   const needsSelection = toolType !== "ai_text_to_cad" && !selectedObj;
 
+  // Minimized bar view
+  if (minimized) {
+    return (
+      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 animate-scale-in">
+        <div
+          className={`bg-[#0d1117]/95 backdrop-blur-xl border ${colors.border} rounded-lg shadow-lg shadow-black/30 px-4 py-2 flex items-center gap-3 cursor-pointer hover:bg-[#161b22] transition-colors`}
+          onClick={() => setMinimized(false)}
+        >
+          <span className={colors.text}>{config.icon}</span>
+          <span className="text-[11px] font-bold text-white">{config.title}</span>
+          {result && (
+            <span className="text-[9px] text-slate-500 truncate max-w-[200px]">{result.slice(0, 60)}...</span>
+          )}
+          {conversation.length > 0 && (
+            <span className="text-[8px] text-slate-600 bg-[#21262d] rounded-full px-1.5 py-0.5 font-mono">
+              {conversation.filter(c => c.role === "user").length} prompts
+            </span>
+          )}
+          <button
+            onClick={(e) => { e.stopPropagation(); setMinimized(false); }}
+            className="w-5 h-5 rounded-md flex items-center justify-center text-slate-400 hover:text-white hover:bg-[#21262d] transition-colors"
+            title="Expand"
+          >
+            <Maximize2 size={12} />
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onClose(); }}
+            className="w-5 h-5 rounded-md flex items-center justify-center text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+            title="Close completely"
+          >
+            <X size={12} />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`absolute top-3 left-1/2 -translate-x-1/2 z-20 animate-scale-in ${assemblyData ? "w-[520px]" : "w-[420px]"} max-h-[80vh] overflow-y-auto`}>
       <div className={`bg-[#0d1117]/95 backdrop-blur-xl border ${colors.border} rounded-xl shadow-2xl shadow-black/40 overflow-hidden`}>
@@ -309,12 +402,22 @@ export default function AIToolPanel({ toolType, onClose }: AIToolPanelProps) {
               </span>
             )}
           </div>
-          <button
-            onClick={onClose}
-            className="w-6 h-6 rounded-md flex items-center justify-center text-slate-500 hover:text-white hover:bg-[#21262d] transition-colors"
-          >
-            <X size={14} />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setMinimized(true)}
+              className="w-6 h-6 rounded-md flex items-center justify-center text-slate-500 hover:text-white hover:bg-[#21262d] transition-colors"
+              title="Minimize"
+            >
+              <Minus size={14} />
+            </button>
+            <button
+              onClick={() => setMinimized(true)}
+              className="w-6 h-6 rounded-md flex items-center justify-center text-slate-500 hover:text-white hover:bg-[#21262d] transition-colors"
+              title="Minimize (press again to close)"
+            >
+              <X size={14} />
+            </button>
+          </div>
         </div>
 
         {/* Description */}
@@ -341,7 +444,7 @@ export default function AIToolPanel({ toolType, onClose }: AIToolPanelProps) {
                   e.preventDefault();
                   handleSubmit();
                 }
-                if (e.key === "Escape") onClose();
+                if (e.key === "Escape") setMinimized(true);
               }}
               placeholder={config.placeholder}
               rows={2}

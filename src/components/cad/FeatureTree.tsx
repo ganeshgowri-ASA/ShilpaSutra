@@ -374,14 +374,18 @@ export default function FeatureTree() {
 
   if (featureTreeCollapsed) {
     return (
-      <div className="w-10 bg-[#161b22] border-r border-[#21262d] flex flex-col items-center pt-2 shrink-0">
+      <div className="w-10 bg-[#161b22] border-r border-[#21262d] flex flex-col items-center pt-2 gap-2 shrink-0">
         <button
           onClick={() => setFeatureTreeCollapsed(false)}
-          className="w-8 h-8 rounded-md flex items-center justify-center text-slate-500 hover:text-white hover:bg-[#21262d] transition-all duration-150"
-          title="Expand Feature Tree"
+          className="w-8 h-8 rounded-md flex items-center justify-center text-[#00D4FF] hover:text-white hover:bg-[#00D4FF]/20 bg-[#21262d] transition-all duration-150 shadow-sm"
+          title="Expand Feature Tree (click to show)"
         >
           <PanelLeft size={16} />
         </button>
+        <div className="w-6 h-px bg-[#21262d]" />
+        <span className="text-[7px] text-slate-600 font-bold tracking-widest uppercase" style={{ writingMode: "vertical-rl" }}>
+          Tree
+        </span>
       </div>
     );
   }
@@ -396,7 +400,8 @@ export default function FeatureTree() {
         </div>
         <button
           onClick={() => setFeatureTreeCollapsed(true)}
-          className="w-6 h-6 rounded-md flex items-center justify-center text-slate-500 hover:text-white hover:bg-[#21262d] transition-all duration-150"
+          className="w-6 h-6 rounded-md flex items-center justify-center text-slate-400 hover:text-white hover:bg-[#21262d] transition-all duration-150"
+          title="Collapse Feature Tree"
         >
           <PanelLeftClose size={14} />
         </button>

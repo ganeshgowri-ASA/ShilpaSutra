@@ -658,12 +658,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // ── Reasoning Engine: try multi-part assembly generation first ──
+    // ── Reasoning Engine: handles both multi-part assemblies and single parts ──
     try {
       const reasoningResult = runReasoningEngine(activePrompt);
-      if (reasoningResult.parts.length > 1) {
-        // Multi-part assembly detected
+      if (reasoningResult.parts.length >= 1) {
         const primaryPart = reasoningResult.parts[0];
+        const isAssembly = reasoningResult.parts.length > 1;
         const response: GenerateResponse = {
           success: true,
           object: {
@@ -679,7 +679,7 @@ export async function POST(request: NextRequest) {
           reasoning: reasoningResult.reasoning,
           assemblyParts: reasoningResult.parts,
           bom: reasoningResult.bom,
-          isAssembly: true,
+          isAssembly,
         };
         return NextResponse.json(response);
       }
