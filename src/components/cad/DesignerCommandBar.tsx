@@ -32,19 +32,18 @@ interface SuggestionItem {
   description?: string;
 }
 
-// Process natural language AI commands
-function processAICommand(
+// Process natural language AI commands (sync ops like fillet/chamfer/mirror)
+function processAICommandSync(
   input: string,
   selectedObj: { name: string; type: string; dimensions: { width: number; height: number; depth: number }; material?: string } | null,
   objectCount: number,
   actions: {
-    addGeneratedObject: (obj: Record<string, unknown>) => string;
     aiFilletSelected: (r: number) => boolean;
     aiChamferSelected: (d: number) => boolean;
     aiShell: (t: number) => boolean;
     aiMirror: (p: "xy" | "xz" | "yz") => string[];
   }
-): { success: boolean; message: string } {
+): { success: boolean; message: string } | null {
   const lower = input.toLowerCase().trim();
 
   // Fillet
@@ -82,23 +81,6 @@ function processAICommand(
       ? { success: true, message: `Mirrored ${ids.length} object(s) about ${plane.toUpperCase()} plane.` }
       : { success: false, message: "No objects to mirror." };
   }
-  // Create objects
-  if (lower.match(/^(make|create|add|generate|design|place)\s/)) {
-    let type: "box" | "cylinder" | "sphere" | "cone" = "box";
-    let name = "Generated Part";
-    const dims = { width: 2, height: 2, depth: 2 };
-    if (lower.includes("cylinder") || lower.includes("tube")) { type = "cylinder"; name = "Cylinder"; }
-    else if (lower.includes("sphere") || lower.includes("ball")) { type = "sphere"; name = "Sphere"; }
-    else if (lower.includes("cone")) { type = "cone"; name = "Cone"; }
-    else if (lower.includes("box") || lower.includes("cube") || lower.includes("block")) { type = "box"; name = "Box"; }
-    else if (lower.includes("gear")) { type = "cylinder"; name = "Gear"; }
-    else if (lower.includes("bracket")) { type = "box"; name = "Bracket"; }
-    // Parse dimensions like "50x30x20"
-    const dm = lower.match(/(\d+)\s*[x×]\s*(\d+)\s*[x×]\s*(\d+)/);
-    if (dm) { dims.width = parseInt(dm[1])/10; dims.height = parseInt(dm[2])/10; dims.depth = parseInt(dm[3])/10; }
-    actions.addGeneratedObject({ type, name, dimensions: dims, position: [0, dims.height/2, 0] });
-    return { success: true, message: `Created "${name}" (${dims.width*10}×${dims.height*10}×${dims.depth*10}mm) in viewport.` };
-  }
   // Optimize / explain / help
   if (lower.includes("optimize")) {
     return { success: true, message: selectedObj
@@ -114,7 +96,20 @@ function processAICommand(
     return { success: true, message: `Scene contains ${objectCount} object(s).${selectedObj ? ` Selected: "${selectedObj.name}".` : ""}` };
   }
 
-  return { success: false, message: `Unknown command: "${input}". Try "make a box 50x30x20" or "fillet 3mm".` };
+  return null; // Not handled by sync commands
+}
+
+// Check if input is a create/generate command that should go through the reasoning engine API
+function isCreateCommand(input: string): boolean {
+  const lower = input.toLowerCase().trim();
+  return /^(make|create|add|generate|design|place)\s/.test(lower) ||
+         lower.includes("pv module") || lower.includes("solar panel") ||
+         lower.includes("dumbbell") || lower.includes("barbell") ||
+         lower.includes("gear") || lower.includes("bracket") ||
+         lower.includes("pipe") || lower.includes("tube") ||
+         lower.includes("plate") || lower.includes("flange") ||
+         lower.includes("heat sink") || lower.includes("heatsink") ||
+         lower.includes("enclosure") || lower.includes("bolt");
 }
 
 export default function DesignerCommandBar() {
@@ -186,35 +181,73 @@ export default function DesignerCommandBar() {
   const suggestions = getSuggestions(input);
 
   const handleSubmit = useCallback(
-    (e: React.FormEvent) => {
+    async (e: React.FormEvent) => {
       e.preventDefault();
       if (!input.trim()) return;
       const cmd = input.trim();
       const upper = cmd.toUpperCase().split(/\s+/)[0];
       const isStandardCmd = COMMANDS.includes(upper);
 
-      if (isStandardCmd) {
-        executeCommand(cmd);
-        setCommandResponse({ success: true, message: `Executed: ${upper}` });
-      } else {
-        // Process as AI natural language command
-        const result = processAICommand(cmd, selectedObj, objects.length, {
-          addGeneratedObject: addGeneratedObject as (obj: Record<string, unknown>) => string,
-          aiFilletSelected,
-          aiChamferSelected,
-          aiShell,
-          aiMirror,
-        });
-        if (!result.success) {
-          // Still try standard command execution as fallback
-          executeCommand(cmd);
-        }
-        setCommandResponse(result);
-      }
       setInput("");
       setHistoryIndex(-1);
       setShowSuggestions(false);
       setSelectedSuggestionIndex(0);
+
+      if (isStandardCmd) {
+        executeCommand(cmd);
+        setCommandResponse({ success: true, message: `Executed: ${upper}` });
+        return;
+      }
+
+      // Try sync commands first (fillet, chamfer, shell, mirror, etc.)
+      const syncResult = processAICommandSync(cmd, selectedObj, objects.length, {
+        aiFilletSelected,
+        aiChamferSelected,
+        aiShell,
+        aiMirror,
+      });
+      if (syncResult) {
+        if (!syncResult.success) executeCommand(cmd);
+        setCommandResponse(syncResult);
+        return;
+      }
+
+      // For create/generate commands → call reasoning engine API
+      if (isCreateCommand(cmd)) {
+        setCommandResponse({ success: true, message: "Generating geometry..." });
+        try {
+          const res = await fetch("/api/ai/generate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ prompt: cmd }),
+          });
+          const data = await res.json();
+          if (data.assemblyParts && data.assemblyParts.length > 0) {
+            for (const part of data.assemblyParts) {
+              addGeneratedObject(part);
+            }
+            setCommandResponse({
+              success: true,
+              message: `Created "${data.object?.name || "Part"}" (${data.assemblyParts.length} part${data.assemblyParts.length > 1 ? "s" : ""}). ${data.message || ""}`,
+            });
+          } else if (data.object) {
+            addGeneratedObject(data.object);
+            setCommandResponse({
+              success: true,
+              message: `Created "${data.object.name}". ${data.message || ""}`,
+            });
+          } else {
+            setCommandResponse({ success: false, message: data.error || "Failed to generate." });
+          }
+        } catch {
+          setCommandResponse({ success: false, message: "API call failed. Check your connection." });
+        }
+        return;
+      }
+
+      // Fallback
+      executeCommand(cmd);
+      setCommandResponse({ success: false, message: `Unknown command: "${cmd}". Try "create a PV module" or "fillet 3mm".` });
     },
     [input, executeCommand, selectedObj, objects.length, addGeneratedObject, aiFilletSelected, aiChamferSelected, aiShell, aiMirror]
   );

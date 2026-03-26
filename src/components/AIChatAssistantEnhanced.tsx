@@ -633,7 +633,7 @@ I'm context-aware and know what's in your scene. Try asking "what's in the scene
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const sendMessage = useCallback(() => {
+  const sendMessage = useCallback(async () => {
     if (!input.trim() || isProcessing) return;
     const userMsg: Message = {
       id: Date.now().toString(),
@@ -659,7 +659,63 @@ I'm context-aware and know what's in your scene. Try asking "what's in the scene
       },
     ]);
 
-    // Simulate thinking delay for UX
+    // Check if this is a create/generate command that should use the reasoning engine API
+    const isCreateCmd = /^(make|create|add|generate|design|place)\s/i.test(prompt.toLowerCase().trim()) ||
+      /(?:pv module|solar panel|dumbbell|barbell|gear.*teeth|\d+\s*teeth|bracket|pipe|tube|plate|flange|heat\s*sink|heatsink|enclosure|bolt)/i.test(prompt.toLowerCase());
+
+    if (isCreateCmd) {
+      // Route through reasoning engine API for multi-part geometry
+      try {
+        const res = await fetch("/api/ai/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt }),
+        });
+        const data = await res.json();
+        let msg = "Failed to generate geometry.";
+        const steps: string[] = [];
+        let objId: string | undefined;
+
+        if (data.reasoning) {
+          for (const step of data.reasoning) {
+            steps.push(`${step.action}: ${step.detail}`);
+          }
+        }
+
+        if (data.assemblyParts && data.assemblyParts.length > 0) {
+          for (const part of data.assemblyParts) {
+            const id = addGeneratedObject(part);
+            if (!objId) objId = id;
+          }
+          msg = `Created "${data.object?.name || "Part"}" with ${data.assemblyParts.length} part${data.assemblyParts.length > 1 ? "s" : ""}. ${data.message || ""}`;
+        } else if (data.object) {
+          objId = addGeneratedObject(data.object);
+          msg = `Created "${data.object.name}". ${data.message || ""}`;
+        } else if (data.error) {
+          msg = data.error;
+        }
+
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === processingId
+              ? { ...m, content: msg, generating: false, objectId: objId, thinkingSteps: steps, commandType: "create" }
+              : m
+          )
+        );
+      } catch {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === processingId
+              ? { ...m, content: "API call failed. Falling back to local generation.", generating: false, commandType: "create" }
+              : m
+          )
+        );
+      }
+      setIsProcessing(false);
+      return;
+    }
+
+    // For non-create commands, use local interpreter
     setTimeout(() => {
       const result = interpretCommand(prompt, objects, selectedId, {
         addObject,

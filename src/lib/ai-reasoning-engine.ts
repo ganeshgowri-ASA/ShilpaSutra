@@ -71,6 +71,31 @@ export function parseDimensionsAdvanced(prompt: string): ParsedDims {
   const t = prompt.toLowerCase();
   const dims: ParsedDims = {};
 
+  // ── Unit conversion helper: convert value+unit to mm ──
+  function toMM(value: number, unit: string): number {
+    if (unit === "m" || unit === "meter" || unit === "meters" || unit === "metre" || unit === "metres") return value * 1000;
+    if (unit === "cm" || unit === "centimeter" || unit === "centimeters") return value * 10;
+    if (unit === "in" || unit === "inch" || unit === "inches") return value * 25.4;
+    return value; // mm or no unit
+  }
+
+  // Generic "Nmm" / "Ncm" / "Nm" value extractor
+  function parseWithUnit(match: RegExpMatchArray | null): number | null {
+    if (!match) return null;
+    const val = parseFloat(match[1]);
+    const unit = (match[2] || "mm").replace(/\s/g, "");
+    return toMM(val, unit);
+  }
+
+  // "2m x 1m x 35mm" - mixed unit triple
+  const mixedTriple = t.match(/(\d+(?:\.\d+)?)\s*(m|meter|meters|metre|metres|cm|mm|in|inch)\s*x\s*(\d+(?:\.\d+)?)\s*(m|meter|meters|metre|metres|cm|mm|in|inch)\s*x\s*(\d+(?:\.\d+)?)\s*(m|meter|meters|metre|metres|cm|mm|in|inch)/);
+  if (mixedTriple) {
+    dims.length = toMM(parseFloat(mixedTriple[1]), mixedTriple[2]);
+    dims.width = toMM(parseFloat(mixedTriple[3]), mixedTriple[4]);
+    dims.height = toMM(parseFloat(mixedTriple[5]), mixedTriple[6]);
+    return enrichDims(t, dims);
+  }
+
   // "2m x 1m x 35mm" or "2000mm x 1000mm x 35mm"
   const meterPattern = t.match(/(\d+(?:\.\d+)?)\s*m\s*x\s*(\d+(?:\.\d+)?)\s*m\s*x\s*(\d+(?:\.\d+)?)\s*mm/);
   if (meterPattern) {
@@ -89,16 +114,17 @@ export function parseDimensionsAdvanced(prompt: string): ParsedDims {
     return enrichDims(t, dims);
   }
 
-  // "200x150x60mm"
-  const mmTriple = t.match(/(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)\s*mm/);
+  // "200x150x60mm" or "200x150x60cm"
+  const mmTriple = t.match(/(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)\s*(mm|cm|m(?!m))/);
   if (mmTriple) {
-    dims.length = parseFloat(mmTriple[1]);
-    dims.width = parseFloat(mmTriple[2]);
-    dims.height = parseFloat(mmTriple[3]);
+    const unit = mmTriple[4];
+    dims.length = toMM(parseFloat(mmTriple[1]), unit);
+    dims.width = toMM(parseFloat(mmTriple[2]), unit);
+    dims.height = toMM(parseFloat(mmTriple[3]), unit);
     return enrichDims(t, dims);
   }
 
-  // "100x80x3mm"
+  // "100x80x3" (no unit, assume mm)
   const triple = t.match(/(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)/);
   if (triple) {
     dims.length = parseFloat(triple[1]);
@@ -107,32 +133,40 @@ export function parseDimensionsAdvanced(prompt: string): ParsedDims {
     return enrichDims(t, dims);
   }
 
-  // "50mm dia" or "50mm diameter"
-  const diaMatch = t.match(/(\d+(?:\.\d+)?)\s*mm\s*(?:dia(?:meter)?|d\b)/);
-  if (diaMatch) dims.diameter = parseFloat(diaMatch[1]);
+  // "50mm dia" or "50mm diameter" or "5cm dia"
+  const diaMatch = t.match(/(\d+(?:\.\d+)?)\s*(mm|cm|m(?!m|e)|meter|meters)\s*(?:dia(?:meter)?|d\b)/);
+  if (diaMatch) dims.diameter = parseWithUnit(diaMatch) ?? undefined;
 
-  // "dia 50mm" or "diameter 50mm"
-  const diaMatch2 = t.match(/(?:dia(?:meter)?|d)\s*(\d+(?:\.\d+)?)\s*(?:mm)?/);
-  if (!dims.diameter && diaMatch2) dims.diameter = parseFloat(diaMatch2[1]);
+  // "dia 50mm" or "diameter 50mm" or "diameter 5cm" or "sphere diameter 5mm"
+  const diaMatch2 = t.match(/(?:dia(?:meter)?)\s*(\d+(?:\.\d+)?)\s*(mm|cm|m(?!m|e)|meter|meters)?/);
+  if (!dims.diameter && diaMatch2) dims.diameter = parseWithUnit(diaMatch2) ?? undefined;
 
   // "M8" thread size
-  const threadMatch = t.match(/m(\d+(?:\.\d+)?)\b/);
-  if (threadMatch) {
+  const threadMatch = t.match(/\bm(\d+(?:\.\d+)?)\b/);
+  if (threadMatch && !t.includes("meter") && !t.includes("metre")) {
     dims.threadSize = parseFloat(threadMatch[1]);
     dims.diameter = dims.threadSize;
   }
 
-  // "40mm long" or "length 40mm"
-  const longMatch = t.match(/(\d+(?:\.\d+)?)\s*mm\s*long/) || t.match(/length\s*(\d+(?:\.\d+)?)\s*(?:mm)?/);
-  if (longMatch) dims.length = parseFloat(longMatch[1]);
+  // "40mm long" or "length 40mm" or "length 2m" or "length 2 meter" or "length 10cm"
+  const longMatch = t.match(/(\d+(?:\.\d+)?)\s*(mm|cm|m(?!m|e)|meter|meters|metre|metres)\s*long/) ||
+                    t.match(/length\s*(\d+(?:\.\d+)?)\s*(mm|cm|m(?!m|e)|meter|meters|metre|metres)?/);
+  if (longMatch) dims.length = parseWithUnit(longMatch) ?? undefined;
 
-  // "30mm tall" or "height 30mm"
-  const tallMatch = t.match(/(\d+(?:\.\d+)?)\s*mm\s*tall/) || t.match(/height\s*(\d+(?:\.\d+)?)\s*(?:mm)?/);
-  if (tallMatch) dims.height = parseFloat(tallMatch[1]);
+  // "30mm tall" or "height 30mm" or "height 2m"
+  const tallMatch = t.match(/(\d+(?:\.\d+)?)\s*(mm|cm|m(?!m|e)|meter|meters|metre|metres)\s*tall/) ||
+                    t.match(/height\s*(\d+(?:\.\d+)?)\s*(mm|cm|m(?!m|e)|meter|meters|metre|metres)?/);
+  if (tallMatch) dims.height = parseWithUnit(tallMatch) ?? undefined;
 
-  // "3mm thick" or "thickness 3mm"
-  const thickMatch = t.match(/(\d+(?:\.\d+)?)\s*mm\s*thick/) || t.match(/thick(?:ness)?\s*(\d+(?:\.\d+)?)\s*(?:mm)?/);
-  if (thickMatch) dims.thickness = parseFloat(thickMatch[1]);
+  // "width 1m" or "width 100mm" or "1m wide" or "100mm wide"
+  const wideMatch = t.match(/(\d+(?:\.\d+)?)\s*(mm|cm|m(?!m|e)|meter|meters|metre|metres)\s*wide/) ||
+                    t.match(/width\s*(\d+(?:\.\d+)?)\s*(mm|cm|m(?!m|e)|meter|meters|metre|metres)?/);
+  if (wideMatch) dims.width = parseWithUnit(wideMatch) ?? undefined;
+
+  // "3mm thick" or "thickness 3mm" or "35mm thick"
+  const thickMatch = t.match(/(\d+(?:\.\d+)?)\s*(mm|cm|m(?!m|e)|meter|meters)\s*thick/) ||
+                     t.match(/thick(?:ness)?\s*(\d+(?:\.\d+)?)\s*(mm|cm|m(?!m|e)|meter|meters)?/);
+  if (thickMatch) dims.thickness = parseWithUnit(thickMatch) ?? undefined;
 
   // "wall 2mm"
   const wallMatch = t.match(/wall\s*(?:thickness)?\s*(\d+(?:\.\d+)?)\s*(?:mm)?/);
