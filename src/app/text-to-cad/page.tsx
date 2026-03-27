@@ -6,6 +6,20 @@ import {
   CheckCircle2, Circle, Package, ChevronDown, ChevronRight,
   Loader2, Brain,
 } from "lucide-react";
+import {
+  type ThinkingMode,
+  type ComplexityResult,
+  THINKING_MODES,
+  parsePromptComplexity,
+} from "@/lib/thinking-engine";
+import {
+  ThinkingModeSelector,
+  CreditEstimate,
+  AutoRecommendation,
+  StandardsBadges,
+} from "@/components/ai/ThinkingModeSelector";
+import { AttachmentUpload, type AttachedFile } from "@/components/ai/AttachmentUpload";
+import { ClarifyingQuestions, ParameterSummary } from "@/components/ai/ClarifyingQuestions";
 
 // --- Types ---
 interface ReasoningStep {
@@ -36,6 +50,12 @@ interface AssemblyPart {
   roughness?: number;
 }
 
+interface QuestionAnswer {
+  questionId: string;
+  paramName: string;
+  value: string;
+}
+
 interface Generation {
   id: string;
   prompt: string;
@@ -48,6 +68,7 @@ interface Generation {
   isAssembly?: boolean;
   objectType?: string;
   summary?: string;
+  thinkingMode?: ThinkingMode;
 }
 
 // --- 3D Assembly Preview ---
@@ -90,7 +111,6 @@ function PartMesh({ part }: { part: AssemblyPart }) {
       </mesh>
     );
   }
-  // box (default)
   return (
     <mesh position={pos} rotation={rot}>
       <boxGeometry args={[d.width, d.height, d.depth]} />
@@ -136,20 +156,58 @@ export default function TextToCADPage() {
   const [showBOM, setShowBOM] = useState(true);
   const [showReasoning, setShowReasoning] = useState(true);
 
+  // Thinking mode state
+  const [thinkingMode, setThinkingMode] = useState<ThinkingMode>("auto");
+  const [effectiveMode, setEffectiveMode] = useState<ThinkingMode>("auto");
+  const [complexity, setComplexity] = useState<ComplexityResult | null>(null);
+
+  // Attachment state
+  const [attachments, setAttachments] = useState<AttachedFile[]>([]);
+
+  // Clarifying questions state
+  const [showQuestions, setShowQuestions] = useState(false);
+  const [questionAnswers, setQuestionAnswers] = useState<QuestionAnswer[]>([]);
+  const [showParamSummary, setShowParamSummary] = useState(false);
+
+  // Compute complexity when prompt changes
+  const updateComplexity = useCallback((text: string) => {
+    if (text.trim().length > 5) {
+      setComplexity(parsePromptComplexity(text));
+    } else {
+      setComplexity(null);
+    }
+  }, []);
+
+  const resolveMode = useCallback((): ThinkingMode => {
+    if (thinkingMode !== "auto") return thinkingMode;
+    return complexity?.recommended || "normal";
+  }, [thinkingMode, complexity]);
+
   const generate = useCallback(async (p?: string) => {
     const text = (p ?? prompt).trim();
     if (!text) return;
+
+    const mode = resolveMode();
     const id = `g${Date.now()}`;
     const startTime = Date.now();
-    setGenerations(prev => [{ id, prompt: text, status: "generating", format }, ...prev]);
+    setGenerations(prev => [{ id, prompt: text, status: "generating", format, thinkingMode: mode }, ...prev]);
     setActiveId(id);
     if (!p) setPrompt("");
+    setShowQuestions(false);
+    setShowParamSummary(false);
+
+    // Build enhanced prompt with question answers
+    let enhancedPrompt = text;
+    if (questionAnswers.length > 0) {
+      const extras = questionAnswers.map((a) => `${a.paramName}: ${a.value}`).join(", ");
+      enhancedPrompt = `${text} [Parameters: ${extras}]`;
+    }
 
     try {
       const res = await fetch("/api/ai/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: text }),
+        body: JSON.stringify({ prompt: enhancedPrompt, thinkingMode: mode }),
       });
       const data = await res.json();
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -167,7 +225,6 @@ export default function TextToCADPage() {
           summary: data.message,
         } : g));
       } else {
-        // Single part - wrap in parts array for preview
         const obj = data.object;
         if (obj) {
           const singlePart: AssemblyPart = {
@@ -195,9 +252,40 @@ export default function TextToCADPage() {
     } catch {
       setGenerations(prev => prev.map(g => g.id === id ? { ...g, status: "error" } : g));
     }
-  }, [prompt, format]);
+    setQuestionAnswers([]);
+  }, [prompt, format, resolveMode, questionAnswers]);
+
+  // Handle generate with thinking mode flow
+  const handleGenerate = useCallback((p?: string) => {
+    const mode = resolveMode();
+    const text = (p ?? prompt).trim();
+    if (!text) return;
+
+    if (mode === "normal") {
+      generate(p);
+      return;
+    }
+
+    if (mode === "extended" && !showQuestions && questionAnswers.length === 0) {
+      setShowQuestions(true);
+      return;
+    }
+
+    if (mode === "deep" && !showQuestions && questionAnswers.length === 0) {
+      setShowQuestions(true);
+      return;
+    }
+
+    if (mode === "deep" && questionAnswers.length > 0 && !showParamSummary) {
+      setShowParamSummary(true);
+      return;
+    }
+
+    generate(p);
+  }, [prompt, resolveMode, showQuestions, questionAnswers, showParamSummary, generate]);
 
   const active = generations.find(g => g.id === activeId);
+  const modeConfig = THINKING_MODES[effectiveMode !== "auto" ? effectiveMode : resolveMode()];
 
   return (
     <div className="flex flex-col h-screen bg-[#0d1117] text-white overflow-hidden">
@@ -206,25 +294,99 @@ export default function TextToCADPage() {
         <Brain size={16} className="text-purple-400" />
         <span className="font-bold text-[#00D4FF]">Text to CAD</span>
         <span className="text-[10px] text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded-full">AI Reasoning Engine</span>
-        <select value={format} onChange={e => setFormat(e.target.value)}
-          className="ml-auto bg-[#0d1117] border border-[#21262d] rounded px-2 py-1 text-xs text-slate-300">
-          {FORMATS.map(f => <option key={f}>{f}</option>)}
-        </select>
+        <div className="ml-auto flex items-center gap-3">
+          <CreditEstimate mode={effectiveMode !== "auto" ? effectiveMode : resolveMode()} complexity={complexity} />
+          <select value={format} onChange={e => setFormat(e.target.value)}
+            className="bg-[#0d1117] border border-[#21262d] rounded px-2 py-1 text-xs text-slate-300">
+            {FORMATS.map(f => <option key={f}>{f}</option>)}
+          </select>
+        </div>
       </div>
 
       <div className="flex flex-1 overflow-hidden">
-        {/* LEFT - Input + Examples + Reasoning */}
+        {/* LEFT - Input + Thinking Mode + Questions + Reasoning */}
         <div className="w-80 bg-[#161b22] border-r border-[#21262d] flex flex-col shrink-0 overflow-y-auto">
           <div className="p-3 space-y-3">
-            <textarea value={prompt} onChange={e => setPrompt(e.target.value)}
-              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); generate(); } }}
+            {/* Thinking Mode Selector */}
+            <ThinkingModeSelector
+              value={thinkingMode}
+              onChange={(mode) => {
+                setThinkingMode(mode);
+                setEffectiveMode(mode);
+                setShowQuestions(false);
+                setShowParamSummary(false);
+                setQuestionAnswers([]);
+              }}
+            />
+
+            {/* Text Input */}
+            <textarea value={prompt} onChange={e => { setPrompt(e.target.value); updateComplexity(e.target.value); }}
+              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleGenerate(); } }}
               placeholder="e.g. Solar PV module 2m x 1m x 35mm aluminum frame bifacial"
               className="w-full h-24 bg-[#0d1117] rounded px-3 py-2 text-sm outline-none border border-[#21262d] focus:border-[#00D4FF] resize-none placeholder-slate-600" />
-            <button onClick={() => generate()}
+
+            {/* Attachment Upload */}
+            <AttachmentUpload
+              attachments={attachments}
+              onAttach={setAttachments}
+              onRemove={(id) => setAttachments((prev) => prev.filter((a) => a.id !== id))}
+            />
+
+            {/* Auto Mode Recommendation */}
+            <AutoRecommendation
+              prompt={prompt}
+              currentMode={thinkingMode}
+              onAccept={(mode) => { setEffectiveMode(mode); setThinkingMode(mode); }}
+              onOverride={() => setThinkingMode("normal")}
+            />
+
+            {/* Clarifying Questions (Extended/Deep) */}
+            {showQuestions && !showParamSummary && (
+              <ClarifyingQuestions
+                prompt={prompt}
+                thinkingMode={resolveMode()}
+                onAnswersReady={(answers) => {
+                  setQuestionAnswers(answers);
+                  setShowQuestions(false);
+                  if (resolveMode() === "deep") {
+                    setShowParamSummary(true);
+                  } else {
+                    generate();
+                  }
+                }}
+                onSkip={() => {
+                  setShowQuestions(false);
+                  generate();
+                }}
+              />
+            )}
+
+            {/* Parameter Summary (Deep mode) */}
+            {showParamSummary && (
+              <ParameterSummary
+                prompt={prompt}
+                answers={questionAnswers}
+                onApprove={() => {
+                  setShowParamSummary(false);
+                  generate();
+                }}
+                onEdit={() => {
+                  setShowParamSummary(false);
+                  setShowQuestions(true);
+                }}
+              />
+            )}
+
+            {/* Generate Button */}
+            <button onClick={() => handleGenerate()}
               disabled={!prompt.trim()}
-              className="w-full bg-[#00D4FF] hover:bg-[#00b8d9] disabled:opacity-40 text-black py-2 rounded text-xs font-bold transition-colors">
-              Generate Assembly
+              className="w-full hover:brightness-110 disabled:opacity-40 text-black py-2 rounded text-xs font-bold transition-all"
+              style={{ backgroundColor: modeConfig.color }}>
+              {showQuestions ? "Answer Questions First" : showParamSummary ? "Review Parameters" : "Generate Assembly"}
             </button>
+
+            {/* Standards Badges */}
+            <StandardsBadges prompt={active?.prompt || prompt} />
 
             {/* Reasoning Steps */}
             {active?.reasoning && active.reasoning.length > 0 && (
@@ -293,7 +455,7 @@ export default function TextToCADPage() {
             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Examples — click to generate</div>
             <div className="grid grid-cols-1 gap-1">
               {EXAMPLES.map(ex => (
-                <button key={ex.label} onClick={() => { setPrompt(ex.label); generate(ex.label); }}
+                <button key={ex.label} onClick={() => { setPrompt(ex.label); updateComplexity(ex.label); handleGenerate(ex.label); }}
                   className="text-left bg-[#0d1117] hover:bg-[#21262d] border border-[#21262d] rounded px-2.5 py-1.5 transition-colors group">
                   <span className="text-[10px] text-slate-300 group-hover:text-[#00D4FF]">{ex.label}</span>
                   <span className="ml-2 text-[9px] text-slate-600">{ex.cat}</span>
@@ -310,7 +472,11 @@ export default function TextToCADPage() {
               <div className="text-center">
                 <Loader2 size={48} className="text-purple-400 animate-spin mx-auto mb-3" />
                 <div className="text-purple-400 text-sm font-semibold">AI Reasoning Engine</div>
-                <div className="text-slate-500 text-xs mt-1">Decomposing into sub-parts...</div>
+                <div className="text-slate-500 text-xs mt-1">
+                  {active.thinkingMode === "deep" ? "Deep thinking — full reasoning chain..." :
+                   active.thinkingMode === "extended" ? "Extended analysis..." :
+                   "Decomposing into sub-parts..."}
+                </div>
               </div>
             </div>
           )}
@@ -328,6 +494,11 @@ export default function TextToCADPage() {
                 <div className="text-[#00D4FF] font-semibold truncate">{active.objectType || active.prompt}</div>
                 <div className="text-slate-500 mt-0.5">
                   {active.isAssembly ? `${active.parts.length} parts` : "1 part"} · {active.time} · {active.format}
+                  {active.thinkingMode && (
+                    <span className="ml-1" style={{ color: THINKING_MODES[active.thinkingMode].color }}>
+                      · {THINKING_MODES[active.thinkingMode].label}
+                    </span>
+                  )}
                 </div>
                 {active.summary && (
                   <div className="text-slate-400 mt-1 text-[10px] leading-relaxed">{active.summary}</div>
@@ -383,6 +554,11 @@ export default function TextToCADPage() {
                   {g.isAssembly && <span className="text-purple-400">{g.parts?.length} parts</span>}
                   <span className="text-slate-600">{g.format}</span>
                   {g.time && <span className="text-slate-600">{g.time}</span>}
+                  {g.thinkingMode && (
+                    <span className="text-[9px]" style={{ color: THINKING_MODES[g.thinkingMode].color }}>
+                      {THINKING_MODES[g.thinkingMode].label}
+                    </span>
+                  )}
                 </div>
               </div>
             ))}
