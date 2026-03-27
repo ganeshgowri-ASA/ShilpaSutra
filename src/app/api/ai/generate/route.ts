@@ -16,7 +16,7 @@ interface CADOperation {
 }
 
 interface GeneratedObject {
-  type: "box" | "cylinder" | "sphere" | "cone";
+  type: "box" | "cylinder" | "sphere" | "cone" | "mesh";
   name: string;
   dimensions: { width: number; height: number; depth: number };
   description: string;

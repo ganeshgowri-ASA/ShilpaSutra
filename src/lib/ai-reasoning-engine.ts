@@ -20,7 +20,7 @@ export interface BOMEntry {
 }
 
 export interface AssemblyPart {
-  type: "box" | "cylinder" | "sphere" | "cone";
+  type: "box" | "cylinder" | "sphere" | "cone" | "mesh";
   name: string;
   position: [number, number, number];
   rotation: [number, number, number];
@@ -33,6 +33,9 @@ export interface AssemblyPart {
   roughness: number;
   visible: boolean;
   locked: boolean;
+  meshVertices?: number[];
+  meshIndices?: number[];
+  constructionStepIndex?: number;
 }
 
 export interface ReasoningResult {
@@ -324,135 +327,70 @@ export function makePart(overrides: Partial<AssemblyPart> & { type: AssemblyPart
 
 function buildSolarPVModule(dims: ParsedDims, prompt: string): { parts: AssemblyPart[]; bom: BOMEntry[]; reasoning: ReasoningStep[] } {
   const t = prompt.toLowerCase();
-  const L = (dims.length || 2000) * MM;  // scene units
-  const W = (dims.width || 1000) * MM;
-  const H = (dims.thickness || dims.height || 35) * MM;
-  const frameT = H; // frame cross-section depth matches module thickness (e.g. 35mm)
-  const glassT = 3.2 * MM;
-  const cellT = 0.2 * MM;
-  const evaT = 0.5 * MM;
   const isBifacial = t.includes("bifacial") || t.includes("glass-to-glass") || t.includes("glass to glass");
-  const al = getMaterialByKey("aluminum");
-  const glass = getMaterialByKey("glass");
-  const si = getMaterialByKey("silicon");
-  const eva = getMaterialByKey("eva");
-  const jb = getMaterialByKey("junction_box");
+
+  // Use KCL engine for real geometry with C-channel profiles and proper Z-stacking
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { buildPVModuleForStore } = require("@/lib/kcl-engine") as typeof import("@/lib/kcl-engine");
+  const kclResult = buildPVModuleForStore({
+    length: dims.length || 2000,
+    width: dims.width || 1000,
+    thickness: dims.thickness || dims.height || 35,
+    isBifacial,
+  });
 
   const reasoning: ReasoningStep[] = [
     { step: 1, action: "Identify object", detail: `Solar PV Module (${isBifacial ? "bifacial glass-to-glass" : "monofacial"})`, status: "done" },
     { step: 2, action: "Parse dimensions", detail: `${(dims.length || 2000)}mm x ${(dims.width || 1000)}mm x ${(dims.thickness || dims.height || 35)}mm`, status: "done" },
-    { step: 3, action: "Detect materials", detail: "Aluminum frame, tempered glass, EVA, silicon cells", status: "done" },
-    { step: 4, action: "Decompose assembly", detail: `${isBifacial ? 10 : 9} sub-parts: 4 frame pieces, front glass, ${isBifacial ? "back glass" : "backsheet"}, EVA x2, cell array, junction box`, status: "done" },
-    { step: 5, action: "Generate geometry", detail: "Positioning all parts relative to frame origin", status: "done" },
+    { step: 3, action: "KCL Engine", detail: "C-channel frame profile (40×35mm Al), proper Z-stack laminate layers", status: "done" },
+    { step: 4, action: "Layer stack", detail: "Z=0: Back Glass 2.0mm → EVA 0.45mm → Cells 0.2mm → EVA 0.45mm → Front Glass 3.2mm", status: "done" },
+    { step: 5, action: "Standards", detail: kclResult.validationSummary, status: "done" },
+    { step: 6, action: "Generate geometry", detail: `${kclResult.parts.length} parts with real extruded profiles`, status: "done" },
   ];
 
-  const parts: AssemblyPart[] = [];
-  const bom: BOMEntry[] = [];
-  const yBase = H / 2;
-
-  // Frame - 4 pieces (top, bottom, left, right)
-  // Top frame rail
-  parts.push(makePart({
-    type: "box", name: "Frame - Top Rail",
-    position: [0, yBase, W / 2 - frameT / 2],
-    dimensions: { width: L, height: H, depth: frameT },
-    material: al.name, color: al.color, metalness: al.metalness, roughness: al.roughness,
-  }));
-  // Bottom frame rail
-  parts.push(makePart({
-    type: "box", name: "Frame - Bottom Rail",
-    position: [0, yBase, -W / 2 + frameT / 2],
-    dimensions: { width: L, height: H, depth: frameT },
-    material: al.name, color: al.color, metalness: al.metalness, roughness: al.roughness,
-  }));
-  // Left frame rail
-  parts.push(makePart({
-    type: "box", name: "Frame - Left Rail",
-    position: [-L / 2 + frameT / 2, yBase, 0],
-    dimensions: { width: frameT, height: H, depth: W - frameT * 2 },
-    material: al.name, color: al.color, metalness: al.metalness, roughness: al.roughness,
-  }));
-  // Right frame rail
-  parts.push(makePart({
-    type: "box", name: "Frame - Right Rail",
-    position: [L / 2 - frameT / 2, yBase, 0],
-    dimensions: { width: frameT, height: H, depth: W - frameT * 2 },
-    material: al.name, color: al.color, metalness: al.metalness, roughness: al.roughness,
-  }));
-  bom.push({ partName: "Aluminum Frame Rail", quantity: 4, material: al.name, dimensions: `${(dims.length || 2000)}x${(dims.thickness || dims.height || 35)}x${(dims.thickness || dims.height || 35)}mm`, color: al.color });
-
-  // Front Glass
-  const innerL = L - frameT * 2;
-  const innerW = W - frameT * 2;
-  const glassY = yBase + H / 2 - glassT / 2;
-  parts.push(makePart({
-    type: "box", name: "Front Glass",
-    position: [0, glassY, 0],
-    dimensions: { width: innerL, height: glassT, depth: innerW },
-    material: glass.name, color: "#B0E0FF", metalness: glass.metalness, roughness: glass.roughness, opacity: 0.4,
-  }));
-  bom.push({ partName: "Front Tempered Glass", quantity: 1, material: glass.name, dimensions: `${(innerL / MM).toFixed(0)}x${(innerW / MM).toFixed(0)}x3.2mm`, color: "#B0E0FF" });
-
-  // Front EVA
-  const frontEvaY = glassY - glassT / 2 - evaT / 2;
-  parts.push(makePart({
-    type: "box", name: "EVA Layer (Front)",
-    position: [0, frontEvaY, 0],
-    dimensions: { width: innerL, height: evaT, depth: innerW },
-    material: eva.name, color: eva.color, metalness: eva.metalness, roughness: eva.roughness, opacity: 0.5,
+  // Convert KCL parts to AssemblyPart format
+  const parts: AssemblyPart[] = kclResult.parts.map((p: {
+    type: string;
+    name: string;
+    position: [number, number, number];
+    rotation: [number, number, number];
+    scale: [number, number, number];
+    dimensions: { width: number; height: number; depth: number };
+    meshVertices: number[];
+    meshIndices: number[];
+    material: string;
+    color: string;
+    metalness: number;
+    roughness: number;
+    opacity: number;
+    constructionStepIndex?: number;
+  }) => ({
+    type: "mesh" as const,
+    name: p.name,
+    position: p.position,
+    rotation: p.rotation,
+    scale: p.scale,
+    dimensions: p.dimensions,
+    material: p.material,
+    color: p.color,
+    opacity: p.opacity,
+    metalness: p.metalness,
+    roughness: p.roughness,
+    visible: true,
+    locked: false,
+    meshVertices: p.meshVertices,
+    meshIndices: p.meshIndices,
+    constructionStepIndex: p.constructionStepIndex,
   }));
 
-  // Solar Cell Array
-  const cellY = frontEvaY - evaT / 2 - cellT / 2;
-  parts.push(makePart({
-    type: "box", name: "Solar Cell Array",
-    position: [0, cellY, 0],
-    dimensions: { width: innerL * 0.95, height: cellT, depth: innerW * 0.95 },
-    material: si.name, color: "#1a237e", metalness: si.metalness, roughness: si.roughness,
-  }));
-  bom.push({ partName: "Solar Cell Array (6x10)", quantity: 1, material: si.name, dimensions: `${((innerL * 0.95) / MM).toFixed(0)}x${((innerW * 0.95) / MM).toFixed(0)}x0.2mm`, color: "#1a237e" });
-
-  // Rear EVA
-  const rearEvaY = cellY - cellT / 2 - evaT / 2;
-  parts.push(makePart({
-    type: "box", name: "EVA Layer (Rear)",
-    position: [0, rearEvaY, 0],
-    dimensions: { width: innerL, height: evaT, depth: innerW },
-    material: eva.name, color: eva.color, metalness: eva.metalness, roughness: eva.roughness, opacity: 0.5,
-  }));
-  bom.push({ partName: "EVA Encapsulant Layer", quantity: 2, material: eva.name, dimensions: `${(innerL / MM).toFixed(0)}x${(innerW / MM).toFixed(0)}x0.5mm`, color: eva.color });
-
-  // Back Glass / Backsheet
-  const backY = yBase - H / 2 + glassT / 2;
-  if (isBifacial) {
-    parts.push(makePart({
-      type: "box", name: "Back Glass (Bifacial)",
-      position: [0, backY, 0],
-      dimensions: { width: innerL, height: glassT, depth: innerW },
-      material: glass.name, color: "#B0E0FF", metalness: glass.metalness, roughness: glass.roughness, opacity: 0.4,
-    }));
-    bom.push({ partName: "Back Tempered Glass", quantity: 1, material: glass.name, dimensions: `${(innerL / MM).toFixed(0)}x${(innerW / MM).toFixed(0)}x3.2mm`, color: "#B0E0FF" });
-  } else {
-    parts.push(makePart({
-      type: "box", name: "Backsheet (TPT)",
-      position: [0, backY, 0],
-      dimensions: { width: innerL, height: 0.3 * MM, depth: innerW },
-      material: "TPT Backsheet", color: "#FFFFFF", metalness: 0, roughness: 0.7,
-    }));
-    bom.push({ partName: "TPT Backsheet", quantity: 1, material: "TPT", dimensions: `${(innerL / MM).toFixed(0)}x${(innerW / MM).toFixed(0)}x0.3mm`, color: "#FFFFFF" });
-  }
-
-  // Junction Box
-  const jbW = 12 * MM;
-  const jbH = 3 * MM;
-  const jbD = 8 * MM;
-  parts.push(makePart({
-    type: "box", name: "Junction Box",
-    position: [0, yBase - H / 2 - jbH / 2, 0],
-    dimensions: { width: jbW, height: jbH, depth: jbD },
-    material: jb.name, color: jb.color, metalness: jb.metalness, roughness: jb.roughness,
-  }));
-  bom.push({ partName: "Junction Box", quantity: 1, material: jb.name, dimensions: "120x30x80mm", color: jb.color });
+  const bom: BOMEntry[] = [
+    { partName: "Aluminum C-Channel Frame Rail", quantity: 4, material: "Aluminum 6061-T6", dimensions: `${(dims.length || 2000)}×40×${(dims.thickness || 35)}mm`, color: "#C0C0C0" },
+    { partName: "Front Tempered Glass", quantity: 1, material: "Tempered Glass", dimensions: `${(dims.length || 2000) - 80}×${(dims.width || 1000) - 80}×3.2mm`, color: "#B0E0FF" },
+    { partName: isBifacial ? "Back Glass (Bifacial)" : "TPT Backsheet", quantity: 1, material: isBifacial ? "Tempered Glass" : "TPT", dimensions: `${(dims.length || 2000) - 80}×${(dims.width || 1000) - 80}×${isBifacial ? "2.0" : "0.3"}mm`, color: isBifacial ? "#D0EEFF" : "#FFFFFF" },
+    { partName: "EVA Encapsulant", quantity: 2, material: "EVA", dimensions: `${(dims.length || 2000) - 80}×${(dims.width || 1000) - 80}×0.45mm`, color: "#F5F5DC" },
+    { partName: "Solar Cell Array (6×10)", quantity: 1, material: "Monocrystalline Si", dimensions: `${(dims.length || 2000) - 100}×${(dims.width || 1000) - 100}×0.2mm`, color: "#1A1A3E" },
+    { partName: "Junction Box", quantity: 1, material: "PPO Plastic", dimensions: "180×100×35mm", color: "#2D2D2D" },
+  ];
 
   return { parts, bom, reasoning };
 }
@@ -1105,7 +1043,16 @@ function generateAssemblyKCL(result: { parts: AssemblyPart[]; bom: BOMEntry[] },
   for (const part of result.parts) {
     const safeName = part.name.replace(/[^a-zA-Z0-9_]/g, "_").toLowerCase();
     lines.push(`// --- ${part.name} ---`);
-    if (part.type === "box") {
+    if (part.type === "mesh") {
+      // Mesh parts from KCL engine - show as extruded profiles
+      lines.push(`sketch_${safeName} = startSketch('XY')`);
+      lines.push(`profile_${safeName} = sketchProfile("${part.name}", ${part.dimensions.width.toFixed(3)}, ${part.dimensions.depth.toFixed(3)})`);
+      lines.push(`${safeName} = extrude(profile_${safeName}, ${part.dimensions.height.toFixed(3)})`);
+      lines.push(`translate(${safeName}, [${part.position.map(p => p.toFixed(3)).join(", ")}])`);
+      if (part.rotation.some(r => r !== 0)) {
+        lines.push(`rotate(${safeName}, [${part.rotation.map(r => (r * 180 / Math.PI).toFixed(1)).join(", ")}])`);
+      }
+    } else if (part.type === "box") {
       lines.push(`sketch_${safeName} = startSketch('XZ')`);
       lines.push(`rect_${safeName} = rectangle([${(-part.dimensions.width / 2).toFixed(3)}, ${(-part.dimensions.depth / 2).toFixed(3)}], [${(part.dimensions.width / 2).toFixed(3)}, ${(part.dimensions.depth / 2).toFixed(3)}])`);
       lines.push(`profile_${safeName} = close(rect_${safeName})`);

@@ -183,6 +183,8 @@ export interface CadObject {
   // Parent/child dependency tracking
   parentFeatureId?: string;
   childFeatureIds?: string[];
+  // KCL construction step index (for rollback slider)
+  constructionStepIndex?: number;
 }
 
 export interface FeatureNode {
@@ -320,70 +322,97 @@ function serializeGeometry(geo: THREE.BufferGeometry): { meshVertices: number[];
 
 // ── Complex object builders (return partial CadObject) ──
 
-function buildPVModule(dims: ParsedDims, mat: MaterialInfo): Partial<CadObject>[] {
-  const { width: w, depth: d, height: frameH } = dims;
-  const glassThick = frameH * 0.6;
-  const cellInset = w * 0.05;
+function buildPVModule(dims: ParsedDims, _mat: MaterialInfo): Partial<CadObject>[] {
+  // Use the KCL engine for real C-channel frame profiles and proper Z-stacking
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { buildPVModuleForStore } = require("@/lib/kcl-engine") as typeof import("@/lib/kcl-engine");
+    const sceneToMm = (v: number) => v / MM_TO_SCENE;
+    const result = buildPVModuleForStore({
+      length: sceneToMm(dims.width),   // width in ParsedDims is X dimension
+      width: sceneToMm(dims.depth),    // depth in ParsedDims is Z dimension
+      thickness: sceneToMm(dims.height), // height in ParsedDims is Y (thickness)
+    });
+    return result.parts.map((p: Record<string, unknown>) => ({
+      type: "mesh" as const,
+      name: p.name as string,
+      position: p.position as [number, number, number],
+      rotation: p.rotation as [number, number, number],
+      scale: p.scale as [number, number, number],
+      dimensions: p.dimensions as { width: number; height: number; depth: number },
+      meshVertices: p.meshVertices as number[],
+      meshIndices: p.meshIndices as number[],
+      material: p.material as string,
+      color: p.color as string,
+      metalness: p.metalness as number,
+      roughness: p.roughness as number,
+      opacity: p.opacity as number,
+      constructionStepIndex: p.constructionStepIndex as number | undefined,
+      componentType: "pv_module",
+    }));
+  } catch {
+    // Fallback: simple box-based PV module (original behavior)
+    const { width: w, depth: d, height: frameH } = dims;
+    const glassThick = frameH * 0.6;
+    const cellInset = w * 0.05;
+    const inset = w * 0.02;
 
-  // Frame (aluminium extrusion border)
-  const frameShape = new THREE.Shape();
-  frameShape.moveTo(-w / 2, -d / 2);
-  frameShape.lineTo(w / 2, -d / 2);
-  frameShape.lineTo(w / 2, d / 2);
-  frameShape.lineTo(-w / 2, d / 2);
-  frameShape.closePath();
-  const frameHole = new THREE.Path();
-  const inset = w * 0.02;
-  frameHole.moveTo(-w / 2 + inset, -d / 2 + inset);
-  frameHole.lineTo(w / 2 - inset, -d / 2 + inset);
-  frameHole.lineTo(w / 2 - inset, d / 2 - inset);
-  frameHole.lineTo(-w / 2 + inset, d / 2 - inset);
-  frameHole.closePath();
-  frameShape.holes.push(frameHole);
-  const frameGeo = new THREE.ExtrudeGeometry(frameShape, { depth: frameH, bevelEnabled: false });
-  frameGeo.rotateX(-Math.PI / 2);
-  frameGeo.translate(0, frameH / 2, 0);
-  const frameMesh = serializeGeometry(frameGeo);
+    const frameShape = new THREE.Shape();
+    frameShape.moveTo(-w / 2, -d / 2);
+    frameShape.lineTo(w / 2, -d / 2);
+    frameShape.lineTo(w / 2, d / 2);
+    frameShape.lineTo(-w / 2, d / 2);
+    frameShape.closePath();
+    const frameHole = new THREE.Path();
+    frameHole.moveTo(-w / 2 + inset, -d / 2 + inset);
+    frameHole.lineTo(w / 2 - inset, -d / 2 + inset);
+    frameHole.lineTo(w / 2 - inset, d / 2 - inset);
+    frameHole.lineTo(-w / 2 + inset, d / 2 - inset);
+    frameHole.closePath();
+    frameShape.holes.push(frameHole);
+    const frameGeo = new THREE.ExtrudeGeometry(frameShape, { depth: frameH, bevelEnabled: false });
+    frameGeo.rotateX(-Math.PI / 2);
+    frameGeo.translate(0, frameH / 2, 0);
+    const frameMesh = serializeGeometry(frameGeo);
 
-  // Glass panel
-  const glassGeo = new THREE.BoxGeometry(w - inset * 2, glassThick, d - inset * 2);
-  glassGeo.translate(0, frameH * 0.55, 0);
-  const glassMesh = serializeGeometry(glassGeo);
+    const glassGeo = new THREE.BoxGeometry(w - inset * 2, glassThick, d - inset * 2);
+    glassGeo.translate(0, frameH * 0.55, 0);
+    const glassMesh = serializeGeometry(glassGeo);
 
-  // Solar cells (thin dark layer)
-  const cellW = w - cellInset * 2;
-  const cellD = d - cellInset * 2;
-  const cellGeo = new THREE.BoxGeometry(cellW, frameH * 0.05, cellD);
-  cellGeo.translate(0, frameH * 0.45, 0);
-  const cellMesh = serializeGeometry(cellGeo);
+    const cellW = w - cellInset * 2;
+    const cellD = d - cellInset * 2;
+    const cellGeo = new THREE.BoxGeometry(cellW, frameH * 0.05, cellD);
+    cellGeo.translate(0, frameH * 0.45, 0);
+    const cellMesh = serializeGeometry(cellGeo);
 
-  return [
-    {
-      type: "mesh" as const, name: "PV Module - Frame",
-      dimensions: { width: w, height: frameH, depth: d },
-      position: [0, frameH / 2, 0],
-      ...frameMesh,
-      material: "Aluminum 6061-T6", color: "#c0c8d0", metalness: 0.7, roughness: 0.3,
-      componentType: "pv_module_frame",
-    },
-    {
-      type: "mesh" as const, name: "PV Module - Glass",
-      dimensions: { width: w - inset * 2, height: glassThick, depth: d - inset * 2 },
-      position: [0, frameH * 0.55, 0],
-      ...glassMesh,
-      material: "Polycarbonate", color: "#88bbee", metalness: 0.1, roughness: 0.1,
-      opacity: 0.85,
-      componentType: "pv_module_glass",
-    },
-    {
-      type: "mesh" as const, name: "PV Module - Cells",
-      dimensions: { width: cellW, height: frameH * 0.05, depth: cellD },
-      position: [0, frameH * 0.45, 0],
-      ...cellMesh,
-      material: "ABS Plastic", color: "#1a1a3a", metalness: 0.2, roughness: 0.6,
-      componentType: "pv_module_cells",
-    },
-  ];
+    return [
+      {
+        type: "mesh" as const, name: "PV Module - Frame",
+        dimensions: { width: w, height: frameH, depth: d },
+        position: [0, frameH / 2, 0],
+        ...frameMesh,
+        material: "Aluminum 6061-T6", color: "#c0c8d0", metalness: 0.7, roughness: 0.3,
+        componentType: "pv_module_frame",
+      },
+      {
+        type: "mesh" as const, name: "PV Module - Glass",
+        dimensions: { width: w - inset * 2, height: glassThick, depth: d - inset * 2 },
+        position: [0, frameH * 0.55, 0],
+        ...glassMesh,
+        material: "Polycarbonate", color: "#88bbee", metalness: 0.1, roughness: 0.1,
+        opacity: 0.85,
+        componentType: "pv_module_glass",
+      },
+      {
+        type: "mesh" as const, name: "PV Module - Cells",
+        dimensions: { width: cellW, height: frameH * 0.05, depth: cellD },
+        position: [0, frameH * 0.45, 0],
+        ...cellMesh,
+        material: "ABS Plastic", color: "#1a1a3a", metalness: 0.2, roughness: 0.6,
+        componentType: "pv_module_cells",
+      },
+    ];
+  }
 }
 
 function buildBolt(size: number, length: number, mat: MaterialInfo): Partial<CadObject>[] {
@@ -3189,18 +3218,50 @@ const phiLength = (angle * Math.PI) / 180;
     const { featureHistory, objects } = get();
     if (index < 0 || index >= featureHistory.length) return;
     get().pushHistory();
-    // Suppress all features after the rollback index
-    const featureIds = featureHistory.slice(index + 1).map(f => f.id);
-    const objectIds = featureHistory.slice(index + 1).map(f => f.objectId);
-    set((s) => ({
-      featureHistory: s.featureHistory.map((f, i) =>
-        i > index ? { ...f, visible: false, locked: true } : { ...f, visible: true, locked: false }
-      ),
-      objects: s.objects.map(o =>
-        objectIds.includes(o.id) ? { ...o, visible: false, suppressed: true } :
-        featureHistory.slice(0, index + 1).some(f => f.objectId === o.id) ? { ...o, visible: true, suppressed: false } : o
-      ),
-      rollbackIndex: index,
-    }));
+
+    // Check if objects have KCL construction step indices
+    const hasKCLSteps = objects.some(o => o.constructionStepIndex !== undefined);
+
+    if (hasKCLSteps) {
+      // KCL construction sequence rollback: use constructionStepIndex
+      // Map feature index to construction step index
+      // Features are ordered; rollback index maps to max visible step
+      const maxVisibleStep = index;
+      set((s) => ({
+        featureHistory: s.featureHistory.map((f, i) =>
+          i > index ? { ...f, visible: false, locked: true } : { ...f, visible: true, locked: false }
+        ),
+        objects: s.objects.map(o => {
+          if (o.constructionStepIndex !== undefined) {
+            // Show/hide based on construction step index
+            return o.constructionStepIndex <= maxVisibleStep
+              ? { ...o, visible: true, suppressed: false }
+              : { ...o, visible: false, suppressed: true };
+          }
+          // Fall back to feature-based rollback for non-KCL objects
+          const featureIdx = featureHistory.findIndex(f => f.objectId === o.id);
+          if (featureIdx >= 0) {
+            return featureIdx <= index
+              ? { ...o, visible: true, suppressed: false }
+              : { ...o, visible: false, suppressed: true };
+          }
+          return o;
+        }),
+        rollbackIndex: index,
+      }));
+    } else {
+      // Original feature-based rollback
+      const objectIds = featureHistory.slice(index + 1).map(f => f.objectId);
+      set((s) => ({
+        featureHistory: s.featureHistory.map((f, i) =>
+          i > index ? { ...f, visible: false, locked: true } : { ...f, visible: true, locked: false }
+        ),
+        objects: s.objects.map(o =>
+          objectIds.includes(o.id) ? { ...o, visible: false, suppressed: true } :
+          featureHistory.slice(0, index + 1).some(f => f.objectId === o.id) ? { ...o, visible: true, suppressed: false } : o
+        ),
+        rollbackIndex: index,
+      }));
+    }
   },
 }));
