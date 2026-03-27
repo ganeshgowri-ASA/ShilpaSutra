@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useState } from "react";
+import { useCallback, useState, startTransition, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import {
@@ -192,6 +192,7 @@ const cameraViews = [
 
 export default function RibbonToolbar({ onExtrude, onRevolve, onMassProps, onRefGeometry, onAppearance, onConfigManager, onHoleWizard, onAITool }: { onExtrude?: () => void; onRevolve?: () => void; onMassProps?: () => void; onRefGeometry?: () => void; onAppearance?: () => void; onConfigManager?: () => void; onHoleWizard?: () => void; onAITool?: (tool: "ai_text_to_cad" | "ai_suggest" | "ai_optimize" | "ai_explain" | "ai_fea" | "ai_cfd") => void } = {}) {
   const router = useRouter();
+  const [, startRibbonTransition] = useTransition();
   const saveProject = useCallback(() => {
     const state = useCadStore.getState();
     const data = {
@@ -299,87 +300,76 @@ export default function RibbonToolbar({ onExtrude, onRevolve, onMassProps, onRef
 
   const handleToolClick = useCallback(
     (id: string) => {
-      if (id === "delete") {
-        useCadStore.getState().deleteSelected();
+      // Fast path: tool selection (most common interaction - must be synchronous for INP)
+      const isSimpleTool = !["delete", "box", "cylinder", "sphere", "cone",
+        "boolean_union", "boolean_subtract", "boolean_intersect",
+        "extrude", "extrude_cut", "revolve", "revolve_cut",
+        "mass_properties", "ref_geometry", "appearance_editor",
+        "config_manager", "hole_wizard",
+        "ai_text_to_cad", "ai_suggest", "ai_optimize", "ai_explain", "ai_fea", "ai_cfd",
+        ...OPERATION_TOOLS, ...BOOLEAN_TOOLS,
+      ].includes(id);
+      if (isSimpleTool) {
+        setActiveTool(id as ToolId);
         return;
       }
-      // Primitive shapes: create immediately at origin and select
-      const primitiveTypes: Record<string, "box" | "cylinder" | "sphere" | "cone"> = {
-        box: "box", cylinder: "cylinder", sphere: "sphere", cone: "cone",
-      };
-      if (primitiveTypes[id]) {
-        const newId = addObject(primitiveTypes[id]);
-        const store = useCadStore.getState();
-        const obj = store.objects.find((o) => o.id === newId);
-        if (obj) {
-          store.updateObject(newId, {
-            position: [0, obj.dimensions.height / 2, 0],
-          });
+
+      // Defer heavy operations to avoid blocking INP
+      startTransition(() => {
+        if (id === "delete") {
+          useCadStore.getState().deleteSelected();
+          return;
         }
-        store.selectObject(newId);
-        return;
-      }
-      // Extrude/Revolve: open dialog
-      // AI tools: open inline panels via callback
-      if (id === "ai_text_to_cad" || id === "ai_suggest" || id === "ai_optimize" || id === "ai_explain" || id === "ai_fea" || id === "ai_cfd") {
-        onAITool?.(id as "ai_text_to_cad" | "ai_suggest" | "ai_optimize" | "ai_explain" | "ai_fea" | "ai_cfd");
-        return;
-      }
-      if (id === "extrude") {
-        onExtrude?.();
-        return;
-      }
-      if (id === "revolve") {
-        onRevolve?.();
-        return;
-      }
-      if (id === "mass_properties") {
-        onMassProps?.();
-        return;
-      }
-      if (id === "ref_geometry") {
-        onRefGeometry?.();
-        return;
-      }
-      if (id === "appearance_editor") {
-        onAppearance?.();
-        return;
-      }
-      if (id === "config_manager") {
-        onConfigManager?.();
-        return;
-      }
-      if (id === "hole_wizard") {
-        onHoleWizard?.();
-        return;
-      }
-      // Boolean CSG operations
-      if (id === "boolean_union") {
-        const ids = selectedIds.length >= 2 ? selectedIds : selectedId ? [selectedId] : [];
-        if (ids.length >= 2) { booleanUnion(ids); }
-        else { alert("Select 2 or more objects for Union"); }
-        return;
-      }
-      if (id === "boolean_subtract") {
-        const ids = selectedIds.length >= 2 ? selectedIds : selectedId ? [selectedId] : [];
-        if (ids.length >= 2) { booleanSubtract(ids[0], ids[1]); }
-        else { alert("Select 2 objects: target then tool (Ctrl+click)"); }
-        return;
-      }
-      if (id === "boolean_intersect") {
-        const ids = selectedIds.length >= 2 ? selectedIds : selectedId ? [selectedId] : [];
-        if (ids.length >= 2) { booleanIntersect(ids); }
-        else { alert("Select 2 or more objects for Intersect"); }
-        return;
-      }
-      // Open operation dialogs for fillet/chamfer/shell/draft/mirror/patterns
-      if (OPERATION_TOOLS.includes(id)) {
-        setActiveOperation(id as "fillet" | "chamfer" | "shell" | "draft" | "mirror" | "linear_pattern" | "circular_pattern");
-        return;
-      }
-      setActiveTool(id as ToolId);
+        const primitiveTypes: Record<string, "box" | "cylinder" | "sphere" | "cone"> = {
+          box: "box", cylinder: "cylinder", sphere: "sphere", cone: "cone",
+        };
+        if (primitiveTypes[id]) {
+          const newId = addObject(primitiveTypes[id]);
+          const store = useCadStore.getState();
+          const obj = store.objects.find((o) => o.id === newId);
+          if (obj) {
+            store.updateObject(newId, { position: [0, obj.dimensions.height / 2, 0] });
+          }
+          store.selectObject(newId);
+          return;
+        }
+        if (id === "ai_text_to_cad" || id === "ai_suggest" || id === "ai_optimize" || id === "ai_explain" || id === "ai_fea" || id === "ai_cfd") {
+          onAITool?.(id as "ai_text_to_cad" | "ai_suggest" | "ai_optimize" | "ai_explain" | "ai_fea" | "ai_cfd");
+          return;
+        }
+        if (id === "extrude" || id === "extrude_cut") { onExtrude?.(); return; }
+        if (id === "revolve" || id === "revolve_cut") { onRevolve?.(); return; }
+        if (id === "mass_properties") { onMassProps?.(); return; }
+        if (id === "ref_geometry") { onRefGeometry?.(); return; }
+        if (id === "appearance_editor") { onAppearance?.(); return; }
+        if (id === "config_manager") { onConfigManager?.(); return; }
+        if (id === "hole_wizard") { onHoleWizard?.(); return; }
+        if (id === "boolean_union") {
+          const ids = selectedIds.length >= 2 ? selectedIds : selectedId ? [selectedId] : [];
+          if (ids.length >= 2) { booleanUnion(ids); }
+          else { alert("Select 2 or more objects for Union"); }
+          return;
+        }
+        if (id === "boolean_subtract") {
+          const ids = selectedIds.length >= 2 ? selectedIds : selectedId ? [selectedId] : [];
+          if (ids.length >= 2) { booleanSubtract(ids[0], ids[1]); }
+          else { alert("Select 2 objects: target then tool (Ctrl+click)"); }
+          return;
+        }
+        if (id === "boolean_intersect") {
+          const ids = selectedIds.length >= 2 ? selectedIds : selectedId ? [selectedId] : [];
+          if (ids.length >= 2) { booleanIntersect(ids); }
+          else { alert("Select 2 or more objects for Intersect"); }
+          return;
+        }
+        if (OPERATION_TOOLS.includes(id)) {
+          setActiveOperation(id as "fillet" | "chamfer" | "shell" | "draft" | "mirror" | "linear_pattern" | "circular_pattern");
+          return;
+        }
+        setActiveTool(id as ToolId);
+      });
     },
-    [setActiveTool, setActiveOperation, addObject, booleanUnion, booleanSubtract, booleanIntersect, selectedId, selectedIds, onExtrude, onRevolve, onMassProps, onRefGeometry, onAppearance, onConfigManager, onHoleWizard, onAITool, router]
+    [setActiveTool, setActiveOperation, addObject, booleanUnion, booleanSubtract, booleanIntersect, selectedId, selectedIds, onExtrude, onRevolve, onMassProps, onRefGeometry, onAppearance, onConfigManager, onHoleWizard, onAITool]
   );
 
   const handleTabDoubleClick = useCallback(() => {
@@ -415,7 +405,7 @@ export default function RibbonToolbar({ onExtrude, onRevolve, onMassProps, onRef
         {tabs.map((tab) => (
           <button
             key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
+            onClick={() => startRibbonTransition(() => setActiveTab(tab.id))}
             onDoubleClick={handleTabDoubleClick}
             className={`px-3.5 py-2 text-[11px] font-semibold tracking-wide transition-all duration-150 relative ${
               activeTab === tab.id
@@ -498,7 +488,7 @@ export default function RibbonToolbar({ onExtrude, onRevolve, onMassProps, onRef
               {(["wireframe", "shaded", "realistic"] as const).map((mode) => (
                 <button
                   key={mode}
-                  onClick={() => setViewMode(mode)}
+                  onClick={() => startRibbonTransition(() => setViewMode(mode))}
                   title={`${mode.charAt(0).toUpperCase() + mode.slice(1)}`}
                   className={`group relative flex flex-col items-center justify-center w-9 h-9 rounded-md transition-all duration-150 ${
                     viewMode === mode ? "bg-[#00D4FF]/15 text-[#00D4FF] shadow-glow-sm" : "hover:bg-[#21262d] text-slate-400 hover:text-white"

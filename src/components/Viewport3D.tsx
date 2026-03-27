@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useCallback, useEffect, useState, useMemo } from "react";
+import React, { useRef, useCallback, useEffect, useState, useMemo } from "react";
 import { Canvas, useThree, useFrame, ThreeEvent } from "@react-three/fiber";
 import {
   OrbitControls,
@@ -23,6 +23,7 @@ import MeasurementTool from "@/components/cad/MeasurementTool";
 import ConstraintIndicators from "@/components/cad/ConstraintIndicators";
 import SmartDimensions from "@/components/cad/SmartDimensions";
 import ViewportContextMenu from "@/components/cad/ViewportContextMenu";
+import PerformanceMonitor, { ViewportStatsCollector } from "@/components/cad/PerformanceMonitor";
 
 const SKETCH_TOOLS: ToolId[] = ["line", "arc", "circle", "rectangle", "polygon", "spline", "ellipse", "construction_line", "arc_3point", "arc_tangent", "circle_3point", "center_rectangle", "slot", "point", "centerline"];
 const SKETCH_Y = 0.02;
@@ -48,7 +49,7 @@ function CustomBufferGeometry({ vertices, indices }: { vertices: number[]; indic
 }
 
 /* ── Single CAD mesh ── */
-function CadMesh({ obj }: { obj: CadObject }) {
+const CadMesh = React.memo(function CadMesh({ obj }: { obj: CadObject }) {
   const meshRef = useRef<THREE.Mesh>(null);
   const selectedId = useCadStore((s) => s.selectedId);
   const selectedIds = useCadStore((s) => s.selectedIds);
@@ -57,6 +58,29 @@ function CadMesh({ obj }: { obj: CadObject }) {
   const activeTool = useCadStore((s) => s.activeTool);
   const isSelected = selectedId === obj.id || selectedIds.includes(obj.id);
   const [hovered, setHovered] = useState(false);
+
+  // Memoize edge geometry to avoid allocating new Three.js objects on every render
+  const edgeGeo = useMemo(() => {
+    let base: THREE.BufferGeometry;
+    switch (obj.type) {
+      case "cylinder":
+        base = new THREE.CylinderGeometry(obj.dimensions.width, obj.dimensions.width, obj.dimensions.height, 32);
+        break;
+      case "sphere":
+        base = new THREE.SphereGeometry(obj.dimensions.width, 16, 16);
+        break;
+      case "cone":
+        base = new THREE.ConeGeometry(obj.dimensions.width, obj.dimensions.height, 32);
+        break;
+      default:
+        base = new THREE.BoxGeometry(obj.dimensions.width, obj.dimensions.height, obj.dimensions.depth);
+    }
+    const geo = new THREE.EdgesGeometry(base);
+    base.dispose();
+    return geo;
+  }, [obj.type, obj.dimensions.width, obj.dimensions.height, obj.dimensions.depth]);
+
+  useEffect(() => () => edgeGeo.dispose(), [edgeGeo]);
 
   if (obj.visible === false) return null;
 
@@ -149,44 +173,13 @@ function CadMesh({ obj }: { obj: CadObject }) {
         emissiveIntensity={isSelected ? 0.15 : hovered ? 0.08 : 0}
       />
       {isSelected && (
-        <lineSegments>
-          <edgesGeometry
-            args={[
-              (() => {
-                switch (obj.type) {
-                  case "box":
-                    return new THREE.BoxGeometry(
-                      obj.dimensions.width,
-                      obj.dimensions.height,
-                      obj.dimensions.depth
-                    );
-                  case "cylinder":
-                    return new THREE.CylinderGeometry(
-                      obj.dimensions.width,
-                      obj.dimensions.width,
-                      obj.dimensions.height,
-                      32
-                    );
-                  case "sphere":
-                    return new THREE.SphereGeometry(obj.dimensions.width, 16, 16);
-                  case "cone":
-                    return new THREE.ConeGeometry(
-                      obj.dimensions.width,
-                      obj.dimensions.height,
-                      32
-                    );
-                  default:
-                    return new THREE.BoxGeometry(1, 1, 1);
-                }
-              })(),
-            ]}
-          />
+        <lineSegments geometry={edgeGeo}>
           <lineBasicMaterial color="#00D4FF" linewidth={2} />
         </lineSegments>
       )}
     </mesh>
   );
-}
+});
 
 /* ── Sketch Line object ── */
 function CadLine({ obj }: { obj: CadObject }) {
@@ -301,7 +294,7 @@ function CadCircle({ obj }: { obj: CadObject }) {
 
   const circlePoints = useMemo(() => {
     if (!obj.circleCenter || !obj.circleRadius) return [];
-    const segments = 64;
+    const segments = 32;
     const points: [number, number, number][] = [];
     const cp = obj.sketchPlane || "xz";
     for (let i = 0; i <= segments; i++) {
@@ -467,7 +460,7 @@ function CadEllipse({ obj }: { obj: CadObject }) {
 
   const ellipsePoints = useMemo(() => {
     if (!obj.ellipseCenter || !obj.ellipseRx || !obj.ellipseRy) return [];
-    const segments = 64;
+    const segments = 32;
     const points: [number, number, number][] = [];
     for (let i = 0; i <= segments; i++) {
       const angle = (i / segments) * Math.PI * 2;
@@ -1950,6 +1943,18 @@ export default function Viewport3D({ mode }: Viewport3DProps) {
   const sketchPlane = useCadStore((s) => s.sketchPlane);
   const isSketchMode = SKETCH_TOOLS.includes(activeTool);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [perfVisible, setPerfVisible] = useState(false);
+
+  // Sync Shift+F state with PerformanceMonitor visibility
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.shiftKey && (e.key === "F" || e.key === "f")) {
+        setPerfVisible((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -1965,9 +1970,11 @@ export default function Viewport3D({ mode }: Viewport3DProps) {
           onClose={() => setContextMenu(null)}
         />
       )}
+      <PerformanceMonitor />
       <Canvas
         camera={{ position: [5, 5, 5], fov: 50, near: 0.1, far: 1000 }}
-        gl={{ antialias: true, alpha: false, preserveDrawingBuffer: true }}
+        gl={{ antialias: true, alpha: false, preserveDrawingBuffer: true, powerPreference: "high-performance" }}
+        performance={{ min: 0.5 }}
         onPointerMissed={() => {
           useCadStore.getState().selectObject(null);
         }}
@@ -2056,6 +2063,7 @@ export default function Viewport3D({ mode }: Viewport3DProps) {
         <CursorTracker />
         <Environment preset="city" />
         <KeyboardHandler />
+        <ViewportStatsCollector active={perfVisible} />
       </Canvas>
     </div>
   );
