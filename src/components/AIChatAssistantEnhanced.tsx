@@ -2,6 +2,8 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useCadStore, type CadObject, getMaterialColor, materialList } from "@/stores/cad-store";
 import { runReasoningEngine } from "@/lib/ai-reasoning-engine";
+import { type ThinkingMode, THINKING_MODES, parsePromptComplexity, getRecommendationMessage } from "@/lib/thinking-engine";
+import { InlineAttachButton, type AttachedFile } from "@/components/ai/AttachmentUpload";
 
 /* ── Types ── */
 interface Message {
@@ -612,6 +614,8 @@ I'm context-aware and know what's in your scene. Try asking "what's in the scene
   const [input, setInput] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [showThinking, setShowThinking] = useState(true);
+  const [thinkingMode, setThinkingMode] = useState<ThinkingMode>("auto");
+  const [attachments, setAttachments] = useState<AttachedFile[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -816,6 +820,30 @@ I'm context-aware and know what's in your scene. Try asking "what's in the scene
         </div>
       </div>
 
+      {/* Thinking Mode Selector */}
+      <div className="px-3 py-1.5 border-b border-[#21262d] bg-[#0d1117]/50">
+        <div className="flex items-center gap-0.5 bg-[#0d1117] rounded p-0.5 border border-[#21262d]">
+          {(["normal", "extended", "deep", "auto"] as ThinkingMode[]).map((mode) => {
+            const config = THINKING_MODES[mode];
+            const isActive = thinkingMode === mode;
+            return (
+              <button
+                key={mode}
+                onClick={() => setThinkingMode(mode)}
+                className={`flex-1 text-center px-1 py-0.5 rounded text-[9px] font-medium transition-all ${
+                  isActive ? "text-white" : "text-slate-600 hover:text-slate-400"
+                }`}
+                style={isActive ? { backgroundColor: config.bgColor, color: config.color } : undefined}
+                title={config.description}
+              >
+                {config.label}
+                {mode !== "auto" && <span className="text-[7px] opacity-50 ml-0.5">~{config.credits}cr</span>}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Context bar - shows current scene state */}
       <div className="px-3 py-1.5 border-b border-[#21262d] bg-[#0d1117]/50 flex items-center gap-2 text-[10px]">
         <span className="text-slate-500">Scene: <span className="text-slate-300">{objects.length} obj</span></span>
@@ -911,7 +939,11 @@ I'm context-aware and know what's in your scene. Try asking "what's in the scene
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
+          <InlineAttachButton
+            onAttach={setAttachments}
+            existingAttachments={attachments}
+          />
           <input
             ref={inputRef}
             value={input}
@@ -928,6 +960,22 @@ I'm context-aware and know what's in your scene. Try asking "what's in the scene
           >
             Run
           </button>
+        </div>
+        {attachments.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-1">
+            {attachments.map((att) => (
+              <span key={att.id} className="text-[9px] px-1.5 py-0.5 bg-purple-500/10 text-purple-400 border border-purple-500/20 rounded truncate max-w-[120px]">
+                {att.name}
+                <button onClick={() => setAttachments((prev) => prev.filter((a) => a.id !== att.id))} className="ml-1 text-purple-400/50 hover:text-red-400">x</button>
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="flex items-center justify-between mt-1">
+          <span className="text-[8px] text-slate-600">
+            Mode: <span style={{ color: THINKING_MODES[thinkingMode].color }}>{THINKING_MODES[thinkingMode].label}</span>
+            {thinkingMode !== "auto" && <span className="ml-1">~{THINKING_MODES[thinkingMode].credits} credits</span>}
+          </span>
         </div>
       </div>
     </div>
