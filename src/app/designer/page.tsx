@@ -91,7 +91,7 @@ const SnapIndicatorOverlay = dynamic(() => import("@/components/cad/SnapIndicato
 const EntityPropertiesPanel = dynamic(() => import("@/components/cad/EntityPropertiesPanel"), { ssr: false });
 const GridControls = dynamic(() => import("@/components/cad/GridControls"), { ssr: false });
 const CoordinateInput = dynamic(() => import("@/components/cad/CoordinateInput"), { ssr: false });
-const AIToolPanel = dynamic(() => import("@/components/cad/AIToolPanel"), { ssr: false });
+const AIToolPanel = dynamic(() => import("@/components/cad/AIToolPanelEnhanced"), { ssr: false });
 
 type AIToolType = "ai_text_to_cad" | "ai_suggest" | "ai_optimize" | "ai_explain" | "ai_fea" | "ai_cfd" | null;
 
