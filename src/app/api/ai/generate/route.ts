@@ -32,6 +32,13 @@ interface GenerateRequest {
   messages?: ConversationMessage[];
   conversationId?: string;
   useReasoning?: boolean;
+  thinkingMode?: "Normal" | "Extended" | "Deep";
+  imageBase64?: string; // base64 data URI for multimodal
+  context?: {
+    tool?: string;
+    selectedObject?: { name: string; type: string } | null;
+    sceneObjectCount?: number;
+  };
 }
 
 interface GenerateResponse {
@@ -641,10 +648,30 @@ When the user provides a conversational follow-up, modify the previously generat
 
 // ─── POST Handler ────────────────────────────────────────────────────
 
+// ─── Thinking Mode Config ─────────────────────────────────────────────────
+function thinkingConfig(mode: "Normal" | "Extended" | "Deep" | undefined): {
+  max_tokens: number; temperature: number; systemSuffix: string;
+} {
+  switch (mode) {
+    case "Deep":
+      return {
+        max_tokens: 8000, temperature: 0.7,
+        systemSuffix: "\n\nDEEP REASONING MODE: Perform full engineering analysis. Consider material selection, structural integrity, manufacturing constraints, tolerances, and assembly sequence. Think step by step before generating the final JSON.",
+      };
+    case "Extended":
+      return {
+        max_tokens: 4000, temperature: 0.5,
+        systemSuffix: "\n\nEXTENDED THINKING MODE: Think carefully about the geometry decomposition and provide a detailed chain-of-thought before the JSON.",
+      };
+    default: // Normal
+      return { max_tokens: 2000, temperature: 0.3, systemSuffix: "" };
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body: GenerateRequest = await request.json();
-    const { prompt, messages, conversationId } = body;
+    const { prompt, messages, conversationId, thinkingMode, imageBase64 } = body;
 
     if ((!prompt || prompt.trim().length === 0) && (!messages || messages.length === 0)) {
       return NextResponse.json({ error: "Prompt or messages array is required" }, { status: 400 });
@@ -652,83 +679,15 @@ export async function POST(request: NextRequest) {
 
     const activePrompt = prompt || messages?.[messages.length - 1]?.content || "";
     const currentConversationId = conversationId || randomUUID();
+    const modeConfig = thinkingConfig(thinkingMode);
 
-    // Check for OpenRouter API key
-    const apiKey = process.env.OPENROUTER_API_KEY;
-
-    if (apiKey) {
-      try {
-        // Build message array for multi-turn support
-        const apiMessages: ConversationMessage[] = [
-          { role: "system", content: CAD_SYSTEM_PROMPT },
-        ];
-
-        if (messages && messages.length > 0) {
-          // Use provided conversation history (filter out any system messages from client)
-          for (const msg of messages) {
-            if (msg.role !== "system") {
-              apiMessages.push(msg);
-            }
-          }
-        } else {
-          apiMessages.push({ role: "user", content: activePrompt });
-        }
-
-        const aiResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://shilpasutra.vercel.app",
-            "X-Title": "ShilpaSutra CAD",
-          },
-          body: JSON.stringify({
-            model: "anthropic/claude-sonnet-4",
-            messages: apiMessages,
-            max_tokens: 1500,
-            temperature: 0.3,
-          }),
-        });
-
-        if (aiResponse.ok) {
-          const aiData = await aiResponse.json();
-          const content = aiData.choices?.[0]?.message?.content;
-          if (content) {
-            try {
-              const cleaned = content.replace(/```json\n?/g, "").replace(/```/g, "").trim();
-              const parsed = JSON.parse(cleaned);
-
-              // Support both flat (backward compat) and nested response
-              const object: GeneratedObject = parsed.object || parsed;
-              if (object.type && object.name && object.dimensions) {
-                const response: GenerateResponse = {
-                  success: true,
-                  object,
-                  operations: parsed.operations || buildOperations(object, activePrompt),
-                  kclCode: parsed.kclCode || generateKCLCode(object, parsed.operations || buildOperations(object, activePrompt)),
-                  message: `AI generated: "${object.name}". ${object.description || ""}`,
-                  source: "ai",
-                  conversationId: currentConversationId,
-                };
-                return NextResponse.json(response);
-              }
-            } catch {
-              // JSON parse failed, fall through to parametric
-            }
-          }
-        }
-      } catch {
-        // API call failed, fall through to parametric
-      }
-    }
-
-    // ── Reasoning Engine: handles both multi-part assemblies and single parts ──
+    // ── Step 1: Reasoning Engine FIRST (local, fast, handles complex assemblies) ──
     try {
       const reasoningResult = runReasoningEngine(activePrompt);
       if (reasoningResult.parts.length >= 1) {
         const primaryPart = reasoningResult.parts[0];
         const isAssembly = reasoningResult.parts.length > 1;
-        const response: GenerateResponse = {
+        return NextResponse.json({
           success: true,
           object: {
             type: primaryPart.type,
@@ -744,19 +703,93 @@ export async function POST(request: NextRequest) {
           assemblyParts: reasoningResult.parts,
           bom: reasoningResult.bom,
           isAssembly,
-        };
-        return NextResponse.json(response);
+        } as GenerateResponse);
       }
     } catch {
-      // Reasoning engine failed, fall through to parametric
+      // Reasoning engine failed, fall through to AI
     }
 
-    // Fallback: use built-in parametric generators for simple shapes
+    // ── Step 2: OpenRouter AI (handles natural language / image input) ──
+    const apiKey = process.env.OPENROUTER_API_KEY;
+    if (apiKey) {
+      try {
+        const systemContent = CAD_SYSTEM_PROMPT + modeConfig.systemSuffix;
+        const apiMessages: ConversationMessage[] = [
+          { role: "system", content: systemContent },
+        ];
+
+        if (messages && messages.length > 0) {
+          for (const msg of messages) {
+            if (msg.role !== "system") apiMessages.push(msg);
+          }
+        } else if (imageBase64) {
+          // Multimodal: send image + text
+          apiMessages.push({
+            role: "user",
+            content: JSON.stringify([
+              { type: "image_url", image_url: { url: imageBase64 } },
+              { type: "text", text: `${activePrompt}\n\nAnalyze this image and generate CAD geometry that matches it. Describe the shape, dimensions, and components you see, then generate the JSON.` },
+            ]),
+          });
+        } else {
+          apiMessages.push({ role: "user", content: activePrompt });
+        }
+
+        const aiResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://shilpasutra.vercel.app",
+            "X-Title": "ShilpaSutra CAD",
+          },
+          body: JSON.stringify({
+            model: imageBase64 ? "anthropic/claude-sonnet-4-5" : "anthropic/claude-sonnet-4",
+            messages: apiMessages,
+            max_tokens: modeConfig.max_tokens,
+            temperature: modeConfig.temperature,
+          }),
+        });
+
+        if (aiResponse.ok) {
+          const aiData = await aiResponse.json();
+          const content = aiData.choices?.[0]?.message?.content;
+          if (content) {
+            try {
+              const cleaned = content.replace(/```json\n?/g, "").replace(/```/g, "").trim();
+              // Extract JSON from text (for Extended/Deep modes that add prose)
+              const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+              if (jsonMatch) {
+                const parsed = JSON.parse(jsonMatch[0]);
+                const object: GeneratedObject = parsed.object || parsed;
+                if (object.type && object.name && object.dimensions) {
+                  const ops = parsed.operations || buildOperations(object, activePrompt);
+                  return NextResponse.json({
+                    success: true,
+                    object,
+                    operations: ops,
+                    kclCode: parsed.kclCode || generateKCLCode(object, ops),
+                    message: `AI generated: "${object.name}". ${object.description || ""}`,
+                    source: "ai",
+                    conversationId: currentConversationId,
+                  } as GenerateResponse);
+                }
+              }
+            } catch {
+              // JSON parse failed
+            }
+          }
+        }
+      } catch {
+        // API call failed
+      }
+    }
+
+    // ── Step 3: Parametric fallback ──
     const object = generateFromPrompt(activePrompt);
     const operations = buildOperations(object, activePrompt);
     const kclCode = generateKCLCode(object, operations);
-
-    const response: GenerateResponse = {
+    return NextResponse.json({
       success: true,
       object,
       operations,
@@ -765,9 +798,7 @@ export async function POST(request: NextRequest) {
       source: "parametric",
       conversationId: currentConversationId,
       fallback: !apiKey,
-    };
-
-    return NextResponse.json(response);
+    } as GenerateResponse);
   } catch (error) {
     return NextResponse.json(
       { error: "Failed to generate", details: String(error) },

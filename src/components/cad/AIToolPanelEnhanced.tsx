@@ -54,7 +54,8 @@ export default function AIToolPanelEnhanced({toolType,onClose}:{toolType:AIToolT
   const [minimized,setMinimized]   = useState(false);
   const [mode,setMode]             = useState<Mode>("Normal");
   const [showModeMenu,setModeMenu] = useState(false);
-  const [file,setFile]             = useState<{name:string;url:string;isImg:boolean}|null>(null);
+  const [file,setFile]             = useState<{name:string;url:string;isImg:boolean;base64?:string}|null>(null);
+  const [analyzing,setAnalyzing]   = useState(false);
   const [questions,setQuestions]   = useState<string[]|null>(null);
   const [answers,setAnswers]       = useState<Record<string,string>>({});
   const [showAc,setShowAc]         = useState(false);
@@ -77,16 +78,24 @@ export default function AIToolPanelEnhanced({toolType,onClose}:{toolType:AIToolT
 
   const doGen = useCallback(async(prompt:string)=>{
     setLoading(true); setResult(null); setError(null);
+    const imageBase64 = file?.isImg ? file.base64 : undefined;
+    if (imageBase64) setAnalyzing(true);
     try {
       const res = await fetch("/api/ai/generate",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({prompt:`[${m.title.toUpperCase()}] ${prompt}`,thinkingMode:mode,hasAttachment:!!file,
-          context:{tool:toolType,selectedObject:selObj?{name:selObj.name,type:selObj.type}:null,sceneObjectCount:objects.length}})});
+        body:JSON.stringify({
+          prompt:`[${m.title.toUpperCase()}] ${prompt}`,
+          thinkingMode:mode,
+          imageBase64: imageBase64 || undefined,
+          context:{tool:toolType,selectedObject:selObj?{name:selObj.name,type:selObj.type}:null,sceneObjectCount:objects.length},
+        })});
+      setAnalyzing(false);
       const d = await res.json();
       if (d.error) { setError(d.error); return; }
       if (d.assemblyParts?.length>0) { addAsm(d.assemblyParts,d.object?.name||"Assembly"); setResult(`Created "${d.object?.name||"Assembly"}" with ${d.assemblyParts.length} parts. ${d.message||""}`); }
       else if (d.object) { addObj(d.object); setResult(`Created "${d.object.name}" successfully. ${d.message||""}`); }
       else setResult(d.message||d.response||"Done.");
     } catch {
+      setAnalyzing(false);
       if (isCAD) { try { const r=runReasoningEngine(prompt); if(r.parts.length>0){addAsm(r.parts,r.objectType);setResult(`Created "${r.objectType}" (${r.parts.length} parts, offline). ${r.summary}`);}else setResult("Could not parse. Try: 'box 50x30x20mm' or 'gear 20 teeth M2'."); } catch { setResult("Generation failed. Try a simpler description."); } }
       else setError("Request failed. Check connection.");
     } finally { setLoading(false); }
@@ -161,9 +170,18 @@ export default function AIToolPanelEnhanced({toolType,onClose}:{toolType:AIToolT
             />
             <div className="absolute right-2 bottom-2.5 flex items-center gap-1">
               <button onClick={()=>fileRef.current?.click()} className={`w-7 h-7 rounded-md flex items-center justify-center transition-colors ${file?"text-purple-400 bg-purple-500/15":"text-slate-500 hover:text-slate-300 hover:bg-[#21262d]"}`} title="Attach file"><Paperclip size={12}/></button>
-              <input ref={fileRef} type="file" accept="image/*,.pdf,.dxf,.svg" className="hidden" onChange={e=>{const f=e.target.files?.[0];if(f){setFile({name:f.name,url:URL.createObjectURL(f),isImg:f.type.startsWith("image/")});}e.target.value="";}}/>
+              <input ref={fileRef} type="file" accept="image/*,.pdf,.dxf,.svg" className="hidden" onChange={e=>{
+                const f=e.target.files?.[0];
+                if(f){
+                  const url=URL.createObjectURL(f);
+                  const isImg=f.type.startsWith("image/");
+                  if(isImg){const reader=new FileReader();reader.onload=ev=>{setFile({name:f.name,url,isImg,base64:ev.target?.result as string});};reader.readAsDataURL(f);}
+                  else setFile({name:f.name,url,isImg:false});
+                }
+                e.target.value="";
+              }}/>
               <button onClick={submit} disabled={!input.trim()||loading} className={`w-7 h-7 rounded-md flex items-center justify-center transition-all ${input.trim()&&!loading?`${c.bg} text-white ${c.hv}`:"bg-[#21262d] text-slate-600 cursor-not-allowed"}`}>
-                {loading?<Loader2 size={12} className="animate-spin"/>:<Send size={12}/>}
+                {loading?<Loader2 size={12} className="animate-spin"/>:analyzing?<Loader2 size={12} className="animate-spin text-yellow-400"/>:<Send size={12}/>}
               </button>
             </div>
             {/* Autocomplete */}
@@ -249,7 +267,11 @@ export default function AIToolPanelEnhanced({toolType,onClose}:{toolType:AIToolT
         {/* Loading */}
         {loading&&(
           <div className="px-4 pb-3">
-            <div className={`flex items-center gap-2 ${c.tx} text-xs`}><Loader2 size={12} className="animate-spin"/><span>{mode==="Deep"?"Deep reasoning…":mode==="Extended"?"Extended thinking…":"Generating…"}</span></div>
+            <div className={`flex items-center gap-2 ${c.tx} text-xs`}>
+              <Loader2 size={12} className="animate-spin"/>
+              <span>{analyzing?"Analyzing image…":mode==="Deep"?"Deep reasoning…":mode==="Extended"?"Extended thinking…":"Generating…"}</span>
+              {mode!=="Normal"&&<span className="text-[9px] text-slate-600">{mode==="Deep"?"(up to 8k tokens)":"(up to 4k tokens)"}</span>}
+            </div>
           </div>
         )}
       </div>

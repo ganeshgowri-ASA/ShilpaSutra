@@ -100,17 +100,58 @@ function processAICommandSync(
   return null; // Not handled by sync commands
 }
 
-// Check if input is a create/generate command that should go through the reasoning engine API
+// Check if input is a create/generate command
 function isCreateCommand(input: string): boolean {
   const lower = input.toLowerCase().trim();
-  return /^(make|create|add|generate|design|place)\s/.test(lower) ||
-         lower.includes("pv module") || lower.includes("solar panel") ||
-         lower.includes("dumbbell") || lower.includes("barbell") ||
-         lower.includes("gear") || lower.includes("bracket") ||
-         lower.includes("pipe") || lower.includes("tube") ||
-         lower.includes("plate") || lower.includes("flange") ||
-         lower.includes("heat sink") || lower.includes("heatsink") ||
-         lower.includes("enclosure") || lower.includes("bolt");
+  // Explicit create verbs
+  if (/^(make|create|add|generate|design|place|build)\s/.test(lower)) return true;
+  // Direct primitive syntax: "box 50x30x20", "sphere r20", "cylinder d50 h100"
+  if (/^(box|cube|block)\s+[\d]/.test(lower)) return true;
+  if (/^(sphere|ball)\s+[\d]/.test(lower)) return true;
+  if (/^(cylinder|rod|shaft)\s+[\d]/.test(lower)) return true;
+  if (/^(cone|taper)\s+[\d]/.test(lower)) return true;
+  // Named parts
+  if (/^(pv module|solar panel|solar pv|dumbbell|barbell|gear|bracket|pipe|tube|plate|flange|heat sink|heatsink|enclosure|bolt|bearing|spring|pulley)/.test(lower)) return true;
+  return false;
+}
+
+// Parse and execute direct move/rotate/translate commands
+function parseMoveRotateCommand(
+  input: string,
+  selectedObj: { name: string; type: string; position: [number,number,number]; rotation: [number,number,number] } | null,
+  updateObject: (id: string, updates: Record<string, unknown>) => void,
+  selectedId: string | null,
+): { success: boolean; message: string } | null {
+  if (!selectedId || !selectedObj) return null;
+  const lower = input.toLowerCase().trim();
+
+  // "move x 10" / "translate x 10"
+  const moveMatch = lower.match(/^(?:move|translate)\s+([xyz])\s+([-\d.]+)/);
+  if (moveMatch) {
+    const axis = moveMatch[1] as "x"|"y"|"z";
+    const delta = parseFloat(moveMatch[2]) / 10; // mm to scene
+    const pos = [...selectedObj.position] as [number,number,number];
+    if (axis === "x") pos[0] += delta;
+    else if (axis === "y") pos[1] += delta;
+    else pos[2] += delta;
+    updateObject(selectedId, { position: pos });
+    return { success: true, message: `Moved "${selectedObj.name}" ${axis.toUpperCase()}+${moveMatch[2]}mm.` };
+  }
+
+  // "rotate z 45" / "rot y 90"
+  const rotMatch = lower.match(/^(?:rotate?|rot)\s+([xyz])\s+([-\d.]+)/);
+  if (rotMatch) {
+    const axis = rotMatch[1] as "x"|"y"|"z";
+    const deg = parseFloat(rotMatch[2]) * (Math.PI / 180);
+    const rot = [...selectedObj.rotation] as [number,number,number];
+    if (axis === "x") rot[0] += deg;
+    else if (axis === "y") rot[1] += deg;
+    else rot[2] += deg;
+    updateObject(selectedId, { rotation: rot });
+    return { success: true, message: `Rotated "${selectedObj.name}" ${axis.toUpperCase()} by ${rotMatch[2]}°.` };
+  }
+
+  return null;
 }
 
 export default function DesignerCommandBar() {
@@ -132,6 +173,7 @@ export default function DesignerCommandBar() {
   const objects = useCadStore((s) => s.objects);
   const addGeneratedObject = useCadStore((s) => s.addGeneratedObject);
   const addAssemblyFromParts = useCadStore((s) => s.addAssemblyFromParts);
+  const updateObject = useCadStore((s) => s.updateObject);
   const aiFilletSelected = useCadStore((s) => s.aiFilletSelected);
   const aiChamferSelected = useCadStore((s) => s.aiChamferSelected);
   const aiShell = useCadStore((s) => s.aiShell);
@@ -201,7 +243,16 @@ export default function DesignerCommandBar() {
         return;
       }
 
-      // Try sync commands first (fillet, chamfer, shell, mirror, etc.)
+      // Try move/rotate commands
+      const moveResult = parseMoveRotateCommand(
+        cmd,
+        selectedObj as Parameters<typeof parseMoveRotateCommand>[1],
+        updateObject as Parameters<typeof parseMoveRotateCommand>[2],
+        selectedId,
+      );
+      if (moveResult) { setCommandResponse(moveResult); return; }
+
+      // Try sync commands (fillet, chamfer, shell, mirror, etc.)
       const syncResult = processAICommandSync(cmd, selectedObj, objects.length, {
         aiFilletSelected,
         aiChamferSelected,
@@ -263,7 +314,7 @@ export default function DesignerCommandBar() {
       executeCommand(cmd);
       setCommandResponse({ success: false, message: `Unknown command: "${cmd}". Try "create a PV module" or "fillet 3mm".` });
     },
-    [input, executeCommand, selectedObj, objects.length, addGeneratedObject, addAssemblyFromParts, aiFilletSelected, aiChamferSelected, aiShell, aiMirror]
+    [input, executeCommand, selectedObj, selectedId, objects.length, addGeneratedObject, addAssemblyFromParts, updateObject, aiFilletSelected, aiChamferSelected, aiShell, aiMirror]
   );
 
   const handleKeyDown = useCallback(

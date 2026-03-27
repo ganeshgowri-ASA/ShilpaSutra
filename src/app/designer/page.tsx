@@ -92,6 +92,7 @@ const EntityPropertiesPanel = dynamic(() => import("@/components/cad/EntityPrope
 const GridControls = dynamic(() => import("@/components/cad/GridControls"), { ssr: false });
 const CoordinateInput = dynamic(() => import("@/components/cad/CoordinateInput"), { ssr: false });
 const AIToolPanel = dynamic(() => import("@/components/cad/AIToolPanelEnhanced"), { ssr: false });
+const SelectedObjectDimensionsPanel = dynamic(() => import("@/components/cad/SelectedObjectDimensionsPanel"), { ssr: false });
 
 type AIToolType = "ai_text_to_cad" | "ai_suggest" | "ai_optimize" | "ai_explain" | "ai_fea" | "ai_cfd" | null;
 
@@ -371,6 +372,13 @@ export default function DesignerPage() {
             {showEntityProps && (
               <div className="absolute top-14 right-3 z-20 pointer-events-auto animate-scale-in">
                 <EntityPropertiesPanel onClose={() => setShowEntityProps(false)} />
+              </div>
+            )}
+
+            {/* Selected Object Dimensions Panel (auto-shows when object selected) */}
+            {selectedId && !showEntityProps && (
+              <div className="absolute top-14 right-3 z-20 pointer-events-auto animate-scale-in">
+                <SelectedObjectDimensionsPanel />
               </div>
             )}
 

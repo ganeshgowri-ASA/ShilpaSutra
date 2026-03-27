@@ -252,6 +252,7 @@ export function getMaterialByKey(key: string): MaterialInfo {
 // ─── Domain Object Detection ─────────────────────────────────────────────
 
 export type DomainType =
+  | "solar_pv_array"
   | "solar_pv_module"
   | "hex_bolt_assembly"
   | "l_bracket"
@@ -274,6 +275,9 @@ export type DomainType =
 export function detectDomain(prompt: string): DomainType {
   const t = prompt.toLowerCase();
   if (t.includes("dumbbell") || t.includes("dumb bell") || t.includes("barbell")) return "dumbbell";
+  // PV array must come before single module
+  if ((t.includes("array") || t.includes("ground mount") || /\d+[\s-]*module/.test(t)) &&
+      (t.includes("solar") || t.includes("pv") || t.includes("panel"))) return "solar_pv_array";
   if (t.includes("solar") && (t.includes("panel") || t.includes("module") || t.includes("pv"))) return "solar_pv_module";
   if (t.includes("pv") && (t.includes("module") || t.includes("panel"))) return "solar_pv_module";
   if ((t.includes("bolt") || t.includes("screw")) && (t.includes("nut") || t.includes("washer") || t.includes("hex"))) return "hex_bolt_assembly";
@@ -1130,6 +1134,135 @@ function generateAssemblyKCL(result: { parts: AssemblyPart[]; bom: BOMEntry[] },
   return lines.join("\n");
 }
 
+// ─── PV Array Builder ─────────────────────────────────────────────────────
+
+function buildSolarPVArray(dims: ParsedDims, prompt: string): { parts: AssemblyPart[]; bom: BOMEntry[]; reasoning: ReasoningStep[] } {
+  const t = prompt.toLowerCase();
+  // Parse tilt angle
+  const tiltMatch = t.match(/(\d+)\s*(?:deg|degree|°)/);
+  const tiltDeg = tiltMatch ? parseInt(tiltMatch[1]) : 23;
+  const tiltRad = tiltDeg * (Math.PI / 180);
+
+  // Parse module count (default 24)
+  const countMatch = t.match(/(\d+)[\s-]*module/);
+  const totalModules = countMatch ? parseInt(countMatch[1]) : 24;
+
+  // Grid layout - 4 rows x (totalModules/4) cols, or whatever fits
+  const cols = Math.ceil(totalModules / 4);
+  const rows = Math.ceil(totalModules / cols);
+
+  // Module dimensions in scene units (2000x1000x35mm)
+  const modW = dims.length ? dims.length * MM : 200 * MM;   // 2000mm wide = 20 scene units
+  const modH = dims.height ? dims.height * MM : 3.5 * MM;   // 35mm thick
+  const modD = dims.width ? dims.width * MM : 100 * MM;     // 1000mm deep = 10 scene units
+
+  const modSpacingX = modW * 1.02; // slight gap between cols
+  const modSpacingZ = modD * (Math.cos(tiltRad)) * 2.5; // row pitch accounts for tilt shadow
+
+  const pileH = 1.5; // pile height above ground (scene units)
+  const railW = 0.6 * MM;  // 60mm C-channel rail
+  const railH = 0.4 * MM;  // 40mm rail height
+
+  const al = getMaterialByKey("aluminum");
+  const steel = getMaterialByKey("steel");
+  const glass = getMaterialByKey("glass");
+  const si = getMaterialByKey("silicon");
+
+  const parts: AssemblyPart[] = [];
+  const bom: BOMEntry[] = [];
+
+  const reasoning: ReasoningStep[] = [
+    { step: 1, action: "Parse array config", detail: `${totalModules} modules, ${rows}R × ${cols}C, ${tiltDeg}° tilt, ground mount`, status: "done" },
+    { step: 2, action: "Calculate row pitch", detail: `Module 2000×1000mm, row spacing ${(modSpacingZ / MM * 100).toFixed(0)}mm to avoid shading`, status: "done" },
+    { step: 3, action: "Generate C-channel rails", detail: `2 rails per row × ${rows} rows = ${rows * 2} rail segments`, status: "done" },
+    { step: 4, action: "Generate pile foundations", detail: `2 piles per row × ${rows} rows = ${rows * 2} piles`, status: "done" },
+    { step: 5, action: "Place PV modules", detail: `${totalModules} modules with ${tiltDeg}° tilt rotation`, status: "done" },
+  ];
+
+  // Array center offset so it's centered at origin
+  const totalW = (cols - 1) * modSpacingX;
+  const totalDepth = (rows - 1) * modSpacingZ;
+
+  // Pile foundations
+  for (let row = 0; row < rows; row++) {
+    const z = row * modSpacingZ - totalDepth / 2;
+    for (let side = 0; side < 2; side++) {
+      const x = side === 0 ? -totalW / 2 - modSpacingX * 0.1 : totalW / 2 + modSpacingX * 0.1;
+      parts.push(makePart({
+        type: "cylinder", name: `Pile R${row + 1}${side === 0 ? "L" : "R"}`,
+        position: [x, pileH / 2, z],
+        dimensions: { width: 0.08, height: pileH, depth: 0.08 },
+        material: steel.name, color: steel.color, metalness: steel.metalness, roughness: steel.roughness,
+      }));
+    }
+  }
+  bom.push({ partName: "Galvanized Steel Pile (150mm dia)", quantity: rows * 2, material: steel.name, dimensions: "Ø150mm × 1500mm", color: steel.color });
+
+  // C-channel rails (2 rails per row)
+  for (let row = 0; row < rows; row++) {
+    const z = row * modSpacingZ - totalDepth / 2;
+    const railLen = totalW + modSpacingX * 0.3;
+    const yBot = pileH + railH / 2;
+    const yTop = pileH + railH / 2 + modD * Math.sin(tiltRad) * 0.5;
+
+    // Bottom rail (near pile base height)
+    parts.push(makePart({
+      type: "box", name: `Rail R${row + 1} Bottom`,
+      position: [0, yBot, z - modD * Math.cos(tiltRad) * 0.25],
+      dimensions: { width: railLen, height: railH, depth: railW },
+      material: al.name, color: al.color, metalness: al.metalness, roughness: al.roughness,
+    }));
+    // Top rail (elevated for tilt)
+    parts.push(makePart({
+      type: "box", name: `Rail R${row + 1} Top`,
+      position: [0, yTop, z + modD * Math.cos(tiltRad) * 0.25],
+      dimensions: { width: railLen, height: railH, depth: railW },
+      material: al.name, color: al.color, metalness: al.metalness, roughness: al.roughness,
+    }));
+  }
+  bom.push({ partName: "C-Channel Rail 60×40mm", quantity: rows * 2, material: al.name, dimensions: `60×40mm × ${(totalW / MM).toFixed(0)}mm`, color: al.color });
+
+  // PV modules
+  let placed = 0;
+  for (let row = 0; row < rows && placed < totalModules; row++) {
+    for (let col = 0; col < cols && placed < totalModules; col++) {
+      const x = col * modSpacingX - totalW / 2;
+      const z = row * modSpacingZ - totalDepth / 2;
+      // Module center height = pile top + half of tilted height
+      const yCenter = pileH + (modD * Math.sin(tiltRad)) / 2;
+
+      // Frame
+      parts.push(makePart({
+        type: "box", name: `PV Module Frame R${row + 1}C${col + 1}`,
+        position: [x, yCenter, z],
+        rotation: [tiltRad, 0, 0],
+        dimensions: { width: modW, height: modH, depth: modD },
+        material: al.name, color: "#b0b8c0", metalness: al.metalness, roughness: al.roughness,
+      }));
+      // Glass (slightly smaller, on top face)
+      parts.push(makePart({
+        type: "box", name: `PV Glass R${row + 1}C${col + 1}`,
+        position: [x, yCenter + modH * 0.3, z],
+        rotation: [tiltRad, 0, 0],
+        dimensions: { width: modW * 0.97, height: modH * 0.3, depth: modD * 0.97 },
+        material: glass.name, color: "#88ccff", metalness: 0.1, roughness: 0.05, opacity: 0.55,
+      }));
+      // Cell layer
+      parts.push(makePart({
+        type: "box", name: `PV Cells R${row + 1}C${col + 1}`,
+        position: [x, yCenter, z],
+        rotation: [tiltRad, 0, 0],
+        dimensions: { width: modW * 0.93, height: modH * 0.08, depth: modD * 0.93 },
+        material: si.name, color: "#1a237e", metalness: 0.2, roughness: 0.6,
+      }));
+      placed++;
+    }
+  }
+  bom.push({ partName: `PV Module 2000×1000×35mm`, quantity: totalModules, material: "Aluminum/Glass/Silicon", dimensions: "2000×1000×35mm", color: "#1a237e" });
+
+  return { parts, bom, reasoning };
+}
+
 // ─── Main Reasoning Entry Point ──────────────────────────────────────────
 
 export function runReasoningEngine(prompt: string): ReasoningResult {
@@ -1139,6 +1272,9 @@ export function runReasoningEngine(prompt: string): ReasoningResult {
   let result: { parts: AssemblyPart[]; bom: BOMEntry[]; reasoning: ReasoningStep[] };
 
   switch (domain) {
+    case "solar_pv_array":
+      result = buildSolarPVArray(dims, prompt);
+      break;
     case "solar_pv_module":
       result = buildSolarPVModule(dims, prompt);
       break;
