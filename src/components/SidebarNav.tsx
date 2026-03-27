@@ -29,6 +29,7 @@ import {
   User,
   LayoutTemplate,
   Building2,
+  BrainCircuit,
 } from "lucide-react";
 
 interface NavItem {
@@ -86,6 +87,7 @@ const navSections: NavSection[] = [
       { href: "/renderer", label: "AI Renderer", icon: <Bot size={iconSize} /> },
       { href: "/measure", label: "Measure Tool", icon: <Ruler size={iconSize} /> },
       { href: "/simscape", label: "SimScape", icon: <Cpu size={iconSize} /> },
+      { href: "/model-hub", label: "Model Hub", icon: <BrainCircuit size={iconSize} /> },
     ],
   },
   {
