@@ -10,6 +10,7 @@ import {
   exportOBJ,
   type ExportMesh,
 } from "@/lib/export-engine";
+import { generateSTEPContent, generateIGESContent } from "@/lib/step-iges-export";
 import * as THREE from "three";
 
 // ---------------------------------------------------------------------------
@@ -218,6 +219,22 @@ function exportOBJFile(objects: CadObject[]) {
   downloadBlob(parts.join(""), `shilpasutra-${dateStamp()}.obj`, "model/obj");
 }
 
+function exportSTEP(objects: CadObject[]) {
+  const solidTypes = ["box", "cylinder", "sphere", "cone", "mesh"];
+  const solids = objects.filter((o) => o.visible && solidTypes.includes(o.type));
+  if (solids.length === 0) throw new Error("No solid geometry to export");
+  const content = generateSTEPContent(solids);
+  downloadBlob(content, `shilpasutra-${dateStamp()}.stp`, "text/plain");
+}
+
+function exportIGES(objects: CadObject[]) {
+  const solidTypes = ["box", "cylinder", "sphere", "cone", "mesh"];
+  const solids = objects.filter((o) => o.visible && solidTypes.includes(o.type));
+  if (solids.length === 0) throw new Error("No solid geometry to export");
+  const content = generateIGESContent(solids);
+  downloadBlob(content, `shilpasutra-${dateStamp()}.igs`, "text/plain");
+}
+
 function exportDXF(objects: CadObject[]) {
   const solidObjects = objects.filter(o => o.visible && ["box", "cylinder", "sphere", "cone", "mesh"].includes(o.type));
   if (solidObjects.length === 0) throw new Error("No geometry to export");
@@ -287,13 +304,14 @@ interface FormatEntry {
 }
 
 const FORMATS: FormatEntry[] = [
-  { id: "png",  label: "Screenshot (PNG)", desc: "High-res viewport capture", icon: <Image size={16} /> },
-  { id: "pdf",  label: "PDF Report",       desc: "Screenshot + BOM table",     icon: <FileText size={16} /> },
-  { id: "stl",  label: "STL (3D Print)",   desc: "ASCII STL mesh export",      icon: <Box size={16} /> },
-  { id: "obj",  label: "OBJ (Wavefront)",  desc: "Mesh with normals",          icon: <Box size={16} /> },
-  { id: "step", label: "STEP / IGES",      desc: "Requires OpenCascade",       icon: <File size={16} />, disabled: true, tag: "Coming Soon" },
-  { id: "dxf",  label: "DXF (2D Drawing)", desc: "Top-down outline projection", icon: <File size={16} /> },
-  { id: "json", label: "JSON Scene",       desc: "Full scene data (re-import)", icon: <Database size={16} /> },
+  { id: "png",  label: "Screenshot (PNG)", desc: "High-res viewport capture",    icon: <Image size={16} /> },
+  { id: "pdf",  label: "PDF Report",       desc: "Screenshot + BOM table",       icon: <FileText size={16} /> },
+  { id: "stl",  label: "STL (3D Print)",   desc: "ASCII STL mesh export",        icon: <Box size={16} /> },
+  { id: "obj",  label: "OBJ (Wavefront)",  desc: "Mesh with normals",            icon: <Box size={16} /> },
+  { id: "step", label: "Export STEP",      desc: "ISO 10303-21 AP203 B-Rep",     icon: <File size={16} /> },
+  { id: "iges", label: "Export IGES",      desc: "IGES 5.3 wireframe solid",     icon: <File size={16} /> },
+  { id: "dxf",  label: "DXF (2D Drawing)", desc: "Top-down outline projection",  icon: <File size={16} /> },
+  { id: "json", label: "JSON Scene",       desc: "Full scene data (re-import)",  icon: <Database size={16} /> },
 ];
 
 export default function ExportPanel({ onClose }: { onClose: () => void }) {
@@ -312,6 +330,8 @@ export default function ExportPanel({ onClose }: { onClose: () => void }) {
         case "pdf":  await exportPDF(objects, "ShilpaSutra Model"); break;
         case "stl":  exportSTL(objects); break;
         case "obj":  exportOBJFile(objects); break;
+        case "step": exportSTEP(objects); break;
+        case "iges": exportIGES(objects); break;
         case "dxf":  exportDXF(objects); break;
         case "json": exportJSON(objects); break;
         default: break;
