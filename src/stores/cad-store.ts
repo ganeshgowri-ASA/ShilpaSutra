@@ -1504,12 +1504,11 @@ export const useCadStore = create<CadState>((set, get) => ({
       });
       ids.push(id);
 
-      // Auto-generate 2D sketch profile for this part
+      // Auto-generate 2D sketch profile for this part (hidden by default to avoid visual clutter)
       const pos = obj.position;
       const dim = obj.dimensions;
       const sketchId = `sketch_profile_${id}`;
       if (obj.type === "box") {
-        // Rectangle sketch on XZ plane at the part's Y-base
         const hw = dim.width / 2;
         const hd = dim.depth / 2;
         const sketchY = pos[1] - dim.height / 2 + 0.001;
@@ -1523,7 +1522,7 @@ export const useCadStore = create<CadState>((set, get) => ({
           dimensions: { width: dim.width, height: 0, depth: dim.depth },
           material: "Steel (AISI 1045)",
           color: "#00ffff",
-          visible: true,
+          visible: false, // hidden – only 3D solid should be visible after generation
           locked: true,
           opacity: 1,
           metalness: 0,
@@ -1538,7 +1537,6 @@ export const useCadStore = create<CadState>((set, get) => ({
         };
         set((s) => ({ objects: [...s.objects, rectObj] }));
       } else if (obj.type === "cylinder" || obj.type === "cone") {
-        // Circle sketch on XZ plane at the part's Y-base
         const sketchY = pos[1] - dim.height / 2 + 0.001;
         const circObj: CadObject = {
           id: sketchId,
@@ -1550,7 +1548,7 @@ export const useCadStore = create<CadState>((set, get) => ({
           dimensions: { width: dim.width, height: 0, depth: dim.width },
           material: "Steel (AISI 1045)",
           color: "#00ffff",
-          visible: true,
+          visible: false, // hidden – only 3D solid should be visible after generation
           locked: true,
           opacity: 1,
           metalness: 0,
@@ -1563,7 +1561,6 @@ export const useCadStore = create<CadState>((set, get) => ({
         };
         set((s) => ({ objects: [...s.objects, circObj] }));
       } else if (obj.type === "sphere") {
-        // Circle sketch at sphere center
         const circObj: CadObject = {
           id: sketchId,
           type: "circle",
@@ -1574,7 +1571,7 @@ export const useCadStore = create<CadState>((set, get) => ({
           dimensions: { width: dim.width, height: 0, depth: dim.width },
           material: "Steel (AISI 1045)",
           color: "#00ffff",
-          visible: true,
+          visible: false, // hidden – only 3D solid should be visible after generation
           locked: true,
           opacity: 1,
           metalness: 0,
@@ -1589,9 +1586,9 @@ export const useCadStore = create<CadState>((set, get) => ({
       }
     }
 
-    // Select the first part
+    // Select the first part and auto-focus camera to iso view so geometry is visible
     if (ids.length > 0) {
-      set({ selectedId: ids[0], selectedIds: ids });
+      set({ selectedId: ids[0], selectedIds: ids, cameraView: "iso" });
     }
 
     // Auto-refinement pass: check for identical positions and nudge
