@@ -23,10 +23,11 @@ import {
   FileBarChart,
   Settings,
   ChevronRight,
-  ChevronLeft,
   PanelLeftClose,
   PanelLeft,
   User,
+  Eye,
+  BarChart3,
 } from "lucide-react";
 
 interface NavItem {
@@ -59,6 +60,7 @@ const navSections: NavSection[] = [
     items: [
       { href: "/simulator", label: "FEA Basic", icon: <Activity size={iconSize} /> },
       { href: "/fea-advanced", label: "FEA Advanced", icon: <Flame size={iconSize} /> },
+      { href: "/structural", label: "Structural", icon: <BarChart3 size={iconSize} /> },
       { href: "/cfd", label: "CFD Basic", icon: <Wind size={iconSize} /> },
       { href: "/cfd-advanced", label: "CFD Advanced", icon: <Tornado size={iconSize} /> },
     ],
@@ -69,6 +71,7 @@ const navSections: NavSection[] = [
     items: [
       { href: "/assembly", label: "Assembly", icon: <Boxes size={iconSize} /> },
       { href: "/assembly-advanced", label: "Assembly Advanced", icon: <Box size={iconSize} /> },
+      { href: "/visualization", label: "Visualization", icon: <Eye size={iconSize} /> },
       { href: "/library", label: "Parts Library", icon: <Library size={iconSize} /> },
       { href: "/import-export", label: "Import / Export", icon: <Import size={iconSize} /> },
     ],

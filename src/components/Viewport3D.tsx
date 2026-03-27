@@ -58,8 +58,6 @@ function CadMesh({ obj }: { obj: CadObject }) {
   const isSelected = selectedId === obj.id || selectedIds.includes(obj.id);
   const [hovered, setHovered] = useState(false);
 
-  if (obj.visible === false) return null;
-
   const handleClick = useCallback(
     (e: ThreeEvent<MouseEvent>) => {
       if (activeTool !== "select") return;
@@ -72,6 +70,8 @@ function CadMesh({ obj }: { obj: CadObject }) {
     },
     [activeTool, selectObject, toggleSelectObject, obj.id]
   );
+
+  if (obj.visible === false) return null;
 
   // For "mesh" type with vertex data, render as CustomBufferGeometry
   if (obj.type === "mesh" && obj.meshVertices && obj.meshIndices && obj.meshVertices.length > 0) {
@@ -1635,7 +1635,7 @@ function computeArcThrough3Points(
   const radius = Math.sqrt((ax - ux) * (ax - ux) + (az - uz) * (az - uz));
 
   const normalize = (a: number) => ((a % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
-  let angle1 = normalize(Math.atan2(az - uz, ax - ux));
+  const angle1 = normalize(Math.atan2(az - uz, ax - ux));
   const angle2 = normalize(Math.atan2(bz - uz, bx - ux));
   const angle3 = normalize(Math.atan2(cz - uz, cx - ux));
 

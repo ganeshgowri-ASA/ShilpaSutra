@@ -2291,7 +2291,7 @@ const createGeo = (obj: CadObject): THREE.BufferGeometry => {
 
         const used = new Set<string>();
         const chain: [number, number, number][] = [];
-        let current = sketch;
+        const current = sketch;
         chain.push(current.linePoints![0]);
         chain.push(current.linePoints![1]);
         used.add(current.id);

@@ -111,8 +111,8 @@ export default function PatternDialog({ initialMode, onClose }: PatternDialogPro
         });
       }
     } else if (mode === "mirror") {
-      let newPos: [number, number, number] = [...selected.position];
-      let newScale: [number, number, number] = [...selected.scale];
+      const newPos: [number, number, number] = [...selected.position];
+      const newScale: [number, number, number] = [...selected.scale];
 
       switch (mirrorPlane) {
         case "yz":

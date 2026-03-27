@@ -268,7 +268,7 @@ export default function MatePropertyManager() {
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        mate.suppressed ? unsuppressMate(mate.id) : suppressMate(mate.id);
+                        if (mate.suppressed) { unsuppressMate(mate.id); } else { suppressMate(mate.id); }
                       }}
                       className="w-4 h-4 flex items-center justify-center rounded hover:bg-[#21262d]"
                       title={mate.suppressed ? "Unsuppress" : "Suppress"}

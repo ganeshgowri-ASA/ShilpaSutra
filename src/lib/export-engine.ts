@@ -61,9 +61,9 @@ function computeFaceNormal(
 ): [number, number, number] {
   const ux = bx - ax, uy = by - ay, uz = bz - az;
   const vx = cx - ax, vy = cy - ay, vz = cz - az;
-  let nx = uy * vz - uz * vy;
-  let ny = uz * vx - ux * vz;
-  let nz = ux * vy - uy * vx;
+  const nx = uy * vz - uz * vy;
+  const ny = uz * vx - ux * vz;
+  const nz = ux * vy - uy * vx;
   const len = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
   return [nx / len, ny / len, nz / len];
 }
