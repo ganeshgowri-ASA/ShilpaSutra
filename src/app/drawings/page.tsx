@@ -1,5 +1,11 @@
 "use client";
 import { useState, useRef } from "react";
+import {
+  getISO2768Tolerance,
+  calculateISO286Fit,
+  COMMON_FITS,
+  type ISO2768LinearGrade,
+} from "@/lib/gdt-engine";
 
 // ─── GD&T SVG Symbols ──────────────────────────────────────────────────────
 
@@ -527,7 +533,11 @@ export default function DrawingsPage() {
   const [datumLabels, setDatumLabels] = useState<DatumLabel[]>([
     { id: "d1", letter: "A", x: 100, y: 220 },
   ]);
-  const [gdtTab, setGdtTab] = useState<"symbols" | "datums">("symbols");
+  const [gdtTab, setGdtTab] = useState<"symbols" | "datums" | "standards">("symbols");
+  const [stdFitName, setStdFitName] = useState("H7/g6");
+  const [stdFitDia, setStdFitDia] = useState("25");
+  const [stdIsoSize, setStdIsoSize] = useState("50");
+  const [stdIsoGrade, setStdIsoGrade] = useState<ISO2768LinearGrade>("m");
   const [newTolerance, setNewTolerance] = useState("0.05");
   const [newDatum, setNewDatum] = useState("");
   const [newDatumLetter, setNewDatumLetter] = useState("B");
@@ -726,7 +736,7 @@ export default function DrawingsPage() {
         {/* GD&T Toolbar */}
         <div className="px-3 py-2 border-b border-[#21262d]">
           <div className="text-[10px] text-slate-400 uppercase mb-1 font-bold">GD&T Annotations</div>
-          <div className="flex gap-1 mb-1">
+          <div className="flex gap-0.5 mb-1 flex-wrap">
             <button onClick={() => setGdtTab("symbols")}
               className={`text-[9px] px-2 py-0.5 rounded ${gdtTab === "symbols" ? "bg-[#00D4FF] text-black" : "bg-[#21262d] text-slate-400"}`}>
               Symbols
@@ -734,6 +744,10 @@ export default function DrawingsPage() {
             <button onClick={() => setGdtTab("datums")}
               className={`text-[9px] px-2 py-0.5 rounded ${gdtTab === "datums" ? "bg-[#00D4FF] text-black" : "bg-[#21262d] text-slate-400"}`}>
               Datums
+            </button>
+            <button onClick={() => setGdtTab("standards")}
+              className={`text-[9px] px-2 py-0.5 rounded ${gdtTab === "standards" ? "bg-[#00D4FF] text-black" : "bg-[#21262d] text-slate-400"}`}>
+              Standards
             </button>
           </div>
 
@@ -817,6 +831,68 @@ export default function DrawingsPage() {
               </div>
             </>
           )}
+
+          {gdtTab === "standards" && (() => {
+            const fitDef = COMMON_FITS.find(f => f.name === stdFitName) ?? COMMON_FITS[0];
+            const fitResult = calculateISO286Fit(parseFloat(stdFitDia)||25, "H", fitDef.holeGrade, fitDef.shaft, fitDef.shaftGrade);
+            const isoResult = getISO2768Tolerance(parseFloat(stdIsoSize)||50, stdIsoGrade);
+            return (
+              <div className="space-y-2">
+                {/* ISO 2768 */}
+                <div className="bg-[#0d1117] rounded border border-[#21262d] p-1.5">
+                  <div className="text-[9px] text-[#00D4FF] font-bold mb-1">ISO 2768 General Tol.</div>
+                  <div className="flex gap-1 mb-1">
+                    <div className="flex-1">
+                      <div className="text-[8px] text-slate-500">Size (mm)</div>
+                      <input value={stdIsoSize} onChange={e => setStdIsoSize(e.target.value)}
+                        className="w-full bg-[#161b22] border border-[#21262d] rounded px-1 py-0.5 text-[9px] text-white" />
+                    </div>
+                    <div className="flex-1">
+                      <div className="text-[8px] text-slate-500">Grade</div>
+                      <select value={stdIsoGrade} onChange={e => setStdIsoGrade(e.target.value as ISO2768LinearGrade)}
+                        className="w-full bg-[#161b22] border border-[#21262d] rounded px-1 py-0.5 text-[9px] text-white">
+                        <option value="f">f Fine</option>
+                        <option value="m">m Medium</option>
+                        <option value="c">c Coarse</option>
+                        <option value="v">v V.Coarse</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="text-[8px] text-slate-400 space-y-0.5">
+                    <div className="flex justify-between"><span>Linear</span><span className="text-white">±{isoResult.linearTolerance.toFixed(3)} mm</span></div>
+                    <div className="flex justify-between"><span>Angular</span><span className="text-white">±{isoResult.angularTolerance.toFixed(3)}°</span></div>
+                    <div className="flex justify-between"><span>Flatness</span><span className="text-white">{isoResult.straightnessFlatnessTolerance.toFixed(3)} mm</span></div>
+                  </div>
+                </div>
+                {/* ISO 286 Fit */}
+                <div className="bg-[#0d1117] rounded border border-[#21262d] p-1.5">
+                  <div className="text-[9px] text-[#00D4FF] font-bold mb-1">ISO 286 Fit Calculator</div>
+                  <div className="flex gap-1 mb-1">
+                    <div className="flex-1">
+                      <div className="text-[8px] text-slate-500">⌀ (mm)</div>
+                      <input value={stdFitDia} onChange={e => setStdFitDia(e.target.value)}
+                        className="w-full bg-[#161b22] border border-[#21262d] rounded px-1 py-0.5 text-[9px] text-white" />
+                    </div>
+                  </div>
+                  <div className="mb-1">
+                    <div className="text-[8px] text-slate-500">Fit</div>
+                    <select value={stdFitName} onChange={e => setStdFitName(e.target.value)}
+                      className="w-full bg-[#161b22] border border-[#21262d] rounded px-1 py-0.5 text-[9px] text-white">
+                      {COMMON_FITS.map(f => <option key={f.name} value={f.name}>{f.name}</option>)}
+                    </select>
+                  </div>
+                  <div className={`rounded px-1.5 py-1 text-[8px] mb-1 ${fitResult.type === "clearance" ? "bg-green-900/40 text-green-300" : fitResult.type === "interference" ? "bg-red-900/40 text-red-300" : "bg-yellow-900/40 text-yellow-300"}`}>
+                    {fitResult.type.charAt(0).toUpperCase() + fitResult.type.slice(1)} fit — {fitDef.description}
+                  </div>
+                  <div className="text-[8px] text-slate-400 space-y-0.5">
+                    <div className="flex justify-between"><span>Hole {fitResult.holeTolerance.grade}</span><span className="text-white">+{(fitResult.holeTolerance.upper*1000).toFixed(0)}/0 µm</span></div>
+                    <div className="flex justify-between"><span>Shaft {fitResult.shaftTolerance.grade}</span><span className="text-white">{fitResult.shaftTolerance.upper>=0?"+":""}{(fitResult.shaftTolerance.upper*1000).toFixed(0)}/{(fitResult.shaftTolerance.lower*1000).toFixed(0)} µm</span></div>
+                    <div className="flex justify-between"><span>Max clearance</span><span className={fitResult.maxClearance>=0?"text-green-400":"text-red-400"}>{(fitResult.maxClearance*1000).toFixed(0)} µm</span></div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Scale */}
