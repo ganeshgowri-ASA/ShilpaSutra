@@ -2,7 +2,9 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useCadStore } from "@/stores/cad-store";
 import { runReasoningEngine } from "@/lib/ai-reasoning-engine";
-import { Terminal, Grid3X3, Sparkles, X, CheckCircle2, AlertCircle } from "lucide-react";
+import { Terminal, Grid3X3, Sparkles, X, CheckCircle2, AlertCircle, Brain, Zap, Cpu } from "lucide-react";
+import { type ThinkingMode, THINKING_MODES, parsePromptComplexity } from "@/lib/thinking-engine";
+import { InlineAttachButton, type AttachedFile } from "@/components/ai/AttachmentUpload";
 
 const COMMANDS = [
   "BOX", "CYLINDER", "SPHERE", "CONE",
@@ -119,6 +121,8 @@ export default function DesignerCommandBar() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
   const [commandResponse, setCommandResponse] = useState<{ message: string; success: boolean } | null>(null);
+  const [thinkingMode, setThinkingMode] = useState<ThinkingMode>("auto");
+  const [attachments, setAttachments] = useState<AttachedFile[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const responseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -331,6 +335,32 @@ export default function DesignerCommandBar() {
           </button>
         </div>
       )}
+      {/* Thinking mode compact toggle */}
+      <div className="flex items-center gap-0.5 mr-2 shrink-0">
+        {(["normal", "extended", "deep", "auto"] as ThinkingMode[]).map((mode) => {
+          const isActive = thinkingMode === mode;
+          const icons: Record<ThinkingMode, React.ReactNode> = {
+            normal: <Zap size={9} />,
+            extended: <Brain size={9} />,
+            deep: <Cpu size={9} />,
+            auto: <Sparkles size={9} />,
+          };
+          return (
+            <button
+              key={mode}
+              onClick={() => setThinkingMode(mode)}
+              className={`p-1 rounded transition-colors ${
+                isActive ? "text-white" : "text-slate-600 hover:text-slate-400"
+              }`}
+              style={isActive ? { color: THINKING_MODES[mode].color } : undefined}
+              title={`${THINKING_MODES[mode].label}: ${THINKING_MODES[mode].description}`}
+            >
+              {icons[mode]}
+            </button>
+          );
+        })}
+      </div>
+
       {/* Command input */}
       <div className="flex items-center gap-2 flex-1">
         <Terminal size={14} className="text-slate-600 shrink-0" />
@@ -396,6 +426,15 @@ export default function DesignerCommandBar() {
             </div>
           )}
         </form>
+
+        {/* Inline attach button */}
+        <InlineAttachButton
+          onAttach={setAttachments}
+          existingAttachments={attachments}
+        />
+        {attachments.length > 0 && (
+          <span className="text-[9px] text-purple-400">{attachments.length} file{attachments.length > 1 ? "s" : ""}</span>
+        )}
       </div>
 
       {/* Status indicators */}
@@ -422,6 +461,18 @@ export default function DesignerCommandBar() {
         )}
 
         <span className="text-slate-600">0, 0, 0</span>
+
+        {/* Thinking mode indicator */}
+        <span
+          className="text-[9px] font-medium px-1.5 py-0.5 rounded"
+          style={{
+            color: THINKING_MODES[thinkingMode].color,
+            backgroundColor: THINKING_MODES[thinkingMode].bgColor,
+          }}
+        >
+          {THINKING_MODES[thinkingMode].label}
+          {thinkingMode !== "auto" && <span className="opacity-60 ml-0.5">~{THINKING_MODES[thinkingMode].credits}cr</span>}
+        </span>
       </div>
     </div>
   );
