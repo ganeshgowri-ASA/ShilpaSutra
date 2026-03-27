@@ -28,6 +28,7 @@ import {
   PanelLeft,
   User,
   LayoutTemplate,
+  Building2,
 } from "lucide-react";
 
 interface NavItem {
@@ -60,6 +61,7 @@ const navSections: NavSection[] = [
     items: [
       { href: "/simulator", label: "FEA Basic", icon: <Activity size={iconSize} /> },
       { href: "/fea-advanced", label: "FEA Advanced", icon: <Flame size={iconSize} /> },
+      { href: "/structural-analysis", label: "Structural", icon: <Building2 size={iconSize} /> },
       { href: "/cfd", label: "CFD Basic", icon: <Wind size={iconSize} /> },
       { href: "/cfd-advanced", label: "CFD Advanced", icon: <Tornado size={iconSize} /> },
     ],

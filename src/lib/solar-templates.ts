@@ -386,5 +386,5 @@ export function buildDefaultInputs(
 ): Record<string, number | string | boolean> {
   const defaults: Record<string, number | string | boolean> = {};
   for (const p of template.params) defaults[p.key] = p.default;
-  return { ...defaults, ...overrides };
+  return { ...defaults, ...(overrides as Record<string, number | string | boolean> | undefined) };
 }
