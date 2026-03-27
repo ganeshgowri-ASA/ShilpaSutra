@@ -19,6 +19,7 @@ import {
   Bot,
   Ruler,
   Cpu,
+  Eye,
   ClipboardList,
   FileBarChart,
   Settings,
@@ -82,6 +83,7 @@ const navSections: NavSection[] = [
       { href: "/renderer", label: "AI Renderer", icon: <Bot size={iconSize} /> },
       { href: "/measure", label: "Measure Tool", icon: <Ruler size={iconSize} /> },
       { href: "/simscape", label: "SimScape", icon: <Cpu size={iconSize} /> },
+      { href: "/visualization", label: "Visualization", icon: <Eye size={iconSize} /> },
     ],
   },
   {
