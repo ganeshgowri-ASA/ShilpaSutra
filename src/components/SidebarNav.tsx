@@ -11,6 +11,7 @@ import {
   Flame,
   Wind,
   Tornado,
+  Building2,
   Boxes,
   Box,
   Library,
@@ -61,6 +62,7 @@ const navSections: NavSection[] = [
       { href: "/fea-advanced", label: "FEA Advanced", icon: <Flame size={iconSize} /> },
       { href: "/cfd", label: "CFD Basic", icon: <Wind size={iconSize} /> },
       { href: "/cfd-advanced", label: "CFD Advanced", icon: <Tornado size={iconSize} /> },
+      { href: "/structural", label: "Structural Analysis", icon: <Building2 size={iconSize} /> },
     ],
   },
   {
