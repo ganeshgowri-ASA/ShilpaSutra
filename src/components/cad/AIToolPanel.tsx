@@ -8,6 +8,37 @@ import {
   History, Trash2, Minus, Maximize2,
 } from "lucide-react";
 
+// ── Smart prompt suggestions ─────────────────────────────────────────────────
+const CAD_SUGGESTIONS: string[] = [
+  "dumbbell with 40mm diameter spheres and 200mm bar",
+  "gear with 24 teeth module 2mm",
+  "L-bracket 80x60mm thickness 4mm",
+  "pipe flange DN50 PN16",
+  "hex bolt M10x40",
+  "heat sink 50x50mm with 8 fins",
+  "PV solar panel 2m x 1m x 35mm",
+  "enclosure 150x100x60mm wall 2.5mm",
+  "cylinder rod 25mm diameter 120mm long",
+  "sphere ball 30mm diameter",
+  "spur gear 20 teeth 10mm face width",
+  "pipe tube OD50mm wall 3mm length 200mm",
+  "plate with holes 100x80mm thickness 6mm 4 holes",
+  "cone taper 40mm base 80mm height",
+  "mounting bracket NEMA 23",
+  "box 60x40x30mm",
+  "bearing housing 30mm bore",
+  "heatsink aluminum 60x60mm 10 fins",
+  "t-slot aluminium extrusion 20x20mm 300mm long",
+  "hex nut M12",
+];
+
+function filterSuggestions(input: string, toolType: string): string[] {
+  if (toolType !== "ai_text_to_cad") return [];
+  const q = input.trim().toLowerCase();
+  if (q.length < 2) return CAD_SUGGESTIONS.slice(0, 8);
+  return CAD_SUGGESTIONS.filter((s) => s.toLowerCase().includes(q)).slice(0, 8);
+}
+
 // ── Prompt History Persistence ──────────────────────────────────────────
 const HISTORY_KEY = "shilpasutra_prompt_history";
 const MAX_HISTORY = 50;
@@ -179,7 +210,18 @@ export default function AIToolPanel({ toolType, onClose }: AIToolPanelProps) {
   const [history, setHistory] = useState<PromptHistoryEntry[]>([]);
   const [minimized, setMinimized] = useState(false);
   const [conversation, setConversation] = useState<ConversationEntry[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [suggestionIndex, setSuggestionIndex] = useState(-1);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  const suggestions = filterSuggestions(input, toolType);
+
+  const applySuggestion = useCallback((s: string) => {
+    setInput(s);
+    setShowSuggestions(false);
+    setSuggestionIndex(-1);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  }, []);
 
   const refreshHistory = useCallback(() => {
     setHistory(loadPromptHistory().filter((h) => h.tool === toolType));
@@ -416,13 +458,44 @@ export default function AIToolPanel({ toolType, onClose }: AIToolPanelProps) {
             <textarea
               ref={inputRef}
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                setInput(e.target.value);
+                setShowSuggestions(true);
+                setSuggestionIndex(-1);
+              }}
+              onFocus={() => setShowSuggestions(true)}
+              onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
               onKeyDown={(e) => {
+                if (showSuggestions && suggestions.length > 0) {
+                  if (e.key === "ArrowDown") {
+                    e.preventDefault();
+                    setSuggestionIndex((i) => Math.min(i + 1, suggestions.length - 1));
+                    return;
+                  }
+                  if (e.key === "ArrowUp") {
+                    e.preventDefault();
+                    setSuggestionIndex((i) => Math.max(i - 1, -1));
+                    return;
+                  }
+                  if (e.key === "Tab" && suggestionIndex >= 0) {
+                    e.preventDefault();
+                    applySuggestion(suggestions[suggestionIndex]);
+                    return;
+                  }
+                }
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
-                  handleSubmit();
+                  if (showSuggestions && suggestionIndex >= 0) {
+                    applySuggestion(suggestions[suggestionIndex]);
+                  } else {
+                    setShowSuggestions(false);
+                    handleSubmit();
+                  }
                 }
-                if (e.key === "Escape") setMinimized(true);
+                if (e.key === "Escape") {
+                  if (showSuggestions) { setShowSuggestions(false); }
+                  else setMinimized(true);
+                }
               }}
               placeholder={config.placeholder}
               rows={2}
@@ -439,6 +512,30 @@ export default function AIToolPanel({ toolType, onClose }: AIToolPanelProps) {
             >
               {isLoading ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
             </button>
+
+            {/* Autocomplete suggestions dropdown */}
+            {showSuggestions && suggestions.length > 0 && toolType === "ai_text_to_cad" && (
+              <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-[#0d1117] border border-[#21262d] rounded-lg shadow-2xl overflow-hidden max-h-[200px] overflow-y-auto">
+                {input.trim().length < 2 && (
+                  <div className="px-3 py-1.5 text-[9px] text-slate-600 uppercase tracking-wider font-semibold border-b border-[#21262d]">
+                    Common CAD prompts
+                  </div>
+                )}
+                {suggestions.map((s, i) => (
+                  <button
+                    key={s}
+                    onMouseDown={(e) => { e.preventDefault(); applySuggestion(s); }}
+                    className={`w-full text-left px-3 py-2 text-[11px] truncate transition-colors ${
+                      i === suggestionIndex
+                        ? "bg-purple-600/20 text-purple-300"
+                        : "text-slate-300 hover:bg-[#161b22] hover:text-white"
+                    }`}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
