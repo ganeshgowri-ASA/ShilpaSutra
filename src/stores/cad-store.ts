@@ -1846,6 +1846,26 @@ export const useCadStore = create<CadState>((set, get) => ({
 
     // ── 4. Complex object recognition (natural language) ──
 
+    // Dumbbell / Barbell: "dumbbell 20mm dia 20mm bar"
+    if (/dumbbell\b|barbell\b/i.test(raw)) {
+      const diaM = raw.match(/(\d+(?:\.\d+)?)\s*mm\s*(?:dia|diameter|d\b)/i);
+      const sphereR = diaM ? parseFloat(diaM[1]) / 2 * MM_TO_SCENE : 1.0;
+      const lenM = raw.match(/(\d+(?:\.\d+)?)\s*mm\s*(?:bar|long|length|l\b)/i);
+      const barLen = lenM ? parseFloat(lenM[1]) * MM_TO_SCENE : 2.0;
+      const barR = Math.max(0.05, sphereR * 0.25);
+      store.pushHistory();
+      store.addGeneratedObject({ type: "cylinder", name: "Dumbbell - Bar",
+        dimensions: { width: barR, height: barLen, depth: barR },
+        position: [0, barLen / 2, 0], ...mat });
+      store.addGeneratedObject({ type: "sphere", name: "Dumbbell - Left Weight",
+        dimensions: { width: sphereR, height: sphereR, depth: sphereR },
+        position: [0, 0, 0], color: "#4a4a5a", metalness: 0.7, roughness: 0.3 });
+      store.addGeneratedObject({ type: "sphere", name: "Dumbbell - Right Weight",
+        dimensions: { width: sphereR, height: sphereR, depth: sphereR },
+        position: [0, barLen, 0], color: "#4a4a5a", metalness: 0.7, roughness: 0.3 });
+      return;
+    }
+
     // PV module / solar panel: "create a PV module 2m x 1m x 35mm"
     if (/pv\s*module|solar\s*panel|photovoltaic/i.test(raw)) {
       const d = dims ?? { width: 200 * MM_TO_SCENE, depth: 100 * MM_TO_SCENE, height: 3.5 * MM_TO_SCENE };

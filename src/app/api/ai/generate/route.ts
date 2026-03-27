@@ -330,6 +330,21 @@ function generateFromPrompt(prompt: string): GeneratedObject {
   const lower = prompt.toLowerCase();
   const dims = parseDimensions(prompt);
 
+  // Dumbbell / Barbell
+  if (lower.includes("dumbbell") || lower.includes("barbell")) {
+    const diaM = lower.match(/(\d+(?:\.\d+)?)\s*mm\s*(?:dia|diameter)/);
+    const sphereD = diaM ? parseFloat(diaM[1]) : (dims.diameter || dims.width || 20);
+    const lenM = lower.match(/(\d+(?:\.\d+)?)\s*mm\s*(?:bar|long|length)/);
+    const barLen = lenM ? parseFloat(lenM[1]) : (dims.height || dims.length || sphereD * 5);
+    const barD = sphereD * 0.25;
+    return {
+      type: "cylinder",
+      name: "Dumbbell",
+      dimensions: { width: barD / 20, height: barLen / 10, depth: barD / 20 },
+      description: `Dumbbell: bar D${barD.toFixed(1)}mm x L${barLen}mm, weights D${sphereD}mm. Full assembly has 3 parts.`,
+    };
+  }
+
   // Enclosure (box with wall thickness)
   if (lower.includes("enclosure") || lower.includes("case") || lower.includes("housing") && !lower.includes("bearing")) {
     const w = (dims.width || 100) / 10;

@@ -28,6 +28,31 @@ function generateParametricObject(prompt: string): {
 } | null {
   const lower = prompt.toLowerCase();
 
+  if (lower.includes("dumbbell") || lower.includes("barbell")) {
+    const diaM = lower.match(/(\d+(?:\.\d+)?)\s*mm\s*(?:dia|diameter)/);
+    const sphereR = diaM ? parseFloat(diaM[1]) / 2 / 10 : 1.0; // scene units
+    const lenM = lower.match(/(\d+(?:\.\d+)?)\s*mm\s*(?:bar|long|length)/);
+    const barLen = lenM ? parseFloat(lenM[1]) / 10 : 2.0;
+    return {
+      type: "cylinder",
+      name: "Dumbbell Bar",
+      dimensions: { width: sphereR * 0.25, height: barLen, depth: sphereR * 0.25 },
+      description: `Dumbbell bar ${barLen * 10}mm long. Use AI to generate the full assembly with weights.`,
+    };
+  }
+
+  if (lower.includes("pv module") || lower.includes("solar panel") || lower.includes("photovoltaic")) {
+    const mM = lower.match(/(\d+(?:\.\d+)?)\s*(?:m|meter)\s*x\s*(\d+(?:\.\d+)?)\s*(?:m|meter)/);
+    const w = mM ? parseFloat(mM[1]) * 100 : 260;
+    const d = mM ? parseFloat(mM[2]) * 100 : 140;
+    return {
+      type: "box",
+      name: "PV Module Frame",
+      dimensions: { width: w, height: 0.35, depth: d },
+      description: `PV module ${w / 100}m x ${d / 100}m. Full assembly with glass and cells via AI mode.`,
+    };
+  }
+
   if (lower.includes("gear") || lower.includes("spur")) {
     const teeth = parseInt(lower.match(/(\d+)\s*teeth/)?.[1] || "20");
     const radius = (teeth * 2) / (2 * Math.PI); // approximate
@@ -150,6 +175,7 @@ export default function AIChatSidebar({ onClose }: { onClose: () => void }) {
   const addObject = useCadStore((s) => s.addObject);
   const updateObject = useCadStore((s) => s.updateObject);
   const addGeneratedObject = useCadStore((s) => s.addGeneratedObject);
+  const addAssemblyFromParts = useCadStore((s) => s.addAssemblyFromParts);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -191,8 +217,23 @@ export default function AIChatSidebar({ onClose }: { onClose: () => void }) {
 
       const data = await response.json();
 
-      if (data.success && data.object) {
-        // Create the 3D object from AI response
+      if (data.success && data.assemblyParts && data.assemblyParts.length > 0) {
+        // Multi-part assembly (dumbbell, PV module, bolt assembly, etc.)
+        const ids = addAssemblyFromParts(data.assemblyParts, data.object?.name || "Assembly");
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === thinkingId
+              ? {
+                  ...m,
+                  content: data.message || `Created "${data.object?.name || "Assembly"}" with ${data.assemblyParts.length} parts in the viewport.`,
+                  generating: false,
+                  objectId: ids[0],
+                }
+              : m
+          )
+        );
+      } else if (data.success && data.object) {
+        // Single primitive object
         const objId = addGeneratedObject({
           type: data.object.type,
           name: data.object.name,
