@@ -1,11 +1,13 @@
 "use client";
-import { useState, useCallback, Suspense } from "react";
+import { useState, useCallback, useMemo, Suspense } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import {
   CheckCircle2, Circle, Package, ChevronDown, ChevronRight,
-  Loader2, Brain,
+  Loader2, Brain, LayoutTemplate,
 } from "lucide-react";
+import Link from "next/link";
+import { matchTemplateFromPrompt, extractCapacityKWp } from "@/lib/solar-templates";
 
 // --- Types ---
 interface ReasoningStep {
@@ -199,6 +201,10 @@ export default function TextToCADPage() {
 
   const active = generations.find(g => g.id === activeId);
 
+  // Template recommendation from prompt
+  const suggestedTemplate = useMemo(() => matchTemplateFromPrompt(prompt), [prompt]);
+  const suggestedCapacity = useMemo(() => extractCapacityKWp(prompt), [prompt]);
+
   return (
     <div className="flex flex-col h-screen bg-[#0d1117] text-white overflow-hidden">
       {/* Header */}
@@ -225,6 +231,22 @@ export default function TextToCADPage() {
               className="w-full bg-[#00D4FF] hover:bg-[#00b8d9] disabled:opacity-40 text-black py-2 rounded text-xs font-bold transition-colors">
               Generate Assembly
             </button>
+
+            {/* Template recommendation banner */}
+            {suggestedTemplate && (
+              <Link
+                href={`/templates?open=${suggestedTemplate.id}${suggestedCapacity ? `&capacity=${suggestedCapacity}` : ""}`}
+                className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2.5 text-[11px] text-amber-300 hover:border-amber-500/70 hover:bg-amber-500/15 transition-colors"
+              >
+                <LayoutTemplate size={14} className="mt-0.5 shrink-0 text-amber-400" />
+                <span>
+                  <span className="font-semibold">Template available:</span>{" "}
+                  {suggestedTemplate.name}
+                  {suggestedCapacity ? ` · ${suggestedCapacity >= 1000 ? (suggestedCapacity / 1000).toFixed(1) + " MWp" : suggestedCapacity + " kWp"}` : ""}
+                  {" "}— use parametric template for precise BOS sizing →
+                </span>
+              </Link>
+            )}
 
             {/* Reasoning Steps */}
             {active?.reasoning && active.reasoning.length > 0 && (
