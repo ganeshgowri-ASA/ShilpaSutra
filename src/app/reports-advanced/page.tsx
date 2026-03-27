@@ -1,5 +1,5 @@
 "use client";
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, type Dispatch, type SetStateAction } from "react";
 import {
   generateReport,
   IEC_61215_CHECKS,
@@ -95,15 +95,15 @@ const THERMAL_CHART = [
 ];
 
 /* ── Drag-to-reorder helper ── */
-function useDragOrder(sections: ReportSection[], setSections: React.Dispatch<React.SetStateAction<ReportSection[]>>) {
+function useDragOrder(sections: ReportSection[], setSections: Dispatch<SetStateAction<ReportSection[]>>) {
   const [dragId, setDragId] = useState<string | null>(null);
 
   const onDragStart = (id: string) => setDragId(id);
   const onDrop = (targetId: string) => {
     if (!dragId || dragId === targetId) return;
-    setSections(prev => {
+    setSections((prev: ReportSection[]) => {
       const arr = [...prev];
-      const fromIdx = arr.findIndex(s => s.id === dragId);
+      const fromIdx = arr.findIndex((s: ReportSection) => s.id === dragId);
       const toIdx = arr.findIndex(s => s.id === targetId);
       const [moved] = arr.splice(fromIdx, 1);
       arr.splice(toIdx, 0, moved);
@@ -137,12 +137,12 @@ export default function ReportsAdvancedPage() {
   }, []);
 
   const toggleSection = useCallback((id: string) => {
-    setSections(prev => prev.map(s => s.id === id ? { ...s, included: !s.included } : s));
+    setSections((prev: ReportSection[]) => prev.map((s: ReportSection) => s.id === id ? { ...s, included: !s.included } : s));
   }, []);
 
   const chartData = template === "cfd-report" ? THERMAL_CHART : STRESS_CHART;
   const maxChart = Math.max(...chartData.map(d => d.value));
-  const includedSections = sections.filter(s => s.included);
+  const includedSections = sections.filter((s: ReportSection) => s.included);
 
   const complianceSets = [
     { standard: "IEC 61215", checks: IEC_61215_CHECKS },
@@ -161,6 +161,7 @@ export default function ReportsAdvancedPage() {
           "compliance": "compliance",
           "manufacturing": "manufacturing",
         };
+        const EXCLUDE_IDS = ["bom", "bom-mfg", "iec61215", "is800", "iso2768", "cert"];
         generateReport({
           config: {
             title: TEMPLATES.find(t => t.id === template)?.label || "Report",
@@ -169,13 +170,13 @@ export default function ReportsAdvancedPage() {
             company,
             author,
             revision,
-            type: typeMap[template],
+            type: typeMap[template as ReportTemplate] as ReportType,
           },
           sections: includedSections
-            .filter(s => s.id !== "bom" && s.id !== "bom-mfg" && !["iec61215","is800","iso2768","cert"].includes(s.id))
-            .map(s => ({ title: s.title, content: s.content })),
-          bom: includedSections.some(s => s.id === "bom" || s.id === "bom-mfg")
-            ? bom.map(b => ({ ...b, unitCost: b.unitCost }))
+            .filter((s: ReportSection) => !EXCLUDE_IDS.includes(s.id))
+            .map((s: ReportSection) => ({ title: s.title, content: s.content })),
+          bom: includedSections.some((s: ReportSection) => s.id === "bom" || s.id === "bom-mfg")
+            ? bom
             : undefined,
           complianceChecks: template === "compliance" ? complianceSets : undefined,
         });
@@ -233,7 +234,7 @@ export default function ReportsAdvancedPage() {
               ].map(f => (
                 <div key={f.label}>
                   <label className="text-[10px] text-slate-500 block mb-0.5">{f.label}</label>
-                  <input value={f.val} onChange={e => f.set(e.target.value)}
+                  <input value={f.val} onChange={(e: { target: { value: string } }) => f.set(e.target.value)}
                     className="w-full bg-[#0a0a0f] border border-[#252540] rounded px-2 py-1.5 text-xs text-white outline-none focus:border-[#00D4FF]" />
                 </div>
               ))}
@@ -246,11 +247,11 @@ export default function ReportsAdvancedPage() {
               Sections — drag to reorder ({includedSections.length}/{sections.length})
             </h4>
             <div className="space-y-1">
-              {sections.map(s => (
+              {sections.map((s: ReportSection) => (
                 <label key={s.id}
                   draggable
                   onDragStart={() => onDragStart(s.id)}
-                  onDragOver={e => e.preventDefault()}
+                  onDragOver={(e: { preventDefault: () => void }) => e.preventDefault()}
                   onDrop={() => onDrop(s.id)}
                   className={`flex items-center gap-2 p-2 rounded cursor-grab transition-colors select-none ${s.included ? "bg-[#00D4FF]/5" : "opacity-50"} ${dragId === s.id ? "opacity-30" : ""}`}>
                   <span className="text-slate-600 text-xs">⠿</span>
@@ -347,7 +348,7 @@ export default function ReportsAdvancedPage() {
           })}
 
           {/* Section previews */}
-          {includedSections.map((section, i) => (
+          {includedSections.map((section: ReportSection, i: number) => (
             <div key={section.id} className={`bg-[#0d0d14] border rounded-xl p-4 transition-colors cursor-pointer ${activePreview === section.id ? "border-[#00D4FF]/40" : "border-[#1a1a2e] hover:border-[#252540]"}`}
               onClick={() => setActivePreview(activePreview === section.id ? null : section.id)}>
               <div className="flex items-center gap-2 mb-1">
