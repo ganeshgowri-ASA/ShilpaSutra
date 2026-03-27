@@ -5,6 +5,28 @@ import ConvergenceMonitor from "@/components/ConvergenceMonitor";
 import ResultVisualization from "@/components/ResultVisualization";
 import SimulationComparison, { type SimulationRun } from "@/components/SimulationComparison";
 import { materials as fullMaterialDB, getMaterialCategories } from "@/lib/materials";
+import {
+  generateMesh,
+  type MeshSettings,
+  type MeshStatistics,
+  defaultMeshSettings,
+} from "@/lib/mesh-engine";
+import {
+  calculateWindLoad,
+  calculateDeadLoad,
+  calculateLiveLoad,
+  generateLoadCombinations,
+  calculateSectionProperties,
+  calculateSolarPVWindLoad,
+  getOccupancyTypes,
+  type WindLoadResult,
+  type DeadLoadResult,
+  type LiveLoadResult,
+  type LoadCombination,
+  type SectionType,
+  type SectionDimensions,
+  type SolarPVWindResult,
+} from "@/lib/structural-loads";
 
 const SimulatorViewport = dynamic(() => import("@/components/SimulatorViewport"), {
   ssr: false,
@@ -318,7 +340,7 @@ export default function SimulatorPage() {
   const [displayMode, setDisplayMode] = useState<"stress" | "displacement">("stress");
   const [displacementScale, setDisplacementScale] = useState(10);
   const [activeLoadType, setActiveLoadType] = useState<Load["type"]>("force");
-  const [leftTab, setLeftTab] = useState<"setup" | "loads" | "results" | "thermal">("setup");
+  const [leftTab, setLeftTab] = useState<"setup" | "loads" | "results" | "thermal" | "struct">("setup");
   const [matSearch, setMatSearch] = useState("");
   const [matCategory, setMatCategory] = useState("All");
   const [thermalBCs, setThermalBCs] = useState<ThermalBC[]>([]);
@@ -327,6 +349,31 @@ export default function SimulatorPage() {
   const [thermalProgress, setThermalProgress] = useState(0);
   const [simHistory, setSimHistory] = useState<SimulationRun[]>([]);
   const [runCounter, setRunCounter] = useState(0);
+
+  // Mesh engine state
+  const [meshSettings, setMeshSettings] = useState<MeshSettings>(defaultMeshSettings);
+  const [meshStats, setMeshStats] = useState<MeshStatistics | null>(null);
+  const [adaptiveRefine, setAdaptiveRefine] = useState(true);
+
+  // Structural loads state
+  const [showLoadCalc, setShowLoadCalc] = useState(false);
+  const [windSpeed, setWindSpeed] = useState(44);
+  const [terrainCat, setTerrainCat] = useState<1 | 2 | 3 | 4>(2);
+  const [loadCode, setLoadCode] = useState<"IS875" | "ASCE7">("IS875");
+  const [occupancyType, setOccupancyType] = useState("office");
+  const [floorArea, setFloorArea] = useState(100);
+  const [windResult, setWindResult] = useState<WindLoadResult | null>(null);
+  const [deadResult, setDeadResult] = useState<DeadLoadResult | null>(null);
+  const [liveResult, setLiveResult] = useState<LiveLoadResult | null>(null);
+  const [loadCombinations, setLoadCombinations] = useState<LoadCombination[]>([]);
+
+  // Section properties state
+  const [sectionType, setSectionType] = useState<SectionType>("i_beam");
+  const [sectionDims, setSectionDims] = useState<SectionDimensions>({ type: "i_beam", d: 300, bf: 150, tf: 10, tw: 7 });
+
+  // Solar PV wind
+  const [pvTilt, setPvTilt] = useState(15);
+  const [pvResult, setPvResult] = useState<SolarPVWindResult | null>(null);
 
   const material = materials.find((m) => m.id === mat) || materials[0];
   const filteredMaterials = materials.filter(m => {
@@ -465,7 +512,7 @@ Element Type,${elementType},`;
         {/* Left Panel */}
         <div className="w-72 bg-[#161b22] border-r border-[#21262d] flex flex-col shrink-0">
           <div className="flex border-b border-[#21262d]">
-            {(["setup", "loads", "results", "thermal"] as const).map(t => (
+            {(["setup", "loads", "struct", "results", "thermal"] as const).map(t => (
               <button key={t} onClick={() => setLeftTab(t)}
                 className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-wider border-b-2 ${leftTab === t ? "border-[#00D4FF] text-white" : "border-transparent text-slate-500 hover:text-slate-300"}`}>
                 {t}
@@ -531,42 +578,111 @@ Element Type,${elementType},`;
                   </div>
                 </div>
 
-                {/* Mesh Settings */}
+                {/* Mesh Settings - Professional */}
                 <div>
                   <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Mesh Settings</h3>
                   <div className="bg-[#0d1117] rounded p-3 border border-[#21262d] text-xs space-y-2">
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-slate-500">Refinement</span>
-                        <span className="text-[#00D4FF] font-mono">{meshRes}x{meshRes}</span>
-                      </div>
-                      <input type="range" min={5} max={60} step={5} value={meshRes}
-                        onChange={e => setMeshRes(parseInt(e.target.value))}
-                        className="w-full accent-[#00D4FF] h-1.5" />
-                      <div className="flex justify-between text-[8px] text-slate-600 mt-0.5">
-                        <span>Coarse</span><span>Fine</span><span>Very Fine</span>
-                      </div>
-                    </div>
                     <div className="flex items-center justify-between">
                       <span className="text-slate-500">Element Type</span>
-                      <select value={elementType} onChange={e => setElementType(e.target.value as "tet4" | "tet10" | "hex8")}
+                      <select value={elementType} onChange={e => {
+                        const val = e.target.value as "tet4" | "tet10" | "hex8";
+                        setElementType(val);
+                        setMeshSettings(prev => ({ ...prev, elementType: val }));
+                      }}
                         className="bg-[#161b22] text-white rounded px-2 py-1 border border-[#21262d] text-[11px]">
-                        <option value="tet4">TET4 (Linear)</option>
-                        <option value="tet10">TET10 (Quadratic)</option>
+                        <option value="tet4">TET4 (Linear Tet)</option>
+                        <option value="tet10">TET10 (Quadratic Tet)</option>
                         <option value="hex8">HEX8 (Brick)</option>
                       </select>
                     </div>
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-slate-500">Element Size</span>
+                        <span className="text-[#00D4FF] font-mono">{meshSettings.elementSize.toFixed(2)}</span>
+                      </div>
+                      <input type="range" min={0.02} max={0.5} step={0.01} value={meshSettings.elementSize}
+                        onChange={e => {
+                          const size = parseFloat(e.target.value);
+                          setMeshSettings(prev => ({ ...prev, elementSize: size }));
+                          setMeshRes(Math.max(5, Math.round(2 / size)));
+                        }}
+                        className="w-full accent-[#00D4FF] h-1.5" />
+                      <div className="flex justify-between text-[8px] text-slate-600 mt-0.5">
+                        <span>Very Fine</span><span>Medium</span><span>Coarse</span>
+                      </div>
+                    </div>
+                    <label className="flex items-center gap-2 text-slate-300 cursor-pointer">
+                      <input type="checkbox" checked={adaptiveRefine}
+                        onChange={e => {
+                          setAdaptiveRefine(e.target.checked);
+                          setMeshSettings(prev => ({ ...prev, refinementEnabled: e.target.checked }));
+                        }}
+                        className="accent-[#00D4FF]" />
+                      Adaptive Refinement (edges/stress)
+                    </label>
+                    {adaptiveRefine && (
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-slate-500">Refinement Factor</span>
+                          <span className="text-[#00D4FF] font-mono">{meshSettings.refinementFactor.toFixed(2)}</span>
+                        </div>
+                        <input type="range" min={0.1} max={1} step={0.05} value={meshSettings.refinementFactor}
+                          onChange={e => setMeshSettings(prev => ({ ...prev, refinementFactor: parseFloat(e.target.value) }))}
+                          className="w-full accent-[#00D4FF] h-1.5" />
+                      </div>
+                    )}
+                    <button
+                      onClick={() => {
+                        const result = generateMesh(geometry, geoDims, meshSettings);
+                        setMeshStats(result.statistics);
+                      }}
+                      className="w-full bg-[#21262d] hover:bg-[#30363d] text-white py-1.5 rounded border border-[#21262d] transition-colors">
+                      Generate Mesh
+                    </button>
+
+                    {/* Mesh Statistics */}
                     <div className="border-t border-[#21262d] pt-2 mt-1 space-y-1">
-                      <div className="text-slate-500">Nodes: <span className="text-green-400">{(meshRes * meshRes).toLocaleString()}</span></div>
-                      <div className="text-slate-500">Elements: <span className="text-green-400">{((meshRes - 1) * (meshRes - 1) * (elementType === "hex8" ? 1 : 2)).toLocaleString()}</span></div>
-                      <div className="text-slate-500">DOF: <span className="text-green-400">{(meshRes * meshRes * (elementType === "tet10" ? 6 : 3)).toLocaleString()}</span></div>
-                      <div className="text-slate-500">Quality: <span className={meshQuality === "Good" ? "text-green-400" : meshQuality === "Moderate" ? "text-yellow-400" : "text-red-400"}>{meshQuality}</span></div>
-                      <div className="text-slate-500">Aspect Ratio: <span className={meshRes >= 30 ? "text-green-400" : "text-yellow-400"}>{meshRes >= 30 ? "< 3.0" : meshRes >= 20 ? "< 5.0" : "< 8.0"}</span></div>
-                      <div className="text-slate-500">Skewness: <span className={meshRes >= 30 ? "text-green-400" : "text-yellow-400"}>{meshRes >= 30 ? "0.12" : meshRes >= 20 ? "0.25" : "0.41"}</span></div>
+                      {meshStats ? (
+                        <>
+                          <div className="text-slate-500">Nodes: <span className="text-green-400">{meshStats.totalNodes.toLocaleString()}</span></div>
+                          <div className="text-slate-500">Elements: <span className="text-green-400">{meshStats.totalElements.toLocaleString()}</span></div>
+                          <div className="text-slate-500">DOF: <span className="text-green-400">{(meshStats.totalNodes * 3).toLocaleString()}</span></div>
+                          <div className="text-slate-500">Avg Quality: <span className={meshStats.avgQuality > 0.6 ? "text-green-400" : meshStats.avgQuality > 0.3 ? "text-yellow-400" : "text-red-400"}>{meshStats.avgQuality.toFixed(3)}</span></div>
+                          <div className="text-slate-500">Avg Aspect Ratio: <span className={meshStats.avgAspectRatio < 3 ? "text-green-400" : "text-yellow-400"}>{meshStats.avgAspectRatio.toFixed(2)}</span></div>
+                          <div className="text-slate-500">Avg Skewness: <span className={meshStats.avgSkewness < 0.5 ? "text-green-400" : "text-yellow-400"}>{meshStats.avgSkewness.toFixed(3)}</span></div>
+                          <div className="text-slate-500">Min Angle: <span className="text-cyan-400">{meshStats.minAngle.toFixed(1)}°</span></div>
+                          <div className="text-slate-500">Max Angle: <span className="text-cyan-400">{meshStats.maxAngle.toFixed(1)}°</span></div>
+                          <div className="text-slate-500">Bad Elements: <span className={meshStats.badElements === 0 ? "text-green-400" : "text-red-400"}>{meshStats.badElements}</span></div>
+                          <div className="text-slate-500">Volume: <span className="text-white">{meshStats.totalVolume.toFixed(4)} m³</span></div>
+
+                          {/* Quality Histogram */}
+                          <div className="mt-2">
+                            <div className="text-[9px] text-slate-500 mb-1">Quality Distribution</div>
+                            <div className="flex items-end gap-px h-8">
+                              {meshStats.qualityHistogram.map((count, i) => {
+                                const maxCount = Math.max(...meshStats!.qualityHistogram, 1);
+                                const h = (count / maxCount) * 100;
+                                const color = i < 3 ? "bg-red-500" : i < 6 ? "bg-yellow-500" : "bg-green-500";
+                                return <div key={i} className={`flex-1 ${color} rounded-t`} style={{ height: `${Math.max(2, h)}%` }} title={`${(i * 0.1).toFixed(1)}-${((i + 1) * 0.1).toFixed(1)}: ${count}`} />;
+                              })}
+                            </div>
+                            <div className="flex justify-between text-[7px] text-slate-600 mt-0.5">
+                              <span>0.0</span><span>0.5</span><span>1.0</span>
+                            </div>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="text-slate-500">Nodes: <span className="text-green-400">{(meshRes * meshRes).toLocaleString()}</span></div>
+                          <div className="text-slate-500">Elements: <span className="text-green-400">{((meshRes - 1) * (meshRes - 1) * (elementType === "hex8" ? 1 : 2)).toLocaleString()}</span></div>
+                          <div className="text-slate-500">Quality: <span className={meshQuality === "Good" ? "text-green-400" : meshQuality === "Moderate" ? "text-yellow-400" : "text-red-400"}>{meshQuality}</span></div>
+                          <div className="text-[9px] text-slate-600 italic mt-1">Click &quot;Generate Mesh&quot; for detailed metrics</div>
+                        </>
+                      )}
                     </div>
                     <label className="flex items-center gap-2 text-slate-300 cursor-pointer">
                       <input type="checkbox" checked={showWireframe} onChange={e => setShowWireframe(e.target.checked)} className="accent-[#00D4FF]" />
-                      Show Wireframe
+                      Show Wireframe Overlay
                     </label>
                   </div>
                 </div>
@@ -801,6 +917,201 @@ Element Type,${elementType},`;
               <div className="text-xs text-slate-500 p-3 text-center">
                 Run an analysis to see results here.
               </div>
+            )}
+
+            {leftTab === "struct" && (
+              <>
+                <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Structural Load Calculator</h3>
+
+                {/* Section Properties */}
+                <div className="bg-[#0d1117] rounded p-3 border border-[#21262d] text-xs space-y-2">
+                  <div className="text-[10px] font-bold text-purple-400 mb-1">Section Properties</div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500">Type</span>
+                    <select value={sectionType} onChange={e => { setSectionType(e.target.value as SectionType); setSectionDims(prev => ({ ...prev, type: e.target.value as SectionType })); }}
+                      className="bg-[#161b22] text-white rounded px-2 py-1 border border-[#21262d] text-[11px]">
+                      <option value="i_beam">I-Beam</option>
+                      <option value="c_channel">C-Channel</option>
+                      <option value="l_angle">L-Angle</option>
+                      <option value="t_section">T-Section</option>
+                      <option value="rect_tube">Rect Tube</option>
+                      <option value="rect_solid">Rect Solid</option>
+                      <option value="circular">Circular</option>
+                      <option value="circular_hollow">CHS</option>
+                    </select>
+                  </div>
+                  {(sectionType === "i_beam" || sectionType === "c_channel" || sectionType === "t_section") && (
+                    <>
+                      {[{ key: "d", label: "Depth (mm)" }, { key: "bf", label: "Flange W (mm)" }, { key: "tf", label: "Flange t (mm)" }, { key: "tw", label: "Web t (mm)" }].map(f => (
+                        <div key={f.key} className="flex items-center justify-between">
+                          <span className="text-slate-500">{f.label}</span>
+                          <input type="number" value={(sectionDims as Record<string, number>)[f.key] || 0}
+                            onChange={e => setSectionDims(prev => ({ ...prev, [f.key]: parseFloat(e.target.value) || 0 }))}
+                            className="w-16 bg-[#161b22] text-white rounded px-2 py-1 border border-[#21262d] text-right" />
+                        </div>
+                      ))}
+                    </>
+                  )}
+                  {(() => {
+                    const sp = calculateSectionProperties(sectionDims);
+                    return (
+                      <div className="border-t border-[#21262d] pt-2 space-y-0.5 text-[10px]">
+                        <div className="text-slate-500">Area: <span className="text-white">{sp.area.toFixed(0)} mm²</span></div>
+                        <div className="text-slate-500">Ixx: <span className="text-white">{sp.Ixx.toExponential(2)} mm⁴</span></div>
+                        <div className="text-slate-500">Sx: <span className="text-white">{sp.Sx.toExponential(2)} mm³</span></div>
+                        <div className="text-slate-500">rx: <span className="text-white">{sp.rx.toFixed(1)} mm</span></div>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* Wind Load */}
+                <div className="bg-[#0d1117] rounded p-3 border border-[#21262d] text-xs space-y-2">
+                  <div className="text-[10px] font-bold text-blue-400 mb-1">Wind Load (IS 875/ASCE 7)</div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500">Code</span>
+                    <select value={loadCode} onChange={e => setLoadCode(e.target.value as "IS875" | "ASCE7")}
+                      className="bg-[#161b22] text-white rounded px-2 py-1 border border-[#21262d] text-[11px]">
+                      <option value="IS875">IS 875 Part 3</option>
+                      <option value="ASCE7">ASCE 7-22</option>
+                    </select>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500">Wind Speed (m/s)</span>
+                    <input type="number" value={windSpeed} onChange={e => setWindSpeed(parseFloat(e.target.value) || 0)}
+                      className="w-16 bg-[#161b22] text-white rounded px-2 py-1 border border-[#21262d] text-right" />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500">Terrain Category</span>
+                    <select value={terrainCat} onChange={e => setTerrainCat(parseInt(e.target.value) as 1 | 2 | 3 | 4)}
+                      className="bg-[#161b22] text-white rounded px-2 py-1 border border-[#21262d] text-[11px]">
+                      <option value={1}>Cat 1 (Open)</option>
+                      <option value={2}>Cat 2 (Suburban)</option>
+                      <option value={3}>Cat 3 (Urban)</option>
+                      <option value={4}>Cat 4 (Metro)</option>
+                    </select>
+                  </div>
+                  <button onClick={() => {
+                    const wr = calculateWindLoad({
+                      basicWindSpeed: windSpeed, terrainCategory: terrainCat,
+                      buildingHeight: geoDims.height, buildingWidth: geoDims.width,
+                      buildingDepth: geoDims.depth, code: loadCode,
+                    });
+                    setWindResult(wr);
+                  }}
+                    className="w-full bg-blue-600/30 hover:bg-blue-600/50 text-blue-300 py-1.5 rounded border border-blue-500/30">
+                    Calculate Wind Load
+                  </button>
+                  {windResult && (
+                    <div className="space-y-0.5 text-[10px] border-t border-[#21262d] pt-1">
+                      <div className="text-slate-500">Design Vz: <span className="text-white">{windResult.designWindSpeed} m/s</span></div>
+                      <div className="text-slate-500">Pressure: <span className="text-white">{windResult.designWindPressure.toFixed(0)} N/m²</span></div>
+                      <div className="text-slate-500">Windward: <span className="text-red-400">+{windResult.windwardPressure.toFixed(0)} N/m²</span></div>
+                      <div className="text-slate-500">Leeward: <span className="text-blue-400">{windResult.leewardPressure.toFixed(0)} N/m²</span></div>
+                      <div className="text-slate-500">Uplift: <span className="text-amber-400">{windResult.upliftPressure.toFixed(0)} N/m²</span></div>
+                      <div className="text-slate-500">Base Shear: <span className="text-white">{(windResult.totalBaseShear / 1000).toFixed(1)} kN</span></div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Dead + Live Load */}
+                <div className="bg-[#0d1117] rounded p-3 border border-[#21262d] text-xs space-y-2">
+                  <div className="text-[10px] font-bold text-green-400 mb-1">Dead & Live Loads</div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500">Occupancy</span>
+                    <select value={occupancyType} onChange={e => setOccupancyType(e.target.value)}
+                      className="bg-[#161b22] text-white rounded px-1 py-1 border border-[#21262d] text-[10px] max-w-[120px]">
+                      {getOccupancyTypes().map(o => (
+                        <option key={o.id} value={o.id}>{o.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500">Floor Area (m²)</span>
+                    <input type="number" value={floorArea} onChange={e => setFloorArea(parseFloat(e.target.value) || 0)}
+                      className="w-16 bg-[#161b22] text-white rounded px-2 py-1 border border-[#21262d] text-right" />
+                  </div>
+                  <button onClick={() => {
+                    const dl = calculateDeadLoad({ materialDensity: material.rho, volume: geoDims.width * geoDims.height * geoDims.depth, additionalDead: 0 }, floorArea);
+                    const ll = calculateLiveLoad({ occupancyType, area: floorArea, code: loadCode });
+                    setDeadResult(dl);
+                    setLiveResult(ll);
+                    if (windResult) {
+                      const combos = generateLoadCombinations(dl.totalDeadLoad, ll.totalLiveLoad, windResult.totalBaseShear, loadCode);
+                      setLoadCombinations(combos);
+                    }
+                  }}
+                    className="w-full bg-green-600/30 hover:bg-green-600/50 text-green-300 py-1.5 rounded border border-green-500/30">
+                    Calculate DL + LL
+                  </button>
+                  {deadResult && (
+                    <div className="space-y-0.5 text-[10px] border-t border-[#21262d] pt-1">
+                      <div className="text-slate-500">Self Weight: <span className="text-white">{(deadResult.selfWeight / 1000).toFixed(2)} kN</span></div>
+                      <div className="text-slate-500">Dead Load: <span className="text-white">{(deadResult.totalDeadLoad / 1000).toFixed(2)} kN</span></div>
+                    </div>
+                  )}
+                  {liveResult && (
+                    <div className="space-y-0.5 text-[10px]">
+                      <div className="text-slate-500">Live Load: <span className="text-white">{liveResult.uniformLoad.toFixed(0)} N/m²</span></div>
+                      <div className="text-slate-500">Reduction: <span className="text-cyan-400">{(liveResult.reductionFactor * 100).toFixed(1)}%</span></div>
+                      <div className="text-slate-500">Total LL: <span className="text-white">{(liveResult.totalLiveLoad / 1000).toFixed(2)} kN</span></div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Load Combinations */}
+                {loadCombinations.length > 0 && (
+                  <div className="bg-[#0d1117] rounded p-3 border border-[#21262d] text-xs space-y-1">
+                    <div className="text-[10px] font-bold text-amber-400 mb-1">Load Combinations</div>
+                    {loadCombinations.map((lc, i) => {
+                      const maxCombo = Math.max(...loadCombinations.map(c => Math.abs(c.totalLoad)));
+                      const barW = Math.abs(lc.totalLoad) / (maxCombo || 1) * 100;
+                      return (
+                        <div key={i} className="space-y-0.5">
+                          <div className="flex justify-between text-[9px]">
+                            <span className="text-slate-400">{lc.name}</span>
+                            <span className="text-white font-bold">{(lc.totalLoad / 1000).toFixed(1)} kN</span>
+                          </div>
+                          <div className="h-1.5 bg-[#161b22] rounded overflow-hidden">
+                            <div className={`h-full rounded ${lc.totalLoad > 0 ? "bg-amber-500" : "bg-blue-500"}`} style={{ width: `${barW}%` }} />
+                          </div>
+                          <div className="text-[8px] text-slate-600">{lc.description}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Solar PV Wind Uplift */}
+                <div className="bg-[#0d1117] rounded p-3 border border-[#21262d] text-xs space-y-2">
+                  <div className="text-[10px] font-bold text-yellow-400 mb-1">Solar PV Wind Uplift</div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500">Tilt Angle (°)</span>
+                    <input type="number" value={pvTilt} onChange={e => setPvTilt(parseFloat(e.target.value) || 0)}
+                      className="w-16 bg-[#161b22] text-white rounded px-2 py-1 border border-[#21262d] text-right" />
+                  </div>
+                  <button onClick={() => {
+                    const pvr = calculateSolarPVWindLoad({
+                      tiltAngle: pvTilt, moduleWidth: 1.0, moduleHeight: 2.0,
+                      mountHeight: 1.5, terrainCategory: terrainCat,
+                      basicWindSpeed: windSpeed, isRoofMounted: true,
+                    });
+                    setPvResult(pvr);
+                  }}
+                    className="w-full bg-yellow-600/30 hover:bg-yellow-600/50 text-yellow-300 py-1.5 rounded border border-yellow-500/30">
+                    Calculate PV Wind Load
+                  </button>
+                  {pvResult && (
+                    <div className="space-y-0.5 text-[10px] border-t border-[#21262d] pt-1">
+                      <div className="text-slate-500">Uplift: <span className="text-red-400">{pvResult.upliftForce.toFixed(0)} N</span></div>
+                      <div className="text-slate-500">Downward: <span className="text-green-400">{pvResult.downwardForce.toFixed(0)} N</span></div>
+                      <div className="text-slate-500">Lateral: <span className="text-blue-400">{pvResult.lateralForce.toFixed(0)} N</span></div>
+                      <div className="text-slate-500">Anchor Force: <span className="text-amber-400">{pvResult.anchorForce.toFixed(0)} N</span></div>
+                      <div className="text-slate-500">Cp_net: <span className="text-white">{pvResult.netCp.toFixed(2)}</span></div>
+                    </div>
+                  )}
+                </div>
+              </>
             )}
 
             {leftTab === "thermal" && (

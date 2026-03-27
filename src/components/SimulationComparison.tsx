@@ -220,6 +220,80 @@ export default function SimulationComparison({ runs, onClear }: SimulationCompar
             </div>
           )}
 
+          {/* Side-by-side Before/After Stress Visualization */}
+          {selected.length === 2 && (
+            <div className="px-3 py-2 border-t border-[#21262d]">
+              <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-2">Before / After Stress Comparison</div>
+              <div className="grid grid-cols-2 gap-2">
+                {selected.map((run) => {
+                  const maxStressNorm = Math.max(...selected.map(r => r.maxStress));
+                  const stressRatio = run.maxStress / (maxStressNorm || 1);
+                  return (
+                    <div key={run.id} className="bg-[#161b22] rounded border border-[#21262d] p-2">
+                      <div className="text-[9px] text-[#00D4FF] font-bold mb-1">{run.name}</div>
+                      {/* Stress color map visualization */}
+                      <div className="h-16 rounded overflow-hidden relative">
+                        <div className="absolute inset-0" style={{
+                          background: `linear-gradient(135deg,
+                            ${run.safetyFactor > 2 ? "rgb(0,100,255)" : "rgb(0,200,255)"} 0%,
+                            ${run.safetyFactor > 2 ? "rgb(0,255,100)" : "rgb(255,255,0)"} ${stressRatio * 50}%,
+                            ${run.safetyFactor > 1 ? "rgb(255,200,0)" : "rgb(255,50,0)"} ${stressRatio * 100}%)`,
+                        }} />
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <div className="bg-black/60 rounded px-2 py-0.5">
+                            <div className="text-[10px] text-white font-bold">{run.maxStress.toFixed(1)} MPa</div>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex justify-between mt-1 text-[8px]">
+                        <span className="text-blue-400">{run.minStress.toFixed(1)}</span>
+                        <span className={`font-bold ${run.safetyFactor > 2 ? "text-green-400" : run.safetyFactor > 1 ? "text-amber-400" : "text-red-400"}`}>
+                          SF: {run.safetyFactor.toFixed(2)}
+                        </span>
+                        <span className="text-red-400">{run.maxStress.toFixed(1)}</span>
+                      </div>
+                      {/* Displacement bar */}
+                      <div className="mt-1">
+                        <div className="text-[8px] text-slate-500">Displacement: {run.maxDisplacement.toFixed(4)} mm</div>
+                        <div className="h-1 bg-[#0d1117] rounded overflow-hidden mt-0.5">
+                          <div className="h-full bg-blue-500 rounded" style={{
+                            width: `${Math.min(100, (run.maxDisplacement / Math.max(...selected.map(r => r.maxDisplacement), 1e-6)) * 100)}%`
+                          }} />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {/* Delta summary */}
+              <div className="mt-2 bg-[#0d1117] rounded p-2 border border-[#21262d]">
+                <div className="flex items-center justify-between text-[9px]">
+                  <span className="text-slate-500">Stress Change:</span>
+                  {(() => {
+                    const d = formatDelta(selected[0].maxStress, selected[1].maxStress);
+                    return <span className={d.color + " font-bold"}>{d.text}</span>;
+                  })()}
+                </div>
+                <div className="flex items-center justify-between text-[9px]">
+                  <span className="text-slate-500">Displacement Change:</span>
+                  {(() => {
+                    const d = formatDelta(selected[0].maxDisplacement, selected[1].maxDisplacement);
+                    return <span className={d.color + " font-bold"}>{d.text}</span>;
+                  })()}
+                </div>
+                <div className="flex items-center justify-between text-[9px]">
+                  <span className="text-slate-500">Safety Factor Change:</span>
+                  {(() => {
+                    const d = formatDelta(selected[0].safetyFactor, selected[1].safetyFactor);
+                    // For safety factor, higher is better so swap colors
+                    const color = d.text.startsWith("+") ? "text-green-400" : d.text.startsWith("-") ? "text-red-400" : "text-slate-500";
+                    return <span className={color + " font-bold"}>{d.text}</span>;
+                  })()}
+                </div>
+              </div>
+            </div>
+          )}
+
           {selected.length < 2 && runs.length >= 2 && (
             <div className="px-3 py-3 text-center text-[10px] text-slate-600">
               Select at least 2 runs to compare

@@ -1,6 +1,20 @@
 "use client";
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef } from "react";
 import dynamic from "next/dynamic";
+import {
+  validateSSBeam,
+  solveBeamFEA,
+  type BeamNode,
+  type BeamElement,
+  type BeamBC,
+  type BeamLoad,
+  type BeamResult,
+} from "@/lib/fea-engine";
+import {
+  calculateSectionProperties,
+  type SectionType,
+  type SectionDimensions,
+} from "@/lib/structural-loads";
 
 const ModeShapeViewport = dynamic(
   () =>
@@ -134,7 +148,7 @@ interface ConvergencePoint {
   error: number;
 }
 
-type AnalysisTab = "modal" | "thermal" | "fatigue" | "convergence";
+type AnalysisTab = "modal" | "thermal" | "fatigue" | "convergence" | "beam" | "sections";
 
 /* ── Sample Data ── */
 const modalModes: ModalMode[] = [
@@ -192,6 +206,19 @@ export default function FEAAdvancedPage() {
   const [fatigueLife, setFatigueLife] = useState<number | null>(null);
   const [appliedStress, setAppliedStress] = useState(250);
 
+  // Beam solver state
+  const [beamSpan, setBeamSpan] = useState(6);
+  const [beamLoad, setBeamLoad] = useState(10000);
+  const [beamE, setBeamE] = useState(200e9);
+  const [beamI, setBeamI] = useState(1e-4);
+  const [beamA, setBeamA] = useState(0.01);
+  const [beamResult, setBeamResult] = useState<BeamResult | null>(null);
+  const [analyticalDefl, setAnalyticalDefl] = useState<number | null>(null);
+
+  // Section visualization state
+  const [secType, setSecType] = useState<SectionType>("i_beam");
+  const [secDims, setSecDims] = useState<SectionDimensions>({ type: "i_beam", d: 300, bf: 150, tf: 10, tw: 7 });
+
   const predictLife = useCallback(() => {
     const sorted = [...fatigueData].sort((a, b) => a.stress - b.stress);
     if (appliedStress >= sorted[sorted.length - 1].stress) {
@@ -236,11 +263,38 @@ export default function FEAAdvancedPage() {
     URL.revokeObjectURL(url);
   }, []);
 
+  const runBeamAnalysis = useCallback(() => {
+    const nElem = 10;
+    const dx = beamSpan / nElem;
+    const nodes: BeamNode[] = Array.from({ length: nElem + 1 }, (_, i) => ({ id: i, x: i * dx, y: 0 }));
+    const elements: BeamElement[] = Array.from({ length: nElem }, (_, i) => ({
+      id: i, startNode: i, endNode: i + 1,
+      materialId: "default", sectionId: "default",
+      A: beamA, I: beamI, E: beamE,
+    }));
+    const bcs: BeamBC[] = [
+      { nodeId: 0, type: "pinned" },
+      { nodeId: nElem, type: "roller" },
+    ];
+    const loads: BeamLoad[] = Array.from({ length: nElem }, (_, i) => ({
+      type: "distributed" as const, elementId: i, w: -beamLoad,
+    }));
+
+    const result = solveBeamFEA(nodes, elements, bcs, loads);
+    setBeamResult(result);
+
+    // Analytical validation: delta = 5wL^4 / (384EI)
+    const analytical = validateSSBeam(beamLoad, beamSpan, beamE, beamI);
+    setAnalyticalDefl(analytical.deflection);
+  }, [beamSpan, beamLoad, beamE, beamI, beamA]);
+
   const tabs: { id: AnalysisTab; label: string; icon: string }[] = [
-    { id: "modal", label: "Modal Analysis", icon: "M" },
+    { id: "modal", label: "Modal", icon: "M" },
     { id: "thermal", label: "Thermal", icon: "T" },
     { id: "fatigue", label: "Fatigue", icon: "F" },
-    { id: "convergence", label: "Convergence", icon: "C" },
+    { id: "convergence", label: "Converge", icon: "C" },
+    { id: "beam", label: "Beam Solver", icon: "B" },
+    { id: "sections", label: "Sections", icon: "S" },
   ];
 
   const minTemp = Math.min(...thermalNodes.map((n) => n.temperature));
@@ -627,6 +681,329 @@ export default function FEAAdvancedPage() {
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* Beam Solver Tab */}
+        {activeTab === "beam" && (
+          <div className="flex-1 overflow-auto p-6">
+            <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-4">
+              Beam Solver - Direct Stiffness Method
+            </h3>
+            <div className="grid grid-cols-2 gap-6">
+              {/* Input Panel */}
+              <div className="bg-[#0d0d14] rounded border border-[#1a1a2e] p-4 space-y-3">
+                <div className="text-xs font-bold text-[#00D4FF] mb-2">Simply Supported Beam (UDL)</div>
+                {[
+                  { label: "Span L (m)", value: beamSpan, set: setBeamSpan },
+                  { label: "UDL w (N/m)", value: beamLoad, set: setBeamLoad },
+                  { label: "E (Pa)", value: beamE, set: setBeamE },
+                  { label: "I (m⁴)", value: beamI, set: setBeamI },
+                  { label: "A (m²)", value: beamA, set: setBeamA },
+                ].map((f) => (
+                  <div key={f.label} className="flex items-center justify-between text-xs">
+                    <span className="text-slate-400">{f.label}</span>
+                    <input type="number" value={f.value}
+                      onChange={(e) => f.set(parseFloat(e.target.value) || 0)}
+                      className="w-40 bg-[#0a0a0f] border border-[#252540] rounded px-2 py-1.5 text-white text-right focus:border-[#00D4FF] outline-none" />
+                  </div>
+                ))}
+                <button onClick={runBeamAnalysis}
+                  className="w-full mt-2 px-4 py-2 bg-[#00D4FF]/15 text-[#00D4FF] text-sm rounded hover:bg-[#00D4FF]/25 transition-colors border border-[#00D4FF]/30 font-bold">
+                  Run Beam Analysis
+                </button>
+
+                {/* Beam Diagram */}
+                <div className="mt-4">
+                  <svg viewBox="0 0 400 120" className="w-full">
+                    {/* Beam */}
+                    <line x1={40} y1={50} x2={360} y2={50} stroke="#00D4FF" strokeWidth={3} />
+                    {/* Supports */}
+                    <polygon points="40,55 30,75 50,75" fill="none" stroke="#44bb44" strokeWidth={1.5} />
+                    <circle cx={40} cy={55} r={3} fill="#44bb44" />
+                    <polygon points="360,55 350,75 370,75" fill="none" stroke="#dddd44" strokeWidth={1.5} />
+                    <line x1={345} y1={78} x2={375} y2={78} stroke="#dddd44" strokeWidth={1.5} />
+                    {/* UDL arrows */}
+                    {Array.from({ length: 9 }, (_, i) => {
+                      const x = 72 + i * 32;
+                      return (
+                        <g key={i}>
+                          <line x1={x} y1={20} x2={x} y2={47} stroke="#ff6666" strokeWidth={1} />
+                          <polygon points={`${x - 3},47 ${x + 3},47 ${x},50`} fill="#ff6666" />
+                        </g>
+                      );
+                    })}
+                    <line x1={55} y1={20} x2={345} y2={20} stroke="#ff6666" strokeWidth={1} />
+                    <text x={200} y={15} fill="#ff6666" fontSize="9" textAnchor="middle">w = {beamLoad} N/m</text>
+                    <text x={200} y={95} fill="#666" fontSize="9" textAnchor="middle">L = {beamSpan} m</text>
+                    {/* Dimension line */}
+                    <line x1={40} y1={85} x2={360} y2={85} stroke="#555" strokeWidth={0.5} />
+                    <line x1={40} y1={80} x2={40} y2={90} stroke="#555" strokeWidth={0.5} />
+                    <line x1={360} y1={80} x2={360} y2={90} stroke="#555" strokeWidth={0.5} />
+                  </svg>
+                </div>
+              </div>
+
+              {/* Results Panel */}
+              <div className="space-y-4">
+                {beamResult && (
+                  <>
+                    <div className="bg-[#0d0d14] rounded border border-[#1a1a2e] p-4">
+                      <div className="text-xs font-bold text-green-400 mb-3">FEA Results</div>
+                      <div className="grid grid-cols-2 gap-3 text-xs">
+                        <div>
+                          <div className="text-slate-500">Max Deflection</div>
+                          <div className="text-blue-400 text-lg font-bold">{(beamResult.maxDeflection * 1000).toFixed(4)} mm</div>
+                        </div>
+                        <div>
+                          <div className="text-slate-500">Max Moment</div>
+                          <div className="text-amber-400 text-lg font-bold">{(beamResult.maxMoment / 1000).toFixed(2)} kN·m</div>
+                        </div>
+                        <div>
+                          <div className="text-slate-500">Max Shear</div>
+                          <div className="text-red-400 text-lg font-bold">{(beamResult.maxShear / 1000).toFixed(2)} kN</div>
+                        </div>
+                        <div>
+                          <div className="text-slate-500">Reactions</div>
+                          <div className="text-cyan-400 text-sm font-bold">
+                            {beamResult.reactions.map((r, i) => (
+                              <div key={i}>N{r.nodeId}: {(r.fy / 1000).toFixed(1)} kN</div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Validation against analytical */}
+                    {analyticalDefl !== null && (
+                      <div className="bg-[#0d0d14] rounded border border-[#1a1a2e] p-4">
+                        <div className="text-xs font-bold text-purple-400 mb-3">Validation: 5wL⁴ / (384EI)</div>
+                        <div className="grid grid-cols-2 gap-3 text-xs">
+                          <div>
+                            <div className="text-slate-500">Analytical Deflection</div>
+                            <div className="text-purple-400 text-lg font-bold">{(analyticalDefl * 1000).toFixed(4)} mm</div>
+                          </div>
+                          <div>
+                            <div className="text-slate-500">FEA Deflection</div>
+                            <div className="text-blue-400 text-lg font-bold">{(beamResult.maxDeflection * 1000).toFixed(4)} mm</div>
+                          </div>
+                        </div>
+                        <div className="mt-3 flex items-center gap-2">
+                          <div className="text-slate-500 text-xs">Error:</div>
+                          {(() => {
+                            const err = Math.abs(beamResult.maxDeflection - analyticalDefl) / analyticalDefl * 100;
+                            return (
+                              <span className={`text-sm font-bold ${err < 5 ? "text-green-400" : err < 15 ? "text-amber-400" : "text-red-400"}`}>
+                                {err.toFixed(2)}%
+                              </span>
+                            );
+                          })()}
+                          <span className="text-[9px] text-slate-600">(Expected &lt; 5% for 10 elements)</span>
+                        </div>
+                        {/* Deflection shape diagram */}
+                        <div className="mt-3">
+                          <div className="text-[9px] text-slate-500 mb-1">Deflection Shape (exaggerated)</div>
+                          <svg viewBox="0 0 400 80" className="w-full">
+                            <line x1={20} y1={20} x2={380} y2={20} stroke="#333" strokeWidth={0.5} strokeDasharray="2,2" />
+                            <polyline
+                              points={Array.from({ length: 11 }, (_, i) => {
+                                const x = 20 + i * 36;
+                                const defl = beamResult!.displacements[i * 3 + 1] || 0;
+                                const scale = 50 / (beamResult!.maxDeflection || 1);
+                                const y = 20 - defl * scale;
+                                return `${x},${y}`;
+                              }).join(" ")}
+                              fill="none" stroke="#00D4FF" strokeWidth={2}
+                            />
+                            {Array.from({ length: 11 }, (_, i) => {
+                              const x = 20 + i * 36;
+                              const defl = beamResult!.displacements[i * 3 + 1] || 0;
+                              const scale = 50 / (beamResult!.maxDeflection || 1);
+                              const y = 20 - defl * scale;
+                              return <circle key={i} cx={x} cy={y} r={2.5} fill="#00D4FF" stroke="#0a0a0f" strokeWidth={1} />;
+                            })}
+                          </svg>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Member Forces */}
+                    <div className="bg-[#0d0d14] rounded border border-[#1a1a2e] p-4">
+                      <div className="text-xs font-bold text-amber-400 mb-2">Member Forces</div>
+                      <div className="max-h-40 overflow-y-auto">
+                        <table className="w-full text-[10px]">
+                          <thead>
+                            <tr className="text-slate-500 border-b border-[#1a1a2e]">
+                              <th className="text-left py-1">Elem</th>
+                              <th className="text-right py-1">Axial (kN)</th>
+                              <th className="text-right py-1">Shear (kN)</th>
+                              <th className="text-right py-1">Moment (kN·m)</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {beamResult.memberForces.map((mf) => (
+                              <tr key={mf.elementId} className="border-b border-[#1a1a2e]/30 text-slate-300">
+                                <td className="py-1">{mf.elementId + 1}</td>
+                                <td className="text-right py-1">{(mf.axial / 1000).toFixed(2)}</td>
+                                <td className="text-right py-1">{(mf.shear / 1000).toFixed(2)}</td>
+                                <td className="text-right py-1">{(mf.moment / 1000).toFixed(2)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {!beamResult && (
+                  <div className="bg-[#0d0d14] rounded border border-[#1a1a2e] p-6 text-center text-slate-500 text-xs">
+                    Configure beam parameters and click &quot;Run Beam Analysis&quot; to see results.
+                    <br />The solver validates against 5wL⁴/(384EI) analytical solution.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Sections Tab */}
+        {activeTab === "sections" && (
+          <div className="flex-1 overflow-auto p-6">
+            <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-4">
+              Section Property Calculator
+            </h3>
+            <div className="grid grid-cols-2 gap-6">
+              {/* Section Input */}
+              <div className="bg-[#0d0d14] rounded border border-[#1a1a2e] p-4 space-y-3">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-slate-400">Section Type</span>
+                  <select value={secType} onChange={e => { setSecType(e.target.value as SectionType); setSecDims(prev => ({ ...prev, type: e.target.value as SectionType })); }}
+                    className="bg-[#0a0a0f] text-white rounded px-2 py-1.5 border border-[#252540] text-[11px]">
+                    <option value="i_beam">I-Beam</option>
+                    <option value="c_channel">C-Channel</option>
+                    <option value="l_angle">L-Angle</option>
+                    <option value="t_section">T-Section</option>
+                    <option value="rect_tube">Rectangular Tube</option>
+                    <option value="rect_solid">Rectangular Solid</option>
+                    <option value="circular">Circular Solid</option>
+                    <option value="circular_hollow">Circular Hollow (CHS)</option>
+                  </select>
+                </div>
+                {(secType === "i_beam" || secType === "c_channel" || secType === "t_section") && (
+                  <>
+                    {[{ k: "d", l: "Depth d (mm)" }, { k: "bf", l: "Flange Width bf (mm)" }, { k: "tf", l: "Flange Thickness tf (mm)" }, { k: "tw", l: "Web Thickness tw (mm)" }].map(f => (
+                      <div key={f.k} className="flex items-center justify-between text-xs">
+                        <span className="text-slate-400">{f.l}</span>
+                        <input type="number" value={(secDims as Record<string, number>)[f.k] || 0}
+                          onChange={e => setSecDims(prev => ({ ...prev, [f.k]: parseFloat(e.target.value) || 0 }))}
+                          className="w-24 bg-[#0a0a0f] border border-[#252540] rounded px-2 py-1.5 text-white text-right focus:border-[#00D4FF] outline-none" />
+                      </div>
+                    ))}
+                  </>
+                )}
+                {(secType === "l_angle") && (
+                  <>
+                    {[{ k: "d", l: "Leg 1 d (mm)" }, { k: "b", l: "Leg 2 b (mm)" }, { k: "t", l: "Thickness t (mm)" }].map(f => (
+                      <div key={f.k} className="flex items-center justify-between text-xs">
+                        <span className="text-slate-400">{f.l}</span>
+                        <input type="number" value={(secDims as Record<string, number>)[f.k] || 0}
+                          onChange={e => setSecDims(prev => ({ ...prev, [f.k]: parseFloat(e.target.value) || 0 }))}
+                          className="w-24 bg-[#0a0a0f] border border-[#252540] rounded px-2 py-1.5 text-white text-right focus:border-[#00D4FF] outline-none" />
+                      </div>
+                    ))}
+                  </>
+                )}
+                {(secType === "rect_tube" || secType === "rect_solid") && (
+                  <>
+                    {[{ k: "b", l: "Width b (mm)" }, { k: "h", l: "Height h (mm)" }, ...(secType === "rect_tube" ? [{ k: "t", l: "Thickness t (mm)" }] : [])].map(f => (
+                      <div key={f.k} className="flex items-center justify-between text-xs">
+                        <span className="text-slate-400">{f.l}</span>
+                        <input type="number" value={(secDims as Record<string, number>)[f.k] || 0}
+                          onChange={e => setSecDims(prev => ({ ...prev, [f.k]: parseFloat(e.target.value) || 0 }))}
+                          className="w-24 bg-[#0a0a0f] border border-[#252540] rounded px-2 py-1.5 text-white text-right focus:border-[#00D4FF] outline-none" />
+                      </div>
+                    ))}
+                  </>
+                )}
+                {(secType === "circular" || secType === "circular_hollow") && (
+                  <>
+                    {[{ k: "d", l: "Diameter d (mm)" }, ...(secType === "circular_hollow" ? [{ k: "t", l: "Thickness t (mm)" }] : [])].map(f => (
+                      <div key={f.k} className="flex items-center justify-between text-xs">
+                        <span className="text-slate-400">{f.l}</span>
+                        <input type="number" value={(secDims as Record<string, number>)[f.k] || 0}
+                          onChange={e => setSecDims(prev => ({ ...prev, [f.k]: parseFloat(e.target.value) || 0 }))}
+                          className="w-24 bg-[#0a0a0f] border border-[#252540] rounded px-2 py-1.5 text-white text-right focus:border-[#00D4FF] outline-none" />
+                      </div>
+                    ))}
+                  </>
+                )}
+
+                {/* Section Sketch */}
+                <div className="mt-4 bg-[#0a0a0f] rounded border border-[#252540] p-2">
+                  <svg viewBox="0 0 200 200" className="w-full">
+                    {secType === "i_beam" && (() => {
+                      const d = secDims.d || 300;
+                      const bf = secDims.bf || 150;
+                      const tf = secDims.tf || 10;
+                      const tw = secDims.tw || 7;
+                      const s = 180 / Math.max(d, bf);
+                      const cx = 100, cy = 100;
+                      const hw = bf * s / 2, hd = d * s / 2;
+                      const htf = tf * s, htw = tw * s / 2;
+                      return (
+                        <>
+                          <rect x={cx - hw} y={cy - hd} width={hw * 2} height={htf} fill="#00D4FF" opacity={0.3} stroke="#00D4FF" strokeWidth={1} />
+                          <rect x={cx - htw} y={cy - hd + htf} width={htw * 2} height={hd * 2 - 2 * htf} fill="#00D4FF" opacity={0.3} stroke="#00D4FF" strokeWidth={1} />
+                          <rect x={cx - hw} y={cy + hd - htf} width={hw * 2} height={htf} fill="#00D4FF" opacity={0.3} stroke="#00D4FF" strokeWidth={1} />
+                          <text x={cx} y={cy + hd + 15} fill="#666" fontSize="9" textAnchor="middle">{secType === "i_beam" ? `I ${d}x${bf}` : ""}</text>
+                        </>
+                      );
+                    })()}
+                    {secType === "circular" && (
+                      <circle cx={100} cy={100} r={70} fill="#00D4FF" opacity={0.3} stroke="#00D4FF" strokeWidth={1} />
+                    )}
+                    {secType === "circular_hollow" && (
+                      <>
+                        <circle cx={100} cy={100} r={70} fill="none" stroke="#00D4FF" strokeWidth={Math.max(3, (secDims.t || 6) / (secDims.d || 100) * 140)} opacity={0.5} />
+                      </>
+                    )}
+                    {secType === "rect_solid" && (
+                      <rect x={30} y={30} width={140} height={140 * ((secDims.h || 200) / (secDims.b || 100))} fill="#00D4FF" opacity={0.3} stroke="#00D4FF" strokeWidth={1} />
+                    )}
+                  </svg>
+                </div>
+              </div>
+
+              {/* Section Results */}
+              <div className="bg-[#0d0d14] rounded border border-[#1a1a2e] p-4">
+                <div className="text-xs font-bold text-[#00D4FF] mb-3">Section Properties</div>
+                {(() => {
+                  const sp = calculateSectionProperties(secDims);
+                  return (
+                    <div className="space-y-2">
+                      {[
+                        { label: "Name", value: sp.name, unit: "" },
+                        { label: "Area (A)", value: sp.area.toFixed(0), unit: "mm²" },
+                        { label: "Ixx", value: sp.Ixx.toExponential(3), unit: "mm⁴" },
+                        { label: "Iyy", value: sp.Iyy.toExponential(3), unit: "mm⁴" },
+                        { label: "Sx (elastic)", value: sp.Sx.toExponential(3), unit: "mm³" },
+                        { label: "Sy (elastic)", value: sp.Sy.toExponential(3), unit: "mm³" },
+                        { label: "Zx (plastic)", value: sp.Zx.toExponential(3), unit: "mm³" },
+                        { label: "rx (gyration)", value: sp.rx.toFixed(2), unit: "mm" },
+                        { label: "ry (gyration)", value: sp.ry.toFixed(2), unit: "mm" },
+                        { label: "J (torsion)", value: sp.J.toExponential(3), unit: "mm⁴" },
+                      ].map((row) => (
+                        <div key={row.label} className="flex items-center justify-between text-xs border-b border-[#1a1a2e]/30 pb-1">
+                          <span className="text-slate-400">{row.label}</span>
+                          <span className="text-white font-mono">{row.value} <span className="text-slate-600">{row.unit}</span></span>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
             </div>
           </div>
         )}
