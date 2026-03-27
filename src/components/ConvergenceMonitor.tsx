@@ -7,6 +7,12 @@ export interface ResidualSeries {
   data: number[];
 }
 
+export interface ForceHistoryPoint {
+  time: number;
+  cd: number;
+  cl: number;
+}
+
 interface ConvergenceMonitorProps {
   /** Array of residual data series (e.g., continuity, momentum, energy) */
   series: ResidualSeries[];
@@ -22,6 +28,20 @@ interface ConvergenceMonitorProps {
   logScale?: boolean;
   /** Title override */
   title?: string;
+  /** Force/moment history for force plot */
+  forceHistory?: ForceHistoryPoint[];
+  /** Callback when auto-stop triggers convergence */
+  onAutoStop?: () => void;
+  /** Enable auto-stop when convergence criteria met */
+  autoStop?: boolean;
+  /** Estimated remaining iterations */
+  estimatedRemaining?: number;
+  /** Current simulation time (for transient) */
+  currentTime?: number;
+  /** Solver algorithm label */
+  solverLabel?: string;
+  /** Courant number */
+  courantNumber?: number;
 }
 
 export default function ConvergenceMonitor({
@@ -32,11 +52,40 @@ export default function ConvergenceMonitor({
   converged = false,
   logScale: initialLogScale = true,
   title = "Convergence Monitor",
+  forceHistory,
+  onAutoStop,
+  autoStop = false,
+  estimatedRemaining,
+  currentTime,
+  solverLabel,
+  courantNumber,
 }: ConvergenceMonitorProps) {
   const [logScale, setLogScale] = useState(initialLogScale);
   const [autoScroll, setAutoScroll] = useState(true);
   const [hoveredPoint, setHoveredPoint] = useState<{ iter: number; values: Record<string, number> } | null>(null);
+  const [showForces, setShowForces] = useState(false);
   const svgRef = useRef<SVGSVGElement>(null);
+  const forceSvgRef = useRef<SVGSVGElement>(null);
+  const autoStopFired = useRef(false);
+
+  // Auto-stop: trigger when all residuals below tolerance
+  useEffect(() => {
+    if (!autoStop || !isRunning || autoStopFired.current || !onAutoStop) return;
+    if (series.length === 0) return;
+    const allBelow = series.every(s => {
+      const last = s.data[s.data.length - 1];
+      return last !== undefined && last < tolerance;
+    });
+    if (allBelow && iterations > 20) {
+      autoStopFired.current = true;
+      onAutoStop();
+    }
+  }, [series, iterations, isRunning, autoStop, tolerance, onAutoStop]);
+
+  // Reset auto-stop flag when solver restarts
+  useEffect(() => {
+    if (isRunning) autoStopFired.current = false;
+  }, [isRunning]);
 
   const maxDataLen = Math.max(1, ...series.map(s => s.data.length));
   const allValues = series.flatMap(s => s.data).filter(v => v > 0);
@@ -195,6 +244,49 @@ export default function ConvergenceMonitor({
         </div>
       )}
 
+      {/* Force History Plot */}
+      {showForces && forceHistory && forceHistory.length > 1 && (
+        <div className="px-2 py-1 border-t border-[#21262d]/50">
+          <div className="flex items-center gap-2 px-1 mb-1">
+            <span className="text-[9px] text-slate-500 font-bold uppercase">Force Coefficients</span>
+            <span className="flex items-center gap-1 text-[8px] text-slate-500">
+              <span className="w-2 h-0.5 rounded bg-[#ff6b6b]" /> Cd
+            </span>
+            <span className="flex items-center gap-1 text-[8px] text-slate-500">
+              <span className="w-2 h-0.5 rounded bg-[#4ecdc4]" /> Cl
+            </span>
+          </div>
+          <svg ref={forceSvgRef} viewBox={`0 0 ${chartW} 80`} className="w-full h-[80px]">
+            {(() => {
+              const fLen = forceHistory.length;
+              const cdMin = Math.min(...forceHistory.map(f => f.cd));
+              const cdMax = Math.max(...forceHistory.map(f => f.cd));
+              const clMin = Math.min(...forceHistory.map(f => f.cl));
+              const clMax = Math.max(...forceHistory.map(f => f.cl));
+              const fMin = Math.min(cdMin, clMin);
+              const fMax = Math.max(cdMax, clMax);
+              const fRange = fMax - fMin || 1;
+              const fToX = (i: number) => padL + (i / Math.max(1, fLen - 1)) * (chartW - padL - padR);
+              const fToY = (v: number) => 5 + (1 - (v - fMin) / fRange) * 65;
+
+              const cdPoints = forceHistory.map((f, i) => `${fToX(i)},${fToY(f.cd)}`).join(" ");
+              const clPoints = forceHistory.map((f, i) => `${fToX(i)},${fToY(f.cl)}`).join(" ");
+
+              return (
+                <>
+                  <line x1={padL} y1={5} x2={padL} y2={70} stroke="#1a2030" strokeWidth={0.5} />
+                  <line x1={padL} y1={70} x2={chartW - padR} y2={70} stroke="#1a2030" strokeWidth={0.5} />
+                  <text x={padL - 4} y={10} fill="#555" fontSize="7" textAnchor="end">{fMax.toFixed(3)}</text>
+                  <text x={padL - 4} y={72} fill="#555" fontSize="7" textAnchor="end">{fMin.toFixed(3)}</text>
+                  <polyline points={cdPoints} fill="none" stroke="#ff6b6b" strokeWidth={1.2} opacity={0.9} />
+                  <polyline points={clPoints} fill="none" stroke="#4ecdc4" strokeWidth={1.2} opacity={0.9} />
+                </>
+              );
+            })()}
+          </svg>
+        </div>
+      )}
+
       {/* Stats bar */}
       <div className="flex items-center gap-4 px-3 py-1.5 border-t border-[#21262d]/50 text-[9px] text-slate-500">
         {series.map(s => {
@@ -205,6 +297,25 @@ export default function ConvergenceMonitor({
             </span>
           );
         })}
+        {forceHistory && (
+          <button onClick={() => setShowForces(!showForces)}
+            className={`ml-auto text-[8px] px-1.5 py-0.5 rounded border ${showForces ? "border-[#00D4FF]/30 text-[#00D4FF] bg-[#00D4FF]/10" : "border-[#21262d] text-slate-600"}`}>
+            Forces
+          </button>
+        )}
+      </div>
+
+      {/* Extended status bar */}
+      <div className="flex items-center gap-3 px-3 py-1 border-t border-[#21262d]/30 text-[8px] text-slate-600">
+        {solverLabel && <span>{solverLabel}</span>}
+        {currentTime !== undefined && <span>t = {currentTime.toFixed(4)}s</span>}
+        {courantNumber !== undefined && (
+          <span className={courantNumber > 1 ? "text-red-400" : ""}>CFL = {courantNumber.toFixed(3)}</span>
+        )}
+        {estimatedRemaining !== undefined && estimatedRemaining < Infinity && (
+          <span>~{estimatedRemaining} iters remaining</span>
+        )}
+        {autoStop && <span className="text-green-400/60">Auto-stop ON</span>}
       </div>
     </div>
   );
