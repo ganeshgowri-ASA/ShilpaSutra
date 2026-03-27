@@ -18,10 +18,13 @@ import {
   MessageSquare, Wand2, Zap, HelpCircle,
   Undo2, Redo2, ChevronDown, ChevronUp,
   Activity, Wind,
-  HardDrive, FolderOpen, Trash2, X, Download,
+  HardDrive, History, Trash2, X, Download,
 } from "lucide-react";
+import { saveSnapshot, MAIN_BRANCH, type VersionEntry } from "@/lib/version-control";
 
 const ExportPanel = dynamic(() => import("@/components/cad/ExportPanel"), { ssr: false });
+const VersionHistory = dynamic(() => import("@/components/VersionHistory"), { ssr: false });
+const VersionCompare = dynamic(() => import("@/components/VersionCompare"), { ssr: false });
 
 // ── localStorage Save/Load Drawings ─────────────────────────────────────
 const DRAWINGS_KEY = "shilpasutra_saved_drawings";
@@ -267,6 +270,8 @@ export default function RibbonToolbar({ onExtrude, onRevolve, onMassProps, onRef
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showLoadModal, setShowLoadModal] = useState(false);
   const [showExportPanel, setShowExportPanel] = useState(false);
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
+  const [compareVersions, setCompareVersions] = useState<[VersionEntry, VersionEntry] | null>(null);
   const [saveName, setSaveName] = useState("");
   const [savedDrawings, setSavedDrawings] = useState<SavedDrawing[]>([]);
 
@@ -283,7 +288,10 @@ export default function RibbonToolbar({ onExtrude, onRevolve, onMassProps, onRef
 
   const handleSaveDrawing = useCallback(() => {
     if (!saveName.trim()) return;
+    const state = useCadStore.getState();
     saveDrawingToStorage(saveName.trim());
+    saveSnapshot(state.objects as Parameters<typeof saveSnapshot>[0], saveName.trim(), MAIN_BRANCH)
+      .catch((e) => console.warn("[VersionControl] snapshot failed:", e));
     setShowSaveModal(false);
   }, [saveName]);
 
@@ -458,13 +466,13 @@ export default function RibbonToolbar({ onExtrude, onRevolve, onMassProps, onRef
             <Download size={10} /> Export
           </button>
           <div className="w-px h-4 bg-[#21262d] mx-0.5" />
-          <button onClick={openSaveModal} title="Quick save to browser storage"
+          <button onClick={openSaveModal} title="Quick save versioned snapshot to browser storage"
             className="px-2.5 py-1 rounded-md text-[10px] font-medium bg-purple-500/10 hover:bg-purple-500/25 text-purple-400 border border-purple-500/20 hover:border-purple-500/40 transition-all duration-150 flex items-center gap-1">
             <HardDrive size={10} /> Quick Save
           </button>
-          <button onClick={openLoadModal} title="Load from browser storage"
+          <button onClick={() => setShowVersionHistory(true)} title="Open version history & branch manager"
             className="px-2.5 py-1 rounded-md text-[10px] font-medium bg-purple-500/10 hover:bg-purple-500/25 text-purple-400 border border-purple-500/20 hover:border-purple-500/40 transition-all duration-150 flex items-center gap-1">
-            <FolderOpen size={10} /> Quick Load
+            <History size={10} /> History
           </button>
         </div>
 
@@ -553,6 +561,26 @@ export default function RibbonToolbar({ onExtrude, onRevolve, onMassProps, onRef
 
       {/* Export Panel Modal */}
       {showExportPanel && <ExportPanel onClose={() => setShowExportPanel(false)} />}
+
+      {/* Version History Panel */}
+      {showVersionHistory && (
+        <VersionHistory
+          onClose={() => setShowVersionHistory(false)}
+          onCompare={(a, b) => {
+            setCompareVersions([a, b]);
+            setShowVersionHistory(false);
+          }}
+        />
+      )}
+
+      {/* Version Compare Overlay */}
+      {compareVersions && (
+        <VersionCompare
+          versionA={compareVersions[0]}
+          versionB={compareVersions[1]}
+          onClose={() => setCompareVersions(null)}
+        />
+      )}
 
       {/* Save Drawing Modal */}
       {showSaveModal && (
