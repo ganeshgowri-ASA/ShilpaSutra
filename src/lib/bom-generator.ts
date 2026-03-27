@@ -164,7 +164,7 @@ export function summarizeBOM(bom: BOMItem[]): BOMSummary {
   const activeBOM = bom.filter(b => !b.suppressed);
   const totalMass = activeBOM.reduce((s, b) => s + b.quantity * b.mass, 0);
   const totalCost = activeBOM.reduce((s, b) => s + b.quantity * b.unitCost, 0);
-  const materials = [...new Set(activeBOM.map(b => b.material))];
+  const materials = Array.from(new Set(activeBOM.map(b => b.material)));
   const heaviest = activeBOM.reduce((a, b) => (b.mass > a.mass ? b : a), activeBOM[0] || { partName: "—", mass: 0 });
   const priciest = activeBOM.reduce((a, b) => (b.unitCost > a.unitCost ? b : a), activeBOM[0] || { partName: "—", unitCost: 0 });
 

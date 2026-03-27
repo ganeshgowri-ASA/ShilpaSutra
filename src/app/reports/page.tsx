@@ -110,7 +110,7 @@ export default function ReportsPage() {
   // Sync included sections when template changes
   const handleTemplateChange = useCallback((t: ReportTemplate) => {
     setTemplate(t);
-    setSections(prev => prev.map(s => ({
+    setSections((prev: ReportSection[]) => prev.map((s: ReportSection) => ({
       ...s,
       included: t === "compliance"
         ? (s.id === "summary" || s.id === "compliance")
@@ -121,18 +121,18 @@ export default function ReportsPage() {
   }, []);
 
   const updateContent = (id: string, content: string) =>
-    setSections(prev => prev.map(s => s.id === id ? { ...s, content } : s));
+    setSections((prev: ReportSection[]) => prev.map((s: ReportSection) => s.id === id ? { ...s, content } : s));
 
   const toggleSection = (id: string) =>
-    setSections(prev => prev.map(s => s.id === id ? { ...s, included: !s.included } : s));
+    setSections((prev: ReportSection[]) => prev.map((s: ReportSection) => s.id === id ? { ...s, included: !s.included } : s));
 
   const handleNLGenerate = () => {
     const cfg = parseNLReportRequest(nlPrompt);
     if (cfg.type) {
       const map: Record<string, ReportTemplate> = { fea: "engineering", cfd: "engineering", bom: "manufacturing", compliance: "compliance", manufacturing: "manufacturing", design: "design-review" };
-      handleTemplateChange(map[cfg.type] as ReportTemplate || "engineering");
+      handleTemplateChange((map[cfg.type] as ReportTemplate) || "engineering");
     }
-    if (cfg.title) setSections(prev => prev.map(s => s.id === "summary" ? { ...s, content: `${cfg.title} for ${projectName}.\n\nAuto-generated from prompt: "${nlPrompt}"` } : s));
+    if (cfg.title) setSections((prev: ReportSection[]) => prev.map((s: ReportSection) => s.id === "summary" ? { ...s, content: `${cfg.title} for ${projectName}.\n\nAuto-generated from prompt: "${nlPrompt}"` } : s));
   };
 
   const handleExportPDF = useCallback(() => {
@@ -141,18 +141,18 @@ export default function ReportsPage() {
       try {
         generateReport({
           config: {
-            title: reportTemplates.find(t => t.id === template)?.label || "Engineering Report",
+            title: reportTemplates.find((t: { id: ReportTemplate; label: string; desc: string }) => t.id === template)?.label || "Engineering Report",
             projectName,
             company,
             author,
             revision: "A",
             type: (template === "compliance" ? "compliance" : template === "manufacturing" ? "manufacturing" : template === "engineering" ? "fea" : "design") as ReportType,
           },
-          sections: sections.filter(s => s.included && s.content).map(s => ({ title: s.title, content: s.content })),
-          feaResults: sections.find(s => s.id === "fea" && s.included) ? feaResults : undefined,
-          cfdResults: sections.find(s => s.id === "cfd" && s.included) ? cfdResults : undefined,
-          bom: sections.find(s => s.id === "bom" && s.included) ? bom.map(b => ({ ...b, unitCost: b.unitCost })) : undefined,
-          complianceChecks: sections.find(s => s.id === "compliance" && s.included)
+          sections: sections.filter((s: ReportSection) => s.included && s.content).map((s: ReportSection) => ({ title: s.title, content: s.content })),
+          feaResults: sections.find((s: ReportSection) => s.id === "fea" && s.included) ? feaResults : undefined,
+          cfdResults: sections.find((s: ReportSection) => s.id === "cfd" && s.included) ? cfdResults : undefined,
+          bom: sections.find((s: ReportSection) => s.id === "bom" && s.included) ? bom : undefined,
+          complianceChecks: sections.find((s: ReportSection) => s.id === "compliance" && s.included)
             ? [
                 { standard: "IEC 61215", checks: IEC_61215_CHECKS },
                 { standard: "IS 800", checks: IS_800_CHECKS },
@@ -166,8 +166,8 @@ export default function ReportsPage() {
     }, 100);
   }, [sections, feaResults, cfdResults, bom, template, projectName, company, author]);
 
-  const includedSections = sections.filter(s => s.included);
-  const active = sections.find(s => s.id === activeSection);
+  const includedSections = sections.filter((s: ReportSection) => s.included);
+  const active = sections.find((s: ReportSection) => s.id === activeSection);
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-[#0d1117]">
@@ -175,7 +175,7 @@ export default function ReportsPage() {
       <div className="bg-[#161b22] border-b border-[#21262d] px-4 py-2 flex items-center gap-2 shrink-0 flex-wrap">
         <span className="text-xs font-bold text-[#00D4FF]">Engineering Reports</span>
         <div className="h-5 w-px bg-[#21262d]" />
-        <select value={template} onChange={e => handleTemplateChange(e.target.value as ReportTemplate)}
+        <select value={template} onChange={(e: { target: { value: string } }) => handleTemplateChange(e.target.value as ReportTemplate)}
           className="bg-[#21262d] text-xs text-white rounded px-2 py-1 border border-[#30363d]">
           {reportTemplates.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
         </select>
@@ -200,7 +200,7 @@ export default function ReportsPage() {
             <span className="text-[10px] text-slate-500">{includedSections.length}/{sections.length}</span>
           </div>
           <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
-            {sections.map(s => (
+            {sections.map((s: ReportSection) => (
               <div key={s.id} className="flex items-center gap-1">
                 <input type="checkbox" checked={s.included} onChange={() => toggleSection(s.id)}
                   className="accent-[#00D4FF] shrink-0" />
@@ -215,7 +215,7 @@ export default function ReportsPage() {
           {/* NL report generator */}
           <div className="px-3 py-2 border-t border-[#21262d]">
             <div className="text-[10px] font-bold text-slate-400 uppercase mb-1.5">AI Generate</div>
-            <textarea value={nlPrompt} onChange={e => setNlPrompt(e.target.value)} rows={2}
+            <textarea value={nlPrompt} onChange={(e: { target: { value: string } }) => setNlPrompt(e.target.value)} rows={2}
               placeholder="e.g. Generate structural report for PV mounting structure"
               className="w-full bg-[#0d1117] text-[10px] text-slate-300 rounded p-1.5 border border-[#21262d] resize-none outline-none focus:border-[#00D4FF]" />
             <button onClick={handleNLGenerate} disabled={!nlPrompt.trim()}
@@ -239,7 +239,7 @@ export default function ReportsPage() {
               {[{ label: "Project", val: projectName, set: setProjectName }, { label: "Company", val: company, set: setCompany }, { label: "Author", val: author, set: setAuthor }].map(f => (
                 <div key={f.label}>
                   <div className="text-[9px] text-slate-500 mb-1">{f.label}</div>
-                  <input value={f.val} onChange={e => f.set(e.target.value)}
+                  <input value={f.val} onChange={(e: { target: { value: string } }) => f.set(e.target.value)}
                     className="w-full bg-[#0d1117] text-xs text-white rounded px-2 py-1 border border-[#21262d] outline-none focus:border-[#00D4FF]" />
                 </div>
               ))}
@@ -258,7 +258,7 @@ export default function ReportsPage() {
                   )}
                 </div>
                 {active.editable && editingSection === active.id ? (
-                  <textarea value={active.content} onChange={e => updateContent(active.id, e.target.value)}
+                  <textarea value={active.content} onChange={(e: { target: { value: string } }) => updateContent(active.id, e.target.value)}
                     className="w-full h-40 bg-[#0d1117] text-sm text-slate-300 rounded-lg p-4 border border-[#21262d] focus:border-[#00D4FF] outline-none resize-y font-mono" />
                 ) : active.content ? (
                   <div className="bg-[#161b22] rounded-lg p-4 border border-[#21262d] text-sm text-slate-300 whitespace-pre-wrap leading-relaxed">
@@ -270,7 +270,7 @@ export default function ReportsPage() {
                 {active.id === "fea" && (
                   <div className="mt-4 space-y-4">
                     <div className="grid grid-cols-3 gap-3">
-                      {feaResults.map(r => (
+                      {feaResults.map((r: AnalysisResult) => (
                         <div key={r.label} className="bg-[#161b22] rounded-lg p-3 border border-[#21262d]">
                           <div className="text-[10px] text-slate-500 uppercase">{r.label}</div>
                           <div className={`text-xl font-bold mt-1 ${r.status === "good" ? "text-green-400" : r.status === "warning" ? "text-amber-400" : "text-red-400"}`}>
@@ -302,7 +302,7 @@ export default function ReportsPage() {
                 {/* CFD section */}
                 {active.id === "cfd" && (
                   <div className="mt-4 grid grid-cols-3 gap-3">
-                    {cfdResults.map(r => (
+                    {cfdResults.map((r: AnalysisResult) => (
                       <div key={r.label} className="bg-[#161b22] rounded-lg p-3 border border-[#21262d]">
                         <div className="text-[10px] text-slate-500 uppercase">{r.label}</div>
                         <div className={`text-xl font-bold mt-1 ${r.status === "good" ? "text-green-400" : "text-amber-400"}`}>
