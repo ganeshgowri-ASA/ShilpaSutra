@@ -131,6 +131,7 @@ const inspectTools: ToolButton[] = [
   { id: "section_view", icon: <ScanLine size={ICON_SIZE} />, label: "Section" },
   { id: "mass_properties", icon: <Weight size={ICON_SIZE} />, label: "Mass Props" },
   { id: "interference_check", icon: <Crosshair size={ICON_SIZE} />, label: "Interfer." },
+  { id: "gdt", icon: <span style={{ fontSize: 14, lineHeight: 1 }}>⌖</span>, label: "GD&T" },
   { id: "ref_geometry", icon: <Axis3D size={ICON_SIZE} />, label: "Ref.Geo" },
   { id: "appearance_editor", icon: <Sun size={ICON_SIZE} />, label: "Appear." },
   { id: "config_manager", icon: <Layers size={ICON_SIZE} />, label: "Config" },
@@ -190,7 +191,7 @@ const cameraViews = [
   { label: "Iso", shortcut: "0" },
 ];
 
-export default function RibbonToolbar({ onExtrude, onRevolve, onMassProps, onRefGeometry, onAppearance, onConfigManager, onHoleWizard, onAITool }: { onExtrude?: () => void; onRevolve?: () => void; onMassProps?: () => void; onRefGeometry?: () => void; onAppearance?: () => void; onConfigManager?: () => void; onHoleWizard?: () => void; onAITool?: (tool: "ai_text_to_cad" | "ai_suggest" | "ai_optimize" | "ai_explain" | "ai_fea" | "ai_cfd") => void } = {}) {
+export default function RibbonToolbar({ onExtrude, onRevolve, onMassProps, onRefGeometry, onAppearance, onConfigManager, onHoleWizard, onAITool, onGDT }: { onExtrude?: () => void; onRevolve?: () => void; onMassProps?: () => void; onRefGeometry?: () => void; onAppearance?: () => void; onConfigManager?: () => void; onHoleWizard?: () => void; onAITool?: (tool: "ai_text_to_cad" | "ai_suggest" | "ai_optimize" | "ai_explain" | "ai_fea" | "ai_cfd") => void; onGDT?: () => void } = {}) {
   const router = useRouter();
   const saveProject = useCallback(() => {
     const state = useCadStore.getState();
@@ -349,6 +350,10 @@ export default function RibbonToolbar({ onExtrude, onRevolve, onMassProps, onRef
         onConfigManager?.();
         return;
       }
+      if (id === "gdt") {
+        onGDT?.();
+        return;
+      }
       if (id === "hole_wizard") {
         onHoleWizard?.();
         return;
@@ -379,7 +384,7 @@ export default function RibbonToolbar({ onExtrude, onRevolve, onMassProps, onRef
       }
       setActiveTool(id as ToolId);
     },
-    [setActiveTool, setActiveOperation, addObject, booleanUnion, booleanSubtract, booleanIntersect, selectedId, selectedIds, onExtrude, onRevolve, onMassProps, onRefGeometry, onAppearance, onConfigManager, onHoleWizard, onAITool, router]
+    [setActiveTool, setActiveOperation, addObject, booleanUnion, booleanSubtract, booleanIntersect, selectedId, selectedIds, onExtrude, onRevolve, onMassProps, onRefGeometry, onAppearance, onConfigManager, onHoleWizard, onAITool, onGDT, router]
   );
 
   const handleTabDoubleClick = useCallback(() => {
