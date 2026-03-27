@@ -27,6 +27,7 @@ import {
   PanelLeftClose,
   PanelLeft,
   User,
+  LayoutTemplate,
 } from "lucide-react";
 
 interface NavItem {
@@ -70,6 +71,7 @@ const navSections: NavSection[] = [
       { href: "/assembly", label: "Assembly", icon: <Boxes size={iconSize} /> },
       { href: "/assembly-advanced", label: "Assembly Advanced", icon: <Box size={iconSize} /> },
       { href: "/library", label: "Parts Library", icon: <Library size={iconSize} /> },
+      { href: "/templates", label: "Templates", icon: <LayoutTemplate size={iconSize} /> },
       { href: "/import-export", label: "Import / Export", icon: <Import size={iconSize} /> },
     ],
   },
