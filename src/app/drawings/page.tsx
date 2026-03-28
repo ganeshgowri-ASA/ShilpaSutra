@@ -1,5 +1,7 @@
 "use client";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
+import { getIECDrawingData, type IECDrawingData } from "@/lib/iecDrawingData";
+import IECDrawingSheet from "@/components/drawings/IECDrawingSheet";
 
 // ─── GD&T SVG Symbols ──────────────────────────────────────────────────────
 
@@ -515,6 +517,14 @@ function EngineeringSheet({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function DrawingsPage() {
+  // ── Template detection via URL params (no useSearchParams = no Suspense needed)
+  const [iecData, setIecData] = useState<IECDrawingData | null>(null);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tid = params.get("template");
+    if (tid) setIecData(getIECDrawingData(tid));
+  }, []);
+
   const [title, setTitle] = useState<TitleBlock>(defaultTitle);
   const [revisions, setRevisions] = useState<RevisionRow[]>(defaultRevisions);
   const [scale, setScale] = useState("1:1");
@@ -714,6 +724,28 @@ export default function DrawingsPage() {
       setExporting(null);
     }
   };
+
+  // ── IEC template drawing (if URL ?template= matches a known IEC template) ──
+  if (iecData) {
+    return (
+      <div className="flex flex-col h-screen bg-[#0d1117] text-white">
+        <div className="flex items-center gap-3 px-4 py-2 bg-[#161b22] border-b border-[#21262d] shrink-0">
+          <button onClick={() => setIecData(null)}
+            className="text-[11px] text-slate-400 hover:text-white px-2 py-1 rounded border border-[#21262d] hover:border-[#30363d] transition-colors">
+            ← Default Drawing
+          </button>
+          <span className="text-[12px] font-semibold text-white">{iecData.name}</span>
+          <span className="text-[10px] text-slate-500">{iecData.standard}</span>
+          <span className="ml-auto text-[10px] text-slate-600">Part No: {iecData.partNo} · Scale: {iecData.scale}</span>
+        </div>
+        <div className="flex-1 overflow-auto p-4 flex items-start justify-center">
+          <div className="bg-white rounded shadow-xl" style={{ width: "100%", maxWidth: 1100, aspectRatio: "841/594" }}>
+            <IECDrawingSheet data={iecData} />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen bg-[#0d1117] text-white overflow-hidden">
