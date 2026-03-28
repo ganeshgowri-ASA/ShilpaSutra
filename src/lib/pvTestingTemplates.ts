@@ -511,3 +511,24 @@ export function getPVTemplatesByCategory(cat: PVTemplateCategory): PVTemplate[] 
 export function getPVTemplateById(id: string): PVTemplate | undefined {
   return PV_TESTING_TEMPLATES.find((t) => t.id === id);
 }
+
+// ─── W3-4: IEC 61215 / 61730 / 62788 Test Equipment Templates ────────────────
+// Re-exported from pvIECTestRegistry for unified template browser access.
+export {
+  PV_IEC_ALL_TEMPLATES,
+  PV_IEC_TEMPLATES_PART1,
+  IEC_TEMPLATE_BROWSER_ENTRIES,
+  IEC_CATEGORY_LABELS,
+  IEC_STANDARDS_REFERENCE,
+  getIECTemplateById,
+  getIECTemplatesByCategory,
+} from './pvIECTestRegistry';
+
+export { PV_IEC_TEMPLATES_PART2 } from './pvIECTestTemplates2';
+
+export type {
+  SolidPrimitive,
+  ParametricField,
+  IECTestTemplate,
+} from './pvIECTestTemplates';
+
