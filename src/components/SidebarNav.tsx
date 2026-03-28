@@ -30,6 +30,7 @@ import {
   LayoutTemplate,
   Building2,
   BrainCircuit,
+  Sun,
 } from "lucide-react";
 
 interface NavItem {
@@ -76,6 +77,7 @@ const navSections: NavSection[] = [
       { href: "/library", label: "Parts Library", icon: <Library size={iconSize} /> },
       { href: "/templates", label: "Templates", icon: <LayoutTemplate size={iconSize} /> },
       { href: "/import-export", label: "Import / Export", icon: <Import size={iconSize} /> },
+      { href: "/pv-workflows", label: "PV Workflows", icon: <Sun size={iconSize} /> },
     ],
   },
   {
