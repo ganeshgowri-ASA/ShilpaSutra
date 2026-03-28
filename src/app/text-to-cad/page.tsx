@@ -4,114 +4,40 @@ import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import {
   CheckCircle2, Circle, Package, ChevronDown, ChevronRight,
-  Loader2, Brain, LayoutTemplate,
+  Loader2, Brain, LayoutTemplate, HelpCircle, SkipForward,
 } from "lucide-react";
 import Link from "next/link";
 import { matchTemplateFromPrompt, extractCapacityKWp } from "@/lib/solar-templates";
+import ThinkingModeSelector, { type ThinkingMode, resolveThinkingMode } from "@/components/cad/ThinkingModeSelector";
+import AttachmentBar, { type Attachment, buildAttachmentContext, getImageBase64 } from "@/components/cad/AttachmentBar";
+import { getClarifyingQuestions, buildEnrichedPrompt, type ClarifyingQuestion } from "@/lib/clarifying-questions";
 
 // --- Types ---
-interface ReasoningStep {
-  step: number;
-  action: string;
-  detail: string;
-  status: string;
-}
-
-interface BOMEntry {
-  partName: string;
-  quantity: number;
-  material: string;
-  dimensions: string;
-  color: string;
-}
-
+interface ReasoningStep { step: number; action: string; detail: string; status: string; }
+interface BOMEntry { partName: string; quantity: number; material: string; dimensions: string; color: string; }
 interface AssemblyPart {
-  type: "box" | "cylinder" | "sphere" | "cone";
-  name: string;
-  position: [number, number, number];
-  rotation?: [number, number, number];
+  type: "box"|"cylinder"|"sphere"|"cone"; name: string;
+  position: [number,number,number]; rotation?: [number,number,number];
   dimensions: { width: number; height: number; depth: number };
-  material: string;
-  color: string;
-  opacity?: number;
-  metalness?: number;
-  roughness?: number;
+  material: string; color: string; opacity?: number; metalness?: number; roughness?: number;
 }
-
 interface Generation {
-  id: string;
-  prompt: string;
-  status: "generating" | "complete" | "error";
-  format: string;
-  time?: string;
-  parts?: AssemblyPart[];
-  reasoning?: ReasoningStep[];
-  bom?: BOMEntry[];
-  isAssembly?: boolean;
-  objectType?: string;
-  summary?: string;
+  id: string; prompt: string; status: "generating"|"complete"|"error";
+  format: string; time?: string; parts?: AssemblyPart[];
+  reasoning?: ReasoningStep[]; bom?: BOMEntry[];
+  isAssembly?: boolean; objectType?: string; summary?: string;
 }
 
-// --- 3D Assembly Preview ---
+// --- 3D Part Mesh ---
 function PartMesh({ part }: { part: AssemblyPart }) {
-  const pos = part.position;
-  const rot = part.rotation || [0, 0, 0];
-  const d = part.dimensions;
-
-  const mat = (
-    <meshStandardMaterial
-      color={part.color}
-      metalness={part.metalness ?? 0.4}
-      roughness={part.roughness ?? 0.5}
-      transparent={part.opacity !== undefined && part.opacity < 1}
-      opacity={part.opacity ?? 1}
-    />
-  );
-
-  if (part.type === "cylinder") {
-    return (
-      <mesh position={pos} rotation={rot}>
-        <cylinderGeometry args={[d.width, d.width, d.height, 32]} />
-        {mat}
-      </mesh>
-    );
-  }
-  if (part.type === "sphere") {
-    return (
-      <mesh position={pos} rotation={rot}>
-        <sphereGeometry args={[d.width, 32, 32]} />
-        {mat}
-      </mesh>
-    );
-  }
-  if (part.type === "cone") {
-    return (
-      <mesh position={pos} rotation={rot}>
-        <coneGeometry args={[d.width, d.height, 32]} />
-        {mat}
-      </mesh>
-    );
-  }
-  // box (default)
-  return (
-    <mesh position={pos} rotation={rot}>
-      <boxGeometry args={[d.width, d.height, d.depth]} />
-      {mat}
-    </mesh>
-  );
+  const pos = part.position; const rot = part.rotation||[0,0,0]; const d = part.dimensions;
+  const mat = <meshStandardMaterial color={part.color} metalness={part.metalness??0.4} roughness={part.roughness??0.5} transparent={part.opacity!==undefined&&part.opacity<1} opacity={part.opacity??1}/>;
+  if (part.type==="cylinder") return <mesh position={pos} rotation={rot}><cylinderGeometry args={[d.width,d.width,d.height,32]}/>{mat}</mesh>;
+  if (part.type==="sphere")   return <mesh position={pos} rotation={rot}><sphereGeometry args={[d.width,32,32]}/>{mat}</mesh>;
+  if (part.type==="cone")     return <mesh position={pos} rotation={rot}><coneGeometry args={[d.width,d.height,32]}/>{mat}</mesh>;
+  return <mesh position={pos} rotation={rot}><boxGeometry args={[d.width,d.height,d.depth]}/>{mat}</mesh>;
 }
 
-function AssemblyPreview({ parts }: { parts: AssemblyPart[] }) {
-  return (
-    <group>
-      {parts.map((part, i) => (
-        <PartMesh key={i} part={part} />
-      ))}
-    </group>
-  );
-}
-
-// --- Example prompts ---
 const EXAMPLES = [
   { label: "Solar PV module 2m x 1m x 35mm aluminum frame bifacial glass-to-glass", cat: "Assembly" },
   { label: "M8 hex bolt 40mm long with nut and washer", cat: "Fastener" },
@@ -123,87 +49,68 @@ const EXAMPLES = [
   { label: "Pipe OD60 ID40 L200mm", cat: "Pipe" },
   { label: "Spur gear 20 teeth module 2", cat: "Gear" },
   { label: "Flange DN50 PN16", cat: "Piping" },
-  { label: "Box 100x50x30mm with 5mm fillet", cat: "Box" },
-  { label: "Heat sink 8 fins 60x60mm base", cat: "Thermal" },
 ];
 
 const FORMATS = ["STEP", "STL", "OBJ", "glTF", "IGES"];
 
 // --- Main ---
 export default function TextToCADPage() {
-  const [prompt, setPrompt] = useState("");
-  const [format, setFormat] = useState("STEP");
-  const [generations, setGenerations] = useState<Generation[]>([]);
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const [showBOM, setShowBOM] = useState(true);
+  const [prompt, setPrompt]       = useState("");
+  const [format, setFormat]       = useState("STEP");
+  const [mode, setMode]           = useState<ThinkingMode>("Auto");
+  const [attachments, setAttach]  = useState<Attachment[]>([]);
+  const [questions, setQuestions] = useState<ClarifyingQuestion[]|null>(null);
+  const [answers, setAnswers]     = useState<Record<string,string>>({});
+  const [generations, setGens]    = useState<Generation[]>([]);
+  const [activeId, setActiveId]   = useState<string|null>(null);
+  const [showBOM, setShowBOM]     = useState(true);
   const [showReasoning, setShowReasoning] = useState(true);
 
-  const generate = useCallback(async (p?: string) => {
-    const text = (p ?? prompt).trim();
-    if (!text) return;
-    const id = `g${Date.now()}`;
-    const startTime = Date.now();
-    setGenerations(prev => [{ id, prompt: text, status: "generating", format }, ...prev]);
+  const doGenerate = useCallback(async (text: string) => {
+    const id = `g${Date.now()}`; const t0 = Date.now();
+    const resolved = resolveThinkingMode(mode, text);
+    const attCtx   = buildAttachmentContext(attachments);
+    const imgB64   = getImageBase64(attachments);
+    setGens(prev => [{ id, prompt: text, status: "generating", format }, ...prev]);
     setActiveId(id);
-    if (!p) setPrompt("");
-
     try {
       const res = await fetch("/api/ai/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: text }),
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: text + attCtx, thinkingMode: resolved, imageBase64: imgB64 || undefined }),
       });
       const data = await res.json();
-      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-
+      const elapsed = ((Date.now()-t0)/1000).toFixed(1);
       if (data.isAssembly && data.assemblyParts) {
-        setGenerations(prev => prev.map(g => g.id === id ? {
-          ...g,
-          status: "complete",
-          time: `${elapsed}s`,
-          parts: data.assemblyParts,
-          reasoning: data.reasoning,
-          bom: data.bom,
-          isAssembly: true,
-          objectType: data.object?.name || "Assembly",
-          summary: data.message,
-        } : g));
-      } else {
-        // Single part - wrap in parts array for preview
+        setGens(prev => prev.map(g => g.id!==id ? g : { ...g, status:"complete", time:`${elapsed}s`, parts:data.assemblyParts, reasoning:data.reasoning, bom:data.bom, isAssembly:true, objectType:data.object?.name||"Assembly", summary:data.message }));
+      } else if (data.object) {
         const obj = data.object;
-        if (obj) {
-          const singlePart: AssemblyPart = {
-            type: obj.type,
-            name: obj.name,
-            position: [0, obj.dimensions.height / 2, 0],
-            dimensions: obj.dimensions,
-            material: "Steel",
-            color: "#00D4FF",
-            metalness: 0.35,
-            roughness: 0.45,
-          };
-          setGenerations(prev => prev.map(g => g.id === id ? {
-            ...g,
-            status: "complete",
-            time: `${elapsed}s`,
-            parts: [singlePart],
-            objectType: obj.name,
-            summary: data.message,
-          } : g));
-        } else {
-          setGenerations(prev => prev.map(g => g.id === id ? { ...g, status: "error" } : g));
-        }
+        const singlePart: AssemblyPart = { type:obj.type, name:obj.name, position:[0,obj.dimensions.height/2,0], dimensions:obj.dimensions, material:"Steel", color:"#00D4FF", metalness:0.35, roughness:0.45 };
+        setGens(prev => prev.map(g => g.id!==id ? g : { ...g, status:"complete", time:`${elapsed}s`, parts:[singlePart], objectType:obj.name, summary:data.message }));
+      } else {
+        setGens(prev => prev.map(g => g.id!==id ? g : { ...g, status:"error" }));
       }
     } catch {
-      setGenerations(prev => prev.map(g => g.id === id ? { ...g, status: "error" } : g));
+      setGens(prev => prev.map(g => g.id!==id ? g : { ...g, status:"error" }));
     }
-  }, [prompt, format]);
+  }, [mode, attachments, format]);
+
+  const handleGenerate = useCallback((overrideText?: string) => {
+    const text = (overrideText ?? prompt).trim();
+    if (!text) return;
+    if (!overrideText) setPrompt("");
+    // Check for clarifying questions (skip if prompt is fully specified)
+    if (!overrideText && !questions) {
+      const cq = getClarifyingQuestions(text);
+      if (cq) { setQuestions(cq.questions); return; }
+    }
+    const enriched = questions ? buildEnrichedPrompt(text, answers) : text;
+    setQuestions(null); setAnswers({});
+    doGenerate(enriched);
+  }, [prompt, questions, answers, doGenerate]);
 
   const active = generations.find(g => g.id === activeId);
-
-  // Template recommendation from prompt
   const suggestedTemplate = useMemo(() => matchTemplateFromPrompt(prompt), [prompt]);
-  const suggestedCapacity = useMemo(() => extractCapacityKWp(prompt), [prompt]);
+  const suggestedCapacity  = useMemo(() => extractCapacityKWp(prompt), [prompt]);
 
   return (
     <div className="flex flex-col h-screen bg-[#0d1117] text-white overflow-hidden">
@@ -212,60 +119,80 @@ export default function TextToCADPage() {
         <Brain size={16} className="text-purple-400" />
         <span className="font-bold text-[#00D4FF]">Text to CAD</span>
         <span className="text-[10px] text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded-full">AI Reasoning Engine</span>
-        <select value={format} onChange={e => setFormat(e.target.value)}
-          className="ml-auto bg-[#0d1117] border border-[#21262d] rounded px-2 py-1 text-xs text-slate-300">
-          {FORMATS.map(f => <option key={f}>{f}</option>)}
-        </select>
+        <div className="ml-auto flex items-center gap-2">
+          <ThinkingModeSelector value={mode} onChange={setMode} />
+          <select value={format} onChange={e => setFormat(e.target.value)}
+            className="bg-[#0d1117] border border-[#21262d] rounded px-2 py-1 text-xs text-slate-300">
+            {FORMATS.map(f => <option key={f}>{f}</option>)}
+          </select>
+        </div>
       </div>
 
       <div className="flex flex-1 overflow-hidden">
-        {/* LEFT - Input + Examples + Reasoning */}
+        {/* LEFT */}
         <div className="w-80 bg-[#161b22] border-r border-[#21262d] flex flex-col shrink-0 overflow-y-auto">
           <div className="p-3 space-y-3">
             <textarea value={prompt} onChange={e => setPrompt(e.target.value)}
-              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); generate(); } }}
-              placeholder="e.g. Solar PV module 2m x 1m x 35mm aluminum frame bifacial"
+              onKeyDown={e => { if (e.key==="Enter"&&!e.shiftKey) { e.preventDefault(); handleGenerate(); } }}
+              placeholder="e.g. Solar PV array 20 modules 15° tilt ground mount"
               className="w-full h-24 bg-[#0d1117] rounded px-3 py-2 text-sm outline-none border border-[#21262d] focus:border-[#00D4FF] resize-none placeholder-slate-600" />
-            <button onClick={() => generate()}
-              disabled={!prompt.trim()}
+
+            {/* Attachment bar */}
+            <AttachmentBar attachments={attachments} onChange={setAttach} accentClass="text-purple-400" />
+
+            <button onClick={() => handleGenerate()} disabled={!prompt.trim()}
               className="w-full bg-[#00D4FF] hover:bg-[#00b8d9] disabled:opacity-40 text-black py-2 rounded text-xs font-bold transition-colors">
               Generate Assembly
             </button>
 
-            {/* Template recommendation banner */}
+            {/* Clarifying Questions */}
+            {questions && (
+              <div className="bg-[#0d1117] border border-amber-500/30 rounded-lg p-3">
+                <div className="flex items-center gap-1.5 mb-2">
+                  <HelpCircle size={12} className="text-amber-400" />
+                  <span className="text-[10px] font-semibold text-amber-400">Quick questions before generating</span>
+                </div>
+                <div className="space-y-2">
+                  {questions.map(q => (
+                    <div key={q.id} className="flex items-center gap-2">
+                      <span className="text-[10px] text-slate-400 w-32 shrink-0">{q.question}</span>
+                      <input type="text" value={answers[q.id]||""} onChange={e=>setAnswers(a=>({...a,[q.id]:e.target.value}))}
+                        placeholder={q.placeholder}
+                        className="flex-1 min-w-0 bg-[#161b22] border border-[#21262d] rounded px-2 py-1 text-[10px] text-slate-200 placeholder-slate-700 outline-none focus:border-amber-500/40"/>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex gap-2 mt-2.5">
+                  <button onClick={() => handleGenerate()} className="flex-1 flex items-center justify-center gap-1 text-[10px] font-semibold py-1.5 rounded bg-[#00D4FF] hover:bg-[#00b8d9] text-black transition-colors">
+                    <CheckCircle2 size={11}/> Generate
+                  </button>
+                  <button onClick={() => { setQuestions(null); setAnswers({}); doGenerate(prompt.trim()); }} className="flex items-center gap-1 text-[10px] text-slate-500 hover:text-slate-300 px-2">
+                    <SkipForward size={11}/> Skip
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Template recommendation */}
             {suggestedTemplate && (
-              <Link
-                href={`/templates?open=${suggestedTemplate.id}${suggestedCapacity ? `&capacity=${suggestedCapacity}` : ""}`}
-                className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2.5 text-[11px] text-amber-300 hover:border-amber-500/70 hover:bg-amber-500/15 transition-colors"
-              >
+              <Link href={`/templates?open=${suggestedTemplate.id}${suggestedCapacity?`&capacity=${suggestedCapacity}`:""}`}
+                className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2.5 text-[11px] text-amber-300 hover:border-amber-500/70 transition-colors">
                 <LayoutTemplate size={14} className="mt-0.5 shrink-0 text-amber-400" />
-                <span>
-                  <span className="font-semibold">Template available:</span>{" "}
-                  {suggestedTemplate.name}
-                  {suggestedCapacity ? ` · ${suggestedCapacity >= 1000 ? (suggestedCapacity / 1000).toFixed(1) + " MWp" : suggestedCapacity + " kWp"}` : ""}
-                  {" "}— use parametric template for precise BOS sizing →
-                </span>
+                <span><span className="font-semibold">Template available:</span> {suggestedTemplate.name}{suggestedCapacity?` · ${suggestedCapacity>=1000?(suggestedCapacity/1000).toFixed(1)+" MWp":suggestedCapacity+" kWp"}`:""} — use parametric template →</span>
               </Link>
             )}
 
             {/* Reasoning Steps */}
-            {active?.reasoning && active.reasoning.length > 0 && (
+            {active?.reasoning && active.reasoning.length>0 && (
               <div>
-                <button onClick={() => setShowReasoning(!showReasoning)}
-                  className="flex items-center gap-1.5 text-[10px] font-bold text-purple-400 uppercase tracking-wider w-full">
-                  {showReasoning ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
-                  <Brain size={10} />
-                  Reasoning Steps ({active.reasoning.length})
+                <button onClick={()=>setShowReasoning(!showReasoning)} className="flex items-center gap-1.5 text-[10px] font-bold text-purple-400 uppercase tracking-wider w-full">
+                  {showReasoning?<ChevronDown size={10}/>:<ChevronRight size={10}/>}<Brain size={10}/>Reasoning ({active.reasoning.length})
                 </button>
-                {showReasoning && (
+                {showReasoning&&(
                   <div className="mt-1.5 space-y-1 bg-[#0d1117] rounded-lg border border-purple-500/20 p-2">
-                    {active.reasoning.map((step) => (
+                    {active.reasoning.map(step=>(
                       <div key={step.step} className="flex items-start gap-1.5 text-[10px]">
-                        <span className="mt-0.5 shrink-0">
-                          {step.status === "done"
-                            ? <CheckCircle2 size={10} className="text-emerald-400" />
-                            : <Circle size={10} className="text-slate-600" />}
-                        </span>
+                        <span className="mt-0.5 shrink-0">{step.status==="done"?<CheckCircle2 size={10} className="text-emerald-400"/>:<Circle size={10} className="text-slate-600"/>}</span>
                         <span className="text-purple-400 font-medium shrink-0">{step.action}:</span>
                         <span className="text-slate-300">{step.detail}</span>
                       </div>
@@ -276,47 +203,31 @@ export default function TextToCADPage() {
             )}
 
             {/* BOM */}
-            {active?.bom && active.bom.length > 0 && (
+            {active?.bom && active.bom.length>0 && (
               <div>
-                <button onClick={() => setShowBOM(!showBOM)}
-                  className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-400 uppercase tracking-wider w-full">
-                  {showBOM ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
-                  <Package size={10} />
-                  Bill of Materials ({active.bom.length})
+                <button onClick={()=>setShowBOM(!showBOM)} className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-400 uppercase tracking-wider w-full">
+                  {showBOM?<ChevronDown size={10}/>:<ChevronRight size={10}/>}<Package size={10}/>Bill of Materials ({active.bom.length})
                 </button>
-                {showBOM && (
+                {showBOM&&(
                   <div className="mt-1.5 bg-[#0d1117] rounded-lg border border-emerald-500/20 overflow-hidden">
-                    <table className="w-full text-[9px]">
-                      <thead>
-                        <tr className="border-b border-[#21262d] text-slate-500">
-                          <th className="text-left px-2 py-1">Part</th>
-                          <th className="text-center px-1 py-1">Qty</th>
-                          <th className="text-left px-1 py-1">Material</th>
+                    <table className="w-full text-[9px]"><thead><tr className="border-b border-[#21262d] text-slate-500"><th className="text-left px-2 py-1">Part</th><th className="text-center px-1 py-1">Qty</th><th className="text-left px-1 py-1">Material</th></tr></thead>
+                      <tbody>{active.bom.map((entry,i)=>(
+                        <tr key={i} className="border-b border-[#21262d]/50">
+                          <td className="px-2 py-1 text-slate-300 flex items-center gap-1"><span className="w-2 h-2 rounded-sm shrink-0" style={{backgroundColor:entry.color}}/>{entry.partName}</td>
+                          <td className="text-center px-1 py-1 text-slate-400">{entry.quantity}</td>
+                          <td className="px-1 py-1 text-slate-500 truncate max-w-[80px]">{entry.material}</td>
                         </tr>
-                      </thead>
-                      <tbody>
-                        {active.bom.map((entry, i) => (
-                          <tr key={i} className="border-b border-[#21262d]/50">
-                            <td className="px-2 py-1 text-slate-300 flex items-center gap-1">
-                              <span className="w-2 h-2 rounded-sm shrink-0" style={{ backgroundColor: entry.color }} />
-                              {entry.partName}
-                            </td>
-                            <td className="text-center px-1 py-1 text-slate-400">{entry.quantity}</td>
-                            <td className="px-1 py-1 text-slate-500 truncate max-w-[80px]">{entry.material}</td>
-                          </tr>
-                        ))}
-                      </tbody>
+                      ))}</tbody>
                     </table>
                   </div>
                 )}
               </div>
             )}
 
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Examples — click to generate</div>
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Examples</div>
             <div className="grid grid-cols-1 gap-1">
-              {EXAMPLES.map(ex => (
-                <button key={ex.label} onClick={() => { setPrompt(ex.label); generate(ex.label); }}
-                  className="text-left bg-[#0d1117] hover:bg-[#21262d] border border-[#21262d] rounded px-2.5 py-1.5 transition-colors group">
+              {EXAMPLES.map(ex=>(
+                <button key={ex.label} onClick={()=>{ setPrompt(ex.label); handleGenerate(ex.label); }} className="text-left bg-[#0d1117] hover:bg-[#21262d] border border-[#21262d] rounded px-2.5 py-1.5 transition-colors group">
                   <span className="text-[10px] text-slate-300 group-hover:text-[#00D4FF]">{ex.label}</span>
                   <span className="ml-2 text-[9px] text-slate-600">{ex.cat}</span>
                 </button>
@@ -327,33 +238,26 @@ export default function TextToCADPage() {
 
         {/* CENTER - 3D Preview */}
         <div className="flex-1 relative bg-[#0d1117]">
-          {active?.status === "generating" && (
+          {active?.status==="generating"&&(
             <div className="absolute inset-0 flex items-center justify-center z-10">
-              <div className="text-center">
-                <Loader2 size={48} className="text-purple-400 animate-spin mx-auto mb-3" />
+              <div className="text-center"><Loader2 size={48} className="text-purple-400 animate-spin mx-auto mb-3"/>
                 <div className="text-purple-400 text-sm font-semibold">AI Reasoning Engine</div>
-                <div className="text-slate-500 text-xs mt-1">Decomposing into sub-parts...</div>
+                <div className="text-slate-500 text-xs mt-1">Thinking mode: {mode} · Decomposing into sub-parts...</div>
               </div>
             </div>
           )}
-          {active?.status === "complete" && active.parts && active.parts.length > 0 && (
+          {active?.status==="complete"&&active.parts&&active.parts.length>0&&(
             <Suspense fallback={null}>
-              <Canvas camera={{ position: [3, 2, 3], fov: 40 }}>
-                <ambientLight intensity={0.5} />
-                <directionalLight position={[3, 4, 2]} intensity={1} />
-                <directionalLight position={[-2, 3, -1]} intensity={0.3} />
-                <AssemblyPreview parts={active.parts} />
-                <OrbitControls autoRotate autoRotateSpeed={1} />
-                <gridHelper args={[6, 30, "#21262d", "#21262d"]} />
+              <Canvas camera={{position:[3,2,3],fov:40}}>
+                <ambientLight intensity={0.5}/><directionalLight position={[3,4,2]} intensity={1}/><directionalLight position={[-2,3,-1]} intensity={0.3}/>
+                <group>{active.parts.map((p,i)=><PartMesh key={i} part={p}/>)}</group>
+                <OrbitControls autoRotate autoRotateSpeed={1}/>
+                <gridHelper args={[6,30,"#21262d","#21262d"]}/>
               </Canvas>
               <div className="absolute bottom-4 left-4 bg-[#161b22]/90 border border-[#21262d] rounded px-3 py-2 text-xs max-w-sm">
-                <div className="text-[#00D4FF] font-semibold truncate">{active.objectType || active.prompt}</div>
-                <div className="text-slate-500 mt-0.5">
-                  {active.isAssembly ? `${active.parts.length} parts` : "1 part"} · {active.time} · {active.format}
-                </div>
-                {active.summary && (
-                  <div className="text-slate-400 mt-1 text-[10px] leading-relaxed">{active.summary}</div>
-                )}
+                <div className="text-[#00D4FF] font-semibold truncate">{active.objectType||active.prompt}</div>
+                <div className="text-slate-500 mt-0.5">{active.isAssembly?`${active.parts.length} parts`:"1 part"} · {active.time} · {active.format}</div>
+                {active.summary&&<div className="text-slate-400 mt-1 text-[10px] leading-relaxed">{active.summary}</div>}
               </div>
               <div className="absolute bottom-4 right-4 flex gap-2">
                 <button className="bg-[#00D4FF] hover:bg-[#00b8d9] text-black px-3 py-1.5 rounded text-xs font-bold">Send to Designer</button>
@@ -361,30 +265,19 @@ export default function TextToCADPage() {
               </div>
             </Suspense>
           )}
-          {active?.status === "error" && (
-            <div className="absolute inset-0 flex items-center justify-center text-red-400 text-sm">
-              Generation failed. Try again.
-            </div>
-          )}
-          {!active && (
-            <div className="absolute inset-0 flex items-center justify-center text-slate-600 text-sm">
-              Describe a part or assembly to generate
-            </div>
-          )}
+          {active?.status==="error"&&<div className="absolute inset-0 flex items-center justify-center text-red-400 text-sm">Generation failed. Try again.</div>}
+          {!active&&<div className="absolute inset-0 flex items-center justify-center text-slate-600 text-sm">Describe a part or assembly to generate</div>}
         </div>
 
         {/* RIGHT - Assembly Tree + History */}
         <div className="w-64 bg-[#161b22] border-l border-[#21262d] flex flex-col shrink-0">
-          {/* Assembly Tree */}
-          {active?.isAssembly && active.parts && (
+          {active?.isAssembly&&active.parts&&(
             <div className="border-b border-[#21262d]">
-              <div className="px-3 py-2 text-[10px] font-bold text-purple-400 uppercase tracking-wider">
-                Assembly Tree ({active.parts.length})
-              </div>
+              <div className="px-3 py-2 text-[10px] font-bold text-purple-400 uppercase tracking-wider">Assembly Tree ({active.parts.length})</div>
               <div className="max-h-60 overflow-y-auto px-2 pb-2 space-y-0.5">
-                {active.parts.map((part, i) => (
-                  <div key={i} className="flex items-center gap-1.5 px-2 py-1 rounded text-[10px] hover:bg-[#21262d] transition-colors">
-                    <span className="w-2 h-2 rounded-sm shrink-0" style={{ backgroundColor: part.color }} />
+                {active.parts.map((part,i)=>(
+                  <div key={i} className="flex items-center gap-1.5 px-2 py-1 rounded text-[10px] hover:bg-[#21262d]">
+                    <span className="w-2 h-2 rounded-sm shrink-0" style={{backgroundColor:part.color}}/>
                     <span className="text-slate-300 truncate">{part.name}</span>
                     <span className="text-slate-600 ml-auto shrink-0">{part.type}</span>
                   </div>
@@ -392,23 +285,20 @@ export default function TextToCADPage() {
               </div>
             </div>
           )}
-
-          {/* History */}
           <div className="px-3 py-2 border-b border-[#21262d] text-xs font-bold text-slate-300">History ({generations.length})</div>
           <div className="flex-1 overflow-y-auto p-2 space-y-1">
-            {generations.map(g => (
-              <div key={g.id} onClick={() => setActiveId(g.id)}
-                className={`p-2 rounded cursor-pointer border text-xs transition-all ${activeId === g.id ? "bg-[#00D4FF]/10 border-[#00D4FF]/30" : "border-[#21262d] hover:border-[#30363d]"}`}>
+            {generations.map(g=>(
+              <div key={g.id} onClick={()=>setActiveId(g.id)} className={`p-2 rounded cursor-pointer border text-xs transition-all ${activeId===g.id?"bg-[#00D4FF]/10 border-[#00D4FF]/30":"border-[#21262d] hover:border-[#30363d]"}`}>
                 <div className="truncate text-slate-300">{g.prompt}</div>
                 <div className="flex items-center gap-2 mt-1 text-[10px]">
-                  <span className={g.status === "complete" ? "text-green-400" : g.status === "error" ? "text-red-400" : "text-[#00D4FF] animate-pulse"}>{g.status}</span>
-                  {g.isAssembly && <span className="text-purple-400">{g.parts?.length} parts</span>}
+                  <span className={g.status==="complete"?"text-green-400":g.status==="error"?"text-red-400":"text-[#00D4FF] animate-pulse"}>{g.status}</span>
+                  {g.isAssembly&&<span className="text-purple-400">{g.parts?.length} parts</span>}
                   <span className="text-slate-600">{g.format}</span>
-                  {g.time && <span className="text-slate-600">{g.time}</span>}
+                  {g.time&&<span className="text-slate-600">{g.time}</span>}
                 </div>
               </div>
             ))}
-            {generations.length === 0 && <div className="text-slate-600 text-[11px] p-2">No generations yet</div>}
+            {generations.length===0&&<div className="text-slate-600 text-[11px] p-2">No generations yet</div>}
           </div>
         </div>
       </div>
