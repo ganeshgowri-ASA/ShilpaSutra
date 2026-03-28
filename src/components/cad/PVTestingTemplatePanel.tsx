@@ -323,7 +323,7 @@ export default function PVTestingTemplatePanel({ onClose, onInsertScript }: Prop
                     Preview KCL
                   </button>
                   <button
-                    onClick={handleGenerate && generatedScript ? handleInsert : handleGenerate}
+                    onClick={generatedScript ? handleInsert : handleGenerate}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-[#00D4FF]/15 border border-[#00D4FF]/30 text-[#00D4FF] hover:bg-[#00D4FF]/25 transition-all"
                   >
                     <Play size={11} />

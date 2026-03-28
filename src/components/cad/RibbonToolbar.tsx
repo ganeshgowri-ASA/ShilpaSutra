@@ -18,7 +18,7 @@ import {
   MessageSquare, Wand2, Zap, HelpCircle,
   Undo2, Redo2, ChevronDown, ChevronUp,
   Activity, Wind,
-  HardDrive, FolderOpen, Trash2, X, Download,
+  HardDrive, FolderOpen, Trash2, X, Download, FileText,
 } from "lucide-react";
 
 const ExportPanel = dynamic(() => import("@/components/cad/ExportPanel"), { ssr: false });
@@ -190,7 +190,7 @@ const cameraViews = [
   { label: "Iso", shortcut: "0" },
 ];
 
-export default function RibbonToolbar({ onExtrude, onRevolve, onMassProps, onRefGeometry, onAppearance, onConfigManager, onHoleWizard, onAITool }: { onExtrude?: () => void; onRevolve?: () => void; onMassProps?: () => void; onRefGeometry?: () => void; onAppearance?: () => void; onConfigManager?: () => void; onHoleWizard?: () => void; onAITool?: (tool: "ai_text_to_cad" | "ai_suggest" | "ai_optimize" | "ai_explain" | "ai_fea" | "ai_cfd") => void } = {}) {
+export default function RibbonToolbar({ onExtrude, onRevolve, onMassProps, onRefGeometry, onAppearance, onConfigManager, onHoleWizard, onAITool, onPVTemplates, onProPDF }: { onExtrude?: () => void; onRevolve?: () => void; onMassProps?: () => void; onRefGeometry?: () => void; onAppearance?: () => void; onConfigManager?: () => void; onHoleWizard?: () => void; onAITool?: (tool: "ai_text_to_cad" | "ai_suggest" | "ai_optimize" | "ai_explain" | "ai_fea" | "ai_cfd") => void; onPVTemplates?: () => void; onProPDF?: () => void } = {}) {
   const router = useRouter();
   const saveProject = useCallback(() => {
     const state = useCadStore.getState();
@@ -456,6 +456,14 @@ export default function RibbonToolbar({ onExtrude, onRevolve, onMassProps, onRef
           <button onClick={() => setShowExportPanel(true)} title="Export model (PNG, PDF, STL, OBJ, DXF, JSON)"
             className="px-2.5 py-1 rounded-md text-[10px] font-bold bg-cyan-500/10 hover:bg-cyan-500/25 text-cyan-400 border border-cyan-500/20 hover:border-cyan-500/40 transition-all duration-150 flex items-center gap-1">
             <Download size={10} /> Export
+          </button>
+          <button onClick={onProPDF} title="Export professional PDF drawing (multi-view, title block, BOM)"
+            className="px-2.5 py-1 rounded-md text-[10px] font-bold bg-orange-500/10 hover:bg-orange-500/25 text-orange-400 border border-orange-500/20 hover:border-orange-500/40 transition-all duration-150 flex items-center gap-1">
+            <FileText size={10} /> Pro PDF
+          </button>
+          <button onClick={onPVTemplates} title="Solar PV testing equipment templates"
+            className="px-2.5 py-1 rounded-md text-[10px] font-bold bg-amber-500/10 hover:bg-amber-500/25 text-amber-400 border border-amber-500/20 hover:border-amber-500/40 transition-all duration-150 flex items-center gap-1">
+            <Sun size={10} /> PV Templates
           </button>
           <div className="w-px h-4 bg-[#21262d] mx-0.5" />
           <button onClick={openSaveModal} title="Quick save to browser storage"
