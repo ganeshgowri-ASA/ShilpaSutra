@@ -6,7 +6,9 @@ export type PVTemplateCategory =
   | "IV Testing"
   | "Simulation"
   | "Mounting"
-  | "Enclosures";
+  | "Enclosures"
+  | "IEC Chambers"
+  | "Structural";
 
 export interface PVTemplateParam {
   key: string;
@@ -502,6 +504,8 @@ export const PV_TEMPLATE_CATEGORIES: PVTemplateCategory[] = [
   "Simulation",
   "Mounting",
   "Enclosures",
+  "IEC Chambers",
+  "Structural",
 ];
 
 export function getPVTemplatesByCategory(cat: PVTemplateCategory): PVTemplate[] {
@@ -511,6 +515,19 @@ export function getPVTemplatesByCategory(cat: PVTemplateCategory): PVTemplate[] 
 export function getPVTemplateById(id: string): PVTemplate | undefined {
   return PV_TESTING_TEMPLATES.find((t) => t.id === id);
 }
+
+// ─── Unified Template Registry (all 18+ templates) ───────────────────────────
+// Lazily evaluated to avoid circular-import issues at module initialisation.
+import { adaptIECTemplates } from './pvIECAdapter';
+
+/** Combined array: 8 KCL equipment templates + 10 IEC test-chamber templates */
+export const allPVTemplates: PVTemplate[] = [
+  ...PV_TESTING_TEMPLATES,
+  ...adaptIECTemplates(),
+];
+
+/** All categories derived from allPVTemplates (preserves PV_TEMPLATE_CATEGORIES order) */
+export const ALL_PV_CATEGORIES: PVTemplateCategory[] = PV_TEMPLATE_CATEGORIES;
 
 // ─── W3-4: IEC 61215 / 61730 / 62788 Test Equipment Templates ────────────────
 // Re-exported from pvIECTestRegistry for unified template browser access.
