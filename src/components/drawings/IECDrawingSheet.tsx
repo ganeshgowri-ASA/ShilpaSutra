@@ -27,37 +27,34 @@ function renderViewShapes(view: DrawingView, areaW: number, areaH: number) {
 
   return view.shapes.map((sh: DrawingShape, i: number) => {
     const key = `sh-${i}`;
-    const sx = ox + sh.x * s, sy = oy + sh.y * s;
-    const sw = (sh.w ?? 0) * s, sh_ = (sh.h ?? 0) * s;
-
-    const stroke = C;
-    const strokeW = sh.style === 'thick' ? 1.8 : sh.style === 'hidden' ? 0.4 : 0.9;
-    const dashArr = sh.style === 'dashed' ? '4,2' : sh.style === 'hidden' ? '2,2' : undefined;
-    const fill = sh.fill ?? 'none';
 
     if (sh.type === 'rect') {
+      const strokeW = sh.style === 'thick' ? 1.8 : sh.style === 'hidden' ? 0.4 : 0.9;
+      const dashArr = sh.style === 'dashed' ? '4,2' : sh.style === 'hidden' ? '2,2' : undefined;
       return (
-        <rect key={key} x={sx} y={sy} width={sw} height={sh_}
-          fill={fill} stroke={stroke} strokeWidth={strokeW}
+        <rect key={key} x={ox + sh.x * s} y={oy + sh.y * s} width={sh.w * s} height={sh.h * s}
+          fill={sh.fill ?? 'none'} stroke={C} strokeWidth={strokeW}
           strokeDasharray={dashArr} />
       );
     }
     if (sh.type === 'line') {
-      const ex = ox + (sh.x2 ?? sh.x) * s, ey = oy + (sh.y2 ?? sh.y) * s;
+      const strokeW = sh.style === 'thick' ? 1.8 : sh.style === 'hidden' ? 0.4 : 0.9;
+      const dashArr = sh.style === 'dashed' ? '4,2' : sh.style === 'hidden' ? '2,2' : undefined;
       return (
-        <line key={key} x1={sx} y1={sy} x2={ex} y2={ey}
-          stroke={stroke} strokeWidth={strokeW} strokeDasharray={dashArr} />
+        <line key={key} x1={ox + sh.x * s} y1={oy + sh.y * s} x2={ox + sh.x2 * s} y2={oy + sh.y2 * s}
+          stroke={C} strokeWidth={strokeW} strokeDasharray={dashArr} />
       );
     }
     if (sh.type === 'circle') {
+      const strokeW = sh.style === 'thick' ? 1.8 : sh.style === 'hidden' ? 0.4 : 0.9;
       return (
-        <circle key={key} cx={sx} cy={sy} r={(sh.r ?? 5) * s}
-          fill={fill || 'none'} stroke={stroke} strokeWidth={strokeW} />
+        <circle key={key} cx={ox + sh.x * s} cy={oy + sh.y * s} r={sh.r * s}
+          fill={sh.fill ?? 'none'} stroke={C} strokeWidth={strokeW} />
       );
     }
     if (sh.type === 'text') {
       return (
-        <text key={key} x={sx} y={sy} fontSize={6} textAnchor="middle"
+        <text key={key} x={ox + sh.x * s} y={oy + sh.y * s} fontSize={6} textAnchor="middle"
           fill={C} fontFamily="Arial, sans-serif" dominantBaseline="middle">
           {sh.label}
         </text>
@@ -134,11 +131,11 @@ function TitleBlock({ d }: { d: IECDrawingData }) {
     <g>
       <rect x={x} y={y} width={ww} height={TITLE_H} fill="#f0f6ff" stroke={C} strokeWidth={1.5} />
       {/* Row 1 */}
-      {cell("EQUIPMENT NAME", d.name, x, y, 280)}
-      {cell("STANDARD", d.standard, x + 280, y, 160)}
-      {cell("PART NO.", d.partNo, x + 440, y, 120)}
-      {cell("MATERIAL", d.material, x + 560, y, 140)}
-      {cell("SCALE", d.scale, x + 700, y, 60)}
+      {cell("EQUIPMENT NAME", d.titleBlock.name, x, y, 280)}
+      {cell("STANDARD", d.titleBlock.standard, x + 280, y, 160)}
+      {cell("PART NO.", d.titleBlock.partNo, x + 440, y, 120)}
+      {cell("MATERIAL", d.titleBlock.material, x + 560, y, 140)}
+      {cell("SCALE", d.titleBlock.scale, x + 700, y, 60)}
       {/* Row 2 */}
       {cell("DRAWN BY", "ShilpaSutra AI", x, y + 28, 120)}
       {cell("DATE", today, x + 120, y + 28, 90)}
@@ -220,7 +217,7 @@ export default function IECDrawingSheet({ data }: { data: IECDrawingData }) {
 
       {/* Sheet label top-left */}
       <text x={INNER_X + 4} y={INNER_Y - 3} fontSize={7} fill={C} fontFamily="Arial">
-        A3 · LANDSCAPE · {data.standard}
+        A3 · LANDSCAPE · {data.titleBlock.standard}
       </text>
     </svg>
   );

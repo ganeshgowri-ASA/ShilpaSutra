@@ -1,7 +1,7 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
 import { getIECDrawingData, type IECDrawingData } from "@/lib/iecDrawingData";
-import IECDrawingSheet from "@/components/drawings/IECDrawingSheet";
+import IECDrawingView from "@/components/drawings/IECDrawingView";
 
 // ─── GD&T SVG Symbols ──────────────────────────────────────────────────────
 
@@ -734,13 +734,13 @@ export default function DrawingsPage() {
             className="text-[11px] text-slate-400 hover:text-white px-2 py-1 rounded border border-[#21262d] hover:border-[#30363d] transition-colors">
             ← Default Drawing
           </button>
-          <span className="text-[12px] font-semibold text-white">{iecData.name}</span>
-          <span className="text-[10px] text-slate-500">{iecData.standard}</span>
-          <span className="ml-auto text-[10px] text-slate-600">Part No: {iecData.partNo} · Scale: {iecData.scale}</span>
+          <span className="text-[12px] font-semibold text-white">{iecData.titleBlock.name}</span>
+          <span className="text-[10px] text-slate-500">{iecData.titleBlock.standard}</span>
+          <span className="ml-auto text-[10px] text-slate-600">Part No: {iecData.titleBlock.partNo} · Scale: {iecData.titleBlock.scale}</span>
         </div>
         <div className="flex-1 overflow-auto p-4 flex items-start justify-center">
-          <div className="bg-white rounded shadow-xl" style={{ width: "100%", maxWidth: 1100, aspectRatio: "841/594" }}>
-            <IECDrawingSheet data={iecData} />
+          <div className="bg-white rounded shadow-xl" style={{ width: "100%", maxWidth: 1100, aspectRatio: "420/297" }}>
+            <IECDrawingView data={iecData} />
           </div>
         </div>
       </div>
