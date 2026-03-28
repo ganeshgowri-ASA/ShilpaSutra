@@ -1,7 +1,7 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
 import { getIECDrawingData, type IECDrawingData } from "@/lib/iecDrawingData";
-import IECDrawingSheet from "@/components/drawings/IECDrawingSheet";
+import IECDrawingSheet, { type DrawingOverrides } from "@/components/drawings/IECDrawingSheet";
 
 // ─── GD&T SVG Symbols ──────────────────────────────────────────────────────
 
@@ -519,10 +519,21 @@ function EngineeringSheet({
 export default function DrawingsPage() {
   // ── Template detection via URL params (no useSearchParams = no Suspense needed)
   const [iecData, setIecData] = useState<IECDrawingData | null>(null);
+  const [iecOverrides, setIecOverrides] = useState<DrawingOverrides | undefined>(undefined);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const tid = params.get("template");
     if (tid) setIecData(getIECDrawingData(tid));
+    const fw = params.get("frameWidth");
+    const fh = params.get("frameHeight");
+    const fd = params.get("frameDepth");
+    if (fw || fh || fd) {
+      setIecOverrides({
+        frameWidth:  fw ? Number(fw) : undefined,
+        frameHeight: fh ? Number(fh) : undefined,
+        frameDepth:  fd ? Number(fd) : undefined,
+      });
+    }
   }, []);
 
   const [title, setTitle] = useState<TitleBlock>(defaultTitle);
@@ -740,7 +751,7 @@ export default function DrawingsPage() {
         </div>
         <div className="flex-1 overflow-auto p-4 flex items-start justify-center">
           <div className="bg-white rounded shadow-xl" style={{ width: "100%", maxWidth: 1100, aspectRatio: "841/594" }}>
-            <IECDrawingSheet data={iecData} />
+            <IECDrawingSheet data={iecData} overrides={iecOverrides} />
           </div>
         </div>
       </div>

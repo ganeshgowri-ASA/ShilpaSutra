@@ -158,8 +158,30 @@ function TitleBlock({ d }: { d: IECDrawingData }) {
 }
 
 // ── Main IEC Drawing Sheet ────────────────────────────────────────────────────
-export default function IECDrawingSheet({ data }: { data: IECDrawingData }) {
-  const nViews = data.views.length;
+export interface DrawingOverrides {
+  frameWidth?: number;
+  frameHeight?: number;
+  frameDepth?: number;
+}
+
+export default function IECDrawingSheet({ data, overrides }: { data: IECDrawingData; overrides?: DrawingOverrides }) {
+  // Apply parametric overrides: patch first view dims and append notes
+  const effectiveData: IECDrawingData = overrides ? {
+    ...data,
+    views: data.views.map((v, i) => i === 0 ? {
+      ...v,
+      width_mm: overrides.frameWidth ?? v.width_mm,
+      height_mm: overrides.frameHeight ?? v.height_mm,
+    } : v),
+    notes: [
+      ...data.notes,
+      ...(overrides.frameWidth  != null ? [`Frame width override: ${overrides.frameWidth} mm`] : []),
+      ...(overrides.frameHeight != null ? [`Frame height override: ${overrides.frameHeight} mm`] : []),
+      ...(overrides.frameDepth  != null ? [`Frame depth override: ${overrides.frameDepth} mm`] : []),
+    ],
+  } : data;
+
+  const nViews = effectiveData.views.length;
   const drawH = INNER_H;
   const drawW = INNER_W;
 
@@ -207,7 +229,7 @@ export default function IECDrawingSheet({ data }: { data: IECDrawingData }) {
       </g>
 
       {/* View panels */}
-      {data.views.map((view, idx) => {
+      {effectiveData.views.map((view, idx) => {
         const col = idx % cols;
         const row = Math.floor(idx / cols);
         const vx = INNER_X + col * (colW + 4);
@@ -216,11 +238,11 @@ export default function IECDrawingSheet({ data }: { data: IECDrawingData }) {
       })}
 
       {/* Title block */}
-      <TitleBlock d={data} />
+      <TitleBlock d={effectiveData} />
 
       {/* Sheet label top-left */}
       <text x={INNER_X + 4} y={INNER_Y - 3} fontSize={7} fill={C} fontFamily="Arial">
-        A3 · LANDSCAPE · {data.standard}
+        A3 · LANDSCAPE · {effectiveData.standard}
       </text>
     </svg>
   );
