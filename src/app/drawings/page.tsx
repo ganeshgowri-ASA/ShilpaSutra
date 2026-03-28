@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect } from "react";
 import { getIECDrawingData, type IECDrawingData } from "@/lib/iecDrawingData";
 import IECDrawingSheet from "@/components/drawings/IECDrawingSheet";
+import PVModuleDrawingView from "@/components/drawings/PVModuleDrawingView";
 
 // ─── GD&T SVG Symbols ──────────────────────────────────────────────────────
 
@@ -519,10 +520,15 @@ function EngineeringSheet({
 export default function DrawingsPage() {
   // ── Template detection via URL params (no useSearchParams = no Suspense needed)
   const [iecData, setIecData] = useState<IECDrawingData | null>(null);
+  const [pvDrawingType, setPvDrawingType] = useState<"pvModule" | "pvArray" | null>(null);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const tid = params.get("template");
-    if (tid) setIecData(getIECDrawingData(tid));
+    if (tid === "pvModule" || tid === "pvArray") {
+      setPvDrawingType(tid);
+    } else if (tid) {
+      setIecData(getIECDrawingData(tid));
+    }
   }, []);
 
   const [title, setTitle] = useState<TitleBlock>(defaultTitle);
@@ -724,6 +730,16 @@ export default function DrawingsPage() {
       setExporting(null);
     }
   };
+
+  // ── PV module / array drawing (if URL ?template=pvModule or pvArray) ──
+  if (pvDrawingType) {
+    return (
+      <PVModuleDrawingView
+        drawingType={pvDrawingType}
+        onBack={() => setPvDrawingType(null)}
+      />
+    );
+  }
 
   // ── IEC template drawing (if URL ?template= matches a known IEC template) ──
   if (iecData) {
