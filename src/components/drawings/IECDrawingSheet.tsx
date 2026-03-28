@@ -1,10 +1,13 @@
 "use client";
-// ─── IEC Drawing Sheet SVG Renderer ─────────────────────────────────────────
-// Renders an A3-landscape engineering drawing sheet for any IECDrawingData entry.
-// Layout: FRONT VIEW (top-left), TOP/SECTION VIEW (bottom-left / top-right),
-//         Notes (bottom-right), Title Block (bottom strip).
+// ═══════════════════════════════════════════════════════════════════════════════
+// IEC Drawing Sheet — A3 landscape SVG renderer for IEC equipment drawings
+// Now delegates to the unified drawingEngine via iecDrawingAdapter.
+// Retains the original React SVG rendering as a fallback / direct mode.
+// ═══════════════════════════════════════════════════════════════════════════════
 
 import type { IECDrawingData, DrawingView, DrawingShape } from "@/lib/iecDrawingData";
+import { iecToDrawing } from "@/lib/iecDrawingAdapter";
+import { renderDrawingToSVG, createA3Viewport } from "@/lib/drawingEngine";
 
 // ── SVG sheet constants (A3 landscape in SVG units ≈ mm) ─────────────────────
 const W = 841, H = 594;
@@ -14,14 +17,23 @@ const INNER_X = MARGIN + FRAME;
 const INNER_Y = MARGIN + FRAME;
 const INNER_W = W - 2 * (MARGIN + FRAME);
 const INNER_H = H - 2 * (MARGIN + FRAME) - TITLE_H;
-const C = "#1e3a5f"; // primary drawing colour
+const C = "#1e3a5f";
+
+// ── Props ───────────────────────────────────────────────────────────────────
+
+interface IECDrawingSheetProps {
+  /** IEC drawing data to render. */
+  data: IECDrawingData;
+  /** If true, use unified engine SVG export instead of React SVG. */
+  useEngine?: boolean;
+}
 
 // ── Scale + render a DrawingView into a given SVG area ───────────────────────
 function renderViewShapes(view: DrawingView, areaW: number, areaH: number) {
   const PAD = 20;
   const scaleX = (areaW - PAD * 2) / view.width_mm;
-  const scaleY = (areaH - PAD * 2 - 20) / view.height_mm; // -20 for label
-  const s = Math.min(scaleX, scaleY, 1);                   // never > 1:1
+  const scaleY = (areaH - PAD * 2 - 20) / view.height_mm;
+  const s = Math.min(scaleX, scaleY, 1);
   const ox = PAD + ((areaW - PAD * 2) - view.width_mm * s) / 2;
   const oy = PAD;
 
@@ -105,7 +117,6 @@ function ViewPanel({ view, x, y, w, h }: { view: DrawingView; x: number; y: numb
     <g transform={`translate(${x},${y})`}>
       <rect width={w} height={h} fill="white" stroke={C} strokeWidth={0.8} />
       {renderViewShapes(view, w, h)}
-      {/* Dimension lines on border */}
       <HDim x1={10} x2={w - 10} y={h - 10} label={`${view.width_mm} mm`} />
       <VDim y1={10} y2={h - 20} x={w - 8} label={`${view.height_mm} mm`} />
       <text x={w / 2} y={h + 10} fontSize={7.5} textAnchor="middle"
@@ -133,13 +144,11 @@ function TitleBlock({ d }: { d: IECDrawingData }) {
   return (
     <g>
       <rect x={x} y={y} width={ww} height={TITLE_H} fill="#f0f6ff" stroke={C} strokeWidth={1.5} />
-      {/* Row 1 */}
       {cell("EQUIPMENT NAME", d.name, x, y, 280)}
       {cell("STANDARD", d.standard, x + 280, y, 160)}
       {cell("PART NO.", d.partNo, x + 440, y, 120)}
       {cell("MATERIAL", d.material, x + 560, y, 140)}
       {cell("SCALE", d.scale, x + 700, y, 60)}
-      {/* Row 2 */}
       {cell("DRAWN BY", "ShilpaSutra AI", x, y + 28, 120)}
       {cell("DATE", today, x + 120, y + 28, 90)}
       {cell("CHECKED BY", "—", x + 210, y + 28, 100)}
@@ -147,7 +156,6 @@ function TitleBlock({ d }: { d: IECDrawingData }) {
       {cell("SHEET", "1 of 1", x + 400, y + 28, 80)}
       {cell("REV.", "A", x + 480, y + 28, 40)}
       {cell("PROJECT", "ShilpaSutra PV Lab", x + 520, y + 28, 200)}
-      {/* Row 3 - general notes */}
       <rect x={x} y={y + 56} width={ww} height={TITLE_H - 56} fill="white" stroke={C} strokeWidth={lw} />
       <text x={x + 6} y={y + 67} fontSize={6.5} fill={C} fontFamily="Arial" fontWeight="bold">NOTES:</text>
       {d.notes.map((note, i) => (
@@ -158,12 +166,22 @@ function TitleBlock({ d }: { d: IECDrawingData }) {
 }
 
 // ── Main IEC Drawing Sheet ────────────────────────────────────────────────────
-export default function IECDrawingSheet({ data }: { data: IECDrawingData }) {
+export default function IECDrawingSheet({ data, useEngine = false }: IECDrawingSheetProps) {
+  // Engine mode: convert to Drawing and render via unified engine
+  if (useEngine) {
+    const unifiedDrawing = iecToDrawing(data);
+    const svgString = renderDrawingToSVG(unifiedDrawing, createA3Viewport());
+    const cleanSvg = svgString.replace(/^<\?xml[^?]*\?>\s*/, '');
+    return (
+      <div className="w-full h-full" style={{ background: "white" }}
+        dangerouslySetInnerHTML={{ __html: cleanSvg }} />
+    );
+  }
+
+  // Legacy React SVG mode (original rendering)
   const nViews = data.views.length;
   const drawH = INNER_H;
   const drawW = INNER_W;
-
-  // Layout: up to 3 views arranged left→right, equal width columns
   const cols = Math.min(nViews, 3);
   const colW = Math.floor(drawW / cols) - 4;
   const rows = Math.ceil(nViews / cols);
@@ -173,15 +191,11 @@ export default function IECDrawingSheet({ data }: { data: IECDrawingData }) {
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full" style={{ background: "white" }}
       fontFamily="Arial, sans-serif">
 
-      {/* Outer border */}
       <rect x={MARGIN} y={MARGIN} width={W - 2 * MARGIN} height={H - 2 * MARGIN}
         fill="white" stroke={C} strokeWidth={1.5} />
-
-      {/* Inner frame */}
       <rect x={INNER_X} y={INNER_Y} width={INNER_W} height={INNER_H}
         fill="none" stroke={C} strokeWidth={1.8} />
 
-      {/* Zone labels A-D and 1-7 */}
       {["A","B","C","D"].map((z, i) => (
         <g key={z}>
           <text x={MARGIN + 4} y={INNER_Y + 15 + i * 85} fontSize={7} fill="#9ca3af">{z}</text>
@@ -192,13 +206,11 @@ export default function IECDrawingSheet({ data }: { data: IECDrawingData }) {
         <text key={n} x={INNER_X + 15 + i * 100} y={MARGIN + 8} fontSize={7} fill="#9ca3af" textAnchor="middle">{n}</text>
       ))}
 
-      {/* Centering ticks */}
       <line x1={W/2} y1={MARGIN} x2={W/2} y2={MARGIN+7} stroke={C} strokeWidth={0.7}/>
       <line x1={W/2} y1={H-MARGIN} x2={W/2} y2={H-MARGIN-7} stroke={C} strokeWidth={0.7}/>
       <line x1={MARGIN} y1={H/2} x2={MARGIN+7} y2={H/2} stroke={C} strokeWidth={0.7}/>
       <line x1={W-MARGIN} y1={H/2} x2={W-MARGIN-7} y2={H/2} stroke={C} strokeWidth={0.7}/>
 
-      {/* ISO E third-angle projection symbol */}
       <g transform={`translate(${MARGIN+14},${H - MARGIN - TITLE_H - 20})`}>
         <circle cx={0} cy={0} r={12} fill="none" stroke={C} strokeWidth={0.7}/>
         <polygon points="-10,-4 -3,-7 -3,7 -10,4" fill={C}/>
@@ -206,7 +218,6 @@ export default function IECDrawingSheet({ data }: { data: IECDrawingData }) {
         <text x={0} y={18} fontSize={6} textAnchor="middle" fill={C}>ISO E</text>
       </g>
 
-      {/* View panels */}
       {data.views.map((view, idx) => {
         const col = idx % cols;
         const row = Math.floor(idx / cols);
@@ -215,10 +226,8 @@ export default function IECDrawingSheet({ data }: { data: IECDrawingData }) {
         return <ViewPanel key={idx} view={view} x={vx} y={vy} w={colW} h={rowH} />;
       })}
 
-      {/* Title block */}
       <TitleBlock d={data} />
 
-      {/* Sheet label top-left */}
       <text x={INNER_X + 4} y={INNER_Y - 3} fontSize={7} fill={C} fontFamily="Arial">
         A3 · LANDSCAPE · {data.standard}
       </text>
