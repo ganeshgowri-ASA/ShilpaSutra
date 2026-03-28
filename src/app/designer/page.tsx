@@ -2,7 +2,7 @@
 import React, { useState, useCallback, useRef, useEffect, Component, type ErrorInfo, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import { useCadStore } from "@/stores/cad-store";
-import { Package, History, Layers, RulerIcon, Settings2, Grid3X3, MessageSquare } from "lucide-react";
+import { Package, History, Layers, RulerIcon, Settings2, Grid3X3, MessageSquare, Sun } from "lucide-react";
 import type { SelectionFilterType } from "@/components/cad/SelectionFilter";
 
 /* ── Error Boundary to prevent full-page crashes ── */
@@ -93,6 +93,7 @@ const GridControls = dynamic(() => import("@/components/cad/GridControls"), { ss
 const CoordinateInput = dynamic(() => import("@/components/cad/CoordinateInput"), { ssr: false });
 const AIToolPanel = dynamic(() => import("@/components/cad/AIToolPanelEnhanced"), { ssr: false });
 const SelectedObjectDimensionsPanel = dynamic(() => import("@/components/cad/SelectedObjectDimensionsPanel"), { ssr: false });
+const PVTestingTemplatePanel = dynamic(() => import("@/components/cad/PVTestingTemplatePanel"), { ssr: false });
 
 type AIToolType = "ai_text_to_cad" | "ai_suggest" | "ai_optimize" | "ai_explain" | "ai_fea" | "ai_cfd" | null;
 
@@ -132,6 +133,7 @@ export default function DesignerPage() {
   const [selectionFilters, setSelectionFilters] = useState<Set<SelectionFilterType>>(
     () => new Set<SelectionFilterType>(["vertex", "edge", "face", "body", "component"])
   );
+  const [showPVTemplates, setShowPVTemplates] = useState(false);
 
   const sketchTools = ["line", "polyline", "arc", "circle", "rectangle", "polygon", "spline", "ellipse", "construction_line",
     "arc_3point", "arc_tangent", "circle_3point", "center_rectangle", "slot", "point", "centerline",
@@ -152,6 +154,24 @@ export default function DesignerPage() {
 
   const handleAITool = useCallback((tool: "ai_text_to_cad" | "ai_suggest" | "ai_optimize" | "ai_explain" | "ai_fea" | "ai_cfd") => {
     setActiveAITool((prev) => (prev === tool ? null : tool));
+  }, []);
+
+  const handlePVTemplates = useCallback(() => {
+    setShowPVTemplates((prev) => !prev);
+  }, []);
+
+  const handleProPDF = useCallback(async () => {
+    const { quickExportPDF } = await import("@/lib/pdfExportPro");
+    const canvas = document.querySelector("canvas") as HTMLCanvasElement | null;
+    const dataUrl = canvas?.toDataURL("image/png") ?? null;
+    const objects = (window as typeof window & { __cadStore?: { getState: () => { objects: Array<{ type: string; dimensions?: { width?: number; height?: number; depth?: number }; material?: string }> } } }).__cadStore?.getState()?.objects ?? [];
+    const bom = objects.slice(0, 20).map((obj: { type: string; dimensions?: { width?: number; height?: number; depth?: number }; material?: string }, i: number) => ({
+      partNo: `SS-${String(i + 1).padStart(3, "0")}`,
+      description: obj.type ?? "Component",
+      qty: 1,
+      material: obj.material ?? "Unspecified",
+    }));
+    await quickExportPDF("ShilpaSutra Model", dataUrl, bom.length ? bom : undefined);
   }, []);
 
   // Keyboard shortcut: Ctrl+Shift+G to open Text-to-CAD inline
@@ -196,6 +216,8 @@ export default function DesignerPage() {
         onConfigManager={handleConfigManager}
         onHoleWizard={handleHoleWizard}
         onAITool={handleAITool}
+        onPVTemplates={handlePVTemplates}
+        onProPDF={handleProPDF}
       />
 
       {/* Main workspace area */}
@@ -518,6 +540,44 @@ export default function DesignerPage() {
             {/* Appearance Editor */}
             {showAppearance && (
               <AppearanceEditor onClose={() => setShowAppearance(false)} />
+            )}
+
+            {/* PV Testing Templates slide-in drawer */}
+            {showPVTemplates && (
+              <div className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none">
+                <div className="pointer-events-auto animate-scale-in">
+                  <ViewportErrorBoundary fallback={<div className="bg-[#0d1117] border border-[#21262d] rounded-xl p-8 text-slate-400 text-sm">Failed to load PV Templates</div>}>
+                    <PVTestingTemplatePanel
+                      onClose={() => setShowPVTemplates(false)}
+                      onInsertScript={(script, name) => {
+                        window.dispatchEvent(new CustomEvent("shilpasutra:ai-tool", {
+                          detail: { tool: "ai_text_to_cad" },
+                        }));
+                        setTimeout(() => {
+                          window.dispatchEvent(new CustomEvent("shilpasutra:insert-kcl", {
+                            detail: { script, name },
+                          }));
+                        }, 200);
+                        setShowPVTemplates(false);
+                      }}
+                    />
+                  </ViewportErrorBoundary>
+                </div>
+              </div>
+            )}
+
+            {/* PV Templates shortcut button (bottom toolbar) */}
+            {!isSketchMode && !showPVTemplates && (
+              <div className="absolute bottom-14 right-[90px] z-10 pointer-events-auto">
+                <button
+                  onClick={() => setShowPVTemplates(true)}
+                  title="PV Testing Templates"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-medium text-amber-400 hover:text-amber-300 bg-[#0d1117]/80 hover:bg-amber-500/10 border border-[#21262d] hover:border-amber-500/30 transition-all duration-150 backdrop-blur-md shadow-panel"
+                >
+                  <Sun size={11} />
+                  PV
+                </button>
+              </div>
             )}
 
             {/* Quick Text-to-CAD button (floating, bottom right) */}
