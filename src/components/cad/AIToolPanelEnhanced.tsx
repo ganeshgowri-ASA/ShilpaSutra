@@ -1,31 +1,15 @@
 "use client";
 import { useState, useRef, useEffect, useCallback } from "react";
-import { X, Loader2, Send, Paperclip, ChevronDown, Minus, Maximize2, MessageSquare, Wand2, Zap, HelpCircle, CheckCircle2, SkipForward } from "lucide-react";
+import { X, Loader2, Send, Minus, Maximize2, MessageSquare, Wand2, Zap, HelpCircle, CheckCircle2, SkipForward } from "lucide-react";
 import { useCadStore } from "@/stores/cad-store";
 import { runReasoningEngine } from "@/lib/ai-reasoning-engine";
+import ThinkingModeSelector, { type ThinkingMode, resolveThinkingMode } from "./ThinkingModeSelector";
+import AttachmentBar, { type Attachment, buildAttachmentContext, getImageBase64 } from "./AttachmentBar";
+import { getClarifyingQuestions, buildEnrichedPrompt, type ClarifyingQuestion } from "@/lib/clarifying-questions";
 
 const CHIPS = ["Dumbbell 20mm dia 20mm bar","Spur gear M2 Z20","L-bracket 100x80x3mm","Pipe flange DN50 PN16","Solar PV module 2mx1m","Hex bolt M8x40","Heat sink 50mm 12 fins","Bearing housing 30mm bore","Enclosure 150x100x60mm","T-slot 20x20 300mm","Hex nut M10","Cone 40mm base 80mm high"];
 const SUGGESTIONS = [...CHIPS,"gear 24 teeth module 2mm","cylinder 25mm dia 120mm","plate 100x80mm 4 holes 6mm","pipe OD50 wall 3mm 200mm","NEMA 23 bracket","sphere 30mm","box 60x40x30mm","heatsink 60x60mm 10 fins"];
 
-const CLARIFY: Record<string, string[]> = {
-  bracket: ["Dimensions (LxWxH)?","Mounting holes?","Wall thickness (mm)?"],
-  gear:    ["Module?","Teeth count?","Face width (mm)?"],
-  box:     ["Outer dims (LxWxH)?","Wall thickness?","Add lid?"],
-  pipe:    ["Outer diameter (mm)?","Wall thickness?","Length (mm)?"],
-  flange:  ["Nominal bore (DN)?","Pressure rating (PN)?"],
-  housing: ["Bore diameter (mm)?","Outer diameter?","Width (mm)?"],
-  default: ["What dimensions?","What material?","Mounting holes?","Special features?"],
-};
-
-function getQuestions(prompt: string): string[] | null {
-  const p = prompt.toLowerCase().trim();
-  if (p.split(/\s+/).length >= 4 || /\d/.test(p)) return null;
-  for (const [k, v] of Object.entries(CLARIFY)) if (p.includes(k)) return v;
-  if (p.split(/\s+/).length <= 3) return CLARIFY.default;
-  return null;
-}
-
-type Mode = "Normal" | "Extended" | "Deep";
 type AIToolType = "ai_text_to_cad"|"ai_suggest"|"ai_optimize"|"ai_explain"|"ai_fea"|"ai_cfd";
 
 const META: Record<AIToolType,{title:string;icon:React.ReactNode;placeholder:string;color:string}> = {
@@ -52,22 +36,19 @@ export default function AIToolPanelEnhanced({toolType,onClose}:{toolType:AIToolT
   const [result,setResult]         = useState<string|null>(null);
   const [error,setError]           = useState<string|null>(null);
   const [minimized,setMinimized]   = useState(false);
-  const [mode,setMode]             = useState<Mode>("Normal");
-  const [showModeMenu,setModeMenu] = useState(false);
-  const [file,setFile]             = useState<{name:string;url:string;isImg:boolean;base64?:string}|null>(null);
-  const [analyzing,setAnalyzing]   = useState(false);
-  const [questions,setQuestions]   = useState<string[]|null>(null);
+  const [mode,setMode]             = useState<ThinkingMode>("Normal");
+  const [attachments,setAttach]    = useState<Attachment[]>([]);
+  const [questions,setQuestions]   = useState<ClarifyingQuestion[]|null>(null);
   const [answers,setAnswers]       = useState<Record<string,string>>({});
   const [showAc,setShowAc]         = useState(false);
   const [acIdx,setAcIdx]           = useState(-1);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const fileRef  = useRef<HTMLInputElement>(null);
 
-  const addObj   = useCadStore(s=>s.addGeneratedObject);
-  const addAsm   = useCadStore(s=>s.addAssemblyFromParts);
-  const objects  = useCadStore(s=>s.objects);
-  const selId    = useCadStore(s=>s.selectedId);
-  const selObj   = objects.find(o=>o.id===selId);
+  const addObj  = useCadStore(s=>s.addGeneratedObject);
+  const addAsm  = useCadStore(s=>s.addAssemblyFromParts);
+  const objects = useCadStore(s=>s.objects);
+  const selId   = useCadStore(s=>s.selectedId);
+  const selObj  = objects.find(o=>o.id===selId);
   const m = META[toolType]; const c = C[m.color];
   const isCAD = toolType==="ai_text_to_cad";
   const acList = isCAD ? (input.trim().length<2 ? SUGGESTIONS.slice(0,8) : SUGGESTIONS.filter(s=>s.toLowerCase().includes(input.toLowerCase())).slice(0,8)) : [];
@@ -78,36 +59,39 @@ export default function AIToolPanelEnhanced({toolType,onClose}:{toolType:AIToolT
 
   const doGen = useCallback(async(prompt:string)=>{
     setLoading(true); setResult(null); setError(null);
-    const imageBase64 = file?.isImg ? file.base64 : undefined;
-    if (imageBase64) setAnalyzing(true);
+    const resolved = resolveThinkingMode(mode, prompt);
+    const imageBase64 = getImageBase64(attachments);
+    const attContext  = buildAttachmentContext(attachments);
+    const fullPrompt  = `[${m.title.toUpperCase()}] ${prompt}${attContext}`;
     try {
       const res = await fetch("/api/ai/generate",{method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({
-          prompt:`[${m.title.toUpperCase()}] ${prompt}`,
-          thinkingMode:mode,
+          prompt: fullPrompt,
+          thinkingMode: resolved,
           imageBase64: imageBase64 || undefined,
           context:{tool:toolType,selectedObject:selObj?{name:selObj.name,type:selObj.type}:null,sceneObjectCount:objects.length},
         })});
-      setAnalyzing(false);
       const d = await res.json();
       if (d.error) { setError(d.error); return; }
       if (d.assemblyParts?.length>0) { addAsm(d.assemblyParts,d.object?.name||"Assembly"); setResult(`Created "${d.object?.name||"Assembly"}" with ${d.assemblyParts.length} parts. ${d.message||""}`); }
       else if (d.object) { addObj(d.object); setResult(`Created "${d.object.name}" successfully. ${d.message||""}`); }
       else setResult(d.message||d.response||"Done.");
     } catch {
-      setAnalyzing(false);
       if (isCAD) { try { const r=runReasoningEngine(prompt); if(r.parts.length>0){addAsm(r.parts,r.objectType);setResult(`Created "${r.objectType}" (${r.parts.length} parts, offline). ${r.summary}`);}else setResult("Could not parse. Try: 'box 50x30x20mm' or 'gear 20 teeth M2'."); } catch { setResult("Generation failed. Try a simpler description."); } }
       else setError("Request failed. Check connection.");
     } finally { setLoading(false); }
-  },[m.title,mode,file,toolType,selObj,objects,isCAD,addObj,addAsm]);
+  },[m.title,mode,attachments,toolType,selObj,objects,isCAD,addObj,addAsm]);
 
   const submit = useCallback(()=>{
     if (!input.trim()||loading) return;
     setShowAc(false);
-    if (isCAD && !questions) { const q=getQuestions(input.trim()); if(q){setQuestions(q);return;} }
-    const extra = Object.entries(answers).filter(([,v])=>v.trim()).map(([q,a])=>`${q} ${a}`).join(", ");
+    if (isCAD && !questions) {
+      const cq = getClarifyingQuestions(input.trim());
+      if (cq) { setQuestions(cq.questions); return; }
+    }
+    const enriched = questions ? buildEnrichedPrompt(input.trim(), answers) : input.trim();
     setQuestions(null); setAnswers({});
-    doGen(input.trim()+(extra?"\n"+extra:""));
+    doGen(enriched);
   },[input,loading,isCAD,questions,answers,doGen]);
 
   if (minimized) return (
@@ -122,7 +106,7 @@ export default function AIToolPanelEnhanced({toolType,onClose}:{toolType:AIToolT
   );
 
   return (
-    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 w-[460px] max-h-[85vh] overflow-y-auto">
+    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 w-[480px] max-h-[85vh] overflow-y-auto">
       <div className={`bg-[#0d1117]/97 backdrop-blur-xl border ${c.bd} rounded-xl shadow-2xl shadow-black/50 overflow-hidden`}>
 
         {/* Header */}
@@ -166,22 +150,11 @@ export default function AIToolPanelEnhanced({toolType,onClose}:{toolType:AIToolT
                 if(e.key==="Escape"){showAc?setShowAc(false):setMinimized(true);}
               }}
               placeholder={m.placeholder} rows={2}
-              className="w-full bg-[#161b22] text-xs text-slate-200 rounded-lg px-3 py-2.5 pr-20 outline-none border border-[#21262d] focus:border-purple-500/50 resize-none placeholder-slate-600"
+              className="w-full bg-[#161b22] text-xs text-slate-200 rounded-lg px-3 py-2.5 pr-14 outline-none border border-[#21262d] focus:border-purple-500/50 resize-none placeholder-slate-600"
             />
             <div className="absolute right-2 bottom-2.5 flex items-center gap-1">
-              <button onClick={()=>fileRef.current?.click()} className={`w-7 h-7 rounded-md flex items-center justify-center transition-colors ${file?"text-purple-400 bg-purple-500/15":"text-slate-500 hover:text-slate-300 hover:bg-[#21262d]"}`} title="Attach file"><Paperclip size={12}/></button>
-              <input ref={fileRef} type="file" accept="image/*,.pdf,.dxf,.svg" className="hidden" onChange={e=>{
-                const f=e.target.files?.[0];
-                if(f){
-                  const url=URL.createObjectURL(f);
-                  const isImg=f.type.startsWith("image/");
-                  if(isImg){const reader=new FileReader();reader.onload=ev=>{setFile({name:f.name,url,isImg,base64:ev.target?.result as string});};reader.readAsDataURL(f);}
-                  else setFile({name:f.name,url,isImg:false});
-                }
-                e.target.value="";
-              }}/>
               <button onClick={submit} disabled={!input.trim()||loading} className={`w-7 h-7 rounded-md flex items-center justify-center transition-all ${input.trim()&&!loading?`${c.bg} text-white ${c.hv}`:"bg-[#21262d] text-slate-600 cursor-not-allowed"}`}>
-                {loading?<Loader2 size={12} className="animate-spin"/>:analyzing?<Loader2 size={12} className="animate-spin text-yellow-400"/>:<Send size={12}/>}
+                {loading?<Loader2 size={12} className="animate-spin"/>:<Send size={12}/>}
               </button>
             </div>
             {/* Autocomplete */}
@@ -195,38 +168,13 @@ export default function AIToolPanelEnhanced({toolType,onClose}:{toolType:AIToolT
             )}
           </div>
 
-          {/* File preview + thinking mode */}
-          {(file||isCAD)&&(
+          {/* Attachments + thinking mode row */}
+          {isCAD&&(
             <div className="mt-2 flex items-center gap-2 flex-wrap">
-              {file&&(
-                <div className="flex items-center gap-1.5 bg-[#161b22] border border-[#21262d] rounded-md px-2 py-1">
-                  {file.isImg
-                    // eslint-disable-next-line @next/next/no-img-element
-                    ?<img src={file.url} alt="preview" className="w-8 h-8 rounded object-cover"/>
-                    :<div className="w-8 h-8 rounded bg-[#21262d] flex items-center justify-center text-[9px] text-slate-400 font-mono uppercase">{file.name.split(".").pop()}</div>}
-                  <span className="text-[10px] text-slate-400 max-w-[110px] truncate">{file.name}</span>
-                  <button onClick={()=>setFile(null)} className="text-slate-600 hover:text-red-400"><X size={10}/></button>
-                </div>
-              )}
-              {isCAD&&(
-                <div className="relative ml-auto">
-                  <button onBlur={()=>setTimeout(()=>setModeMenu(false),150)} onClick={()=>setModeMenu(!showModeMenu)}
-                    className="flex items-center gap-1 text-[10px] text-slate-400 bg-[#161b22] border border-[#21262d] rounded-md px-2 py-1 hover:border-[#30363d] transition-colors">
-                    <span>{mode==="Deep"?"🧠":mode==="Extended"?"💡":"⚡"}</span>{mode}<ChevronDown size={9}/>
-                  </button>
-                  {showModeMenu&&(
-                    <div className="absolute right-0 top-full mt-1 z-50 bg-[#0d1117] border border-[#21262d] rounded-lg shadow-xl min-w-[140px]">
-                      {(["Normal","Extended","Deep"] as Mode[]).map(md=>(
-                        <button key={md} onMouseDown={e=>{e.preventDefault();setMode(md);setModeMenu(false);}}
-                          className={`w-full text-left px-3 py-2 text-[11px] hover:bg-[#161b22] flex items-center gap-2 ${mode===md?"text-white font-semibold":"text-slate-400"}`}>
-                          <span>{md==="Deep"?"🧠":md==="Extended"?"💡":"⚡"}</span>
-                          <div><div>{md}</div><div className="text-[9px] text-slate-600">{md==="Normal"?"Fast":md==="Extended"?"More reasoning":"Full chain-of-thought"}</div></div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
+              <AttachmentBar attachments={attachments} onChange={setAttach} accentClass={`text-${m.color}-400`} />
+              <div className="ml-auto">
+                <ThinkingModeSelector value={mode} onChange={setMode} />
+              </div>
             </div>
           )}
         </div>
@@ -238,10 +186,12 @@ export default function AIToolPanelEnhanced({toolType,onClose}:{toolType:AIToolT
               <div className="flex items-center gap-1.5 mb-2"><HelpCircle size={11} className="text-amber-400"/><span className="text-[10px] font-semibold text-amber-400">A few quick questions…</span></div>
               <div className="space-y-2">
                 {questions.map(q=>(
-                  <div key={q} className="flex items-center gap-2">
-                    <span className="text-[10px] text-slate-400 w-[140px] shrink-0">{q}</span>
-                    <input type="text" value={answers[q]||""} onChange={e=>setAnswers(a=>({...a,[q]:e.target.value}))} placeholder="optional"
+                  <div key={q.id} className="flex items-center gap-2">
+                    <span className="text-[10px] text-slate-400 w-[150px] shrink-0">{q.question}</span>
+                    <input type="text" value={answers[q.id]||""} onChange={e=>setAnswers(a=>({...a,[q.id]:e.target.value}))}
+                      placeholder={q.placeholder}
                       className="flex-1 bg-[#0d1117] border border-[#21262d] rounded px-2 py-1 text-[10px] text-slate-200 placeholder-slate-700 outline-none focus:border-purple-500/40"/>
+                    {q.unit&&<span className="text-[9px] text-slate-600 shrink-0">{q.unit}</span>}
                   </div>
                 ))}
               </div>
@@ -269,8 +219,8 @@ export default function AIToolPanelEnhanced({toolType,onClose}:{toolType:AIToolT
           <div className="px-4 pb-3">
             <div className={`flex items-center gap-2 ${c.tx} text-xs`}>
               <Loader2 size={12} className="animate-spin"/>
-              <span>{analyzing?"Analyzing image…":mode==="Deep"?"Deep reasoning…":mode==="Extended"?"Extended thinking…":"Generating…"}</span>
-              {mode!=="Normal"&&<span className="text-[9px] text-slate-600">{mode==="Deep"?"(up to 8k tokens)":"(up to 4k tokens)"}</span>}
+              <span>{mode==="Deep"?"Deep reasoning…":mode==="Extended"?"Extended thinking…":mode==="Auto"?"Adaptive reasoning…":"Generating…"}</span>
+              {(mode==="Deep"||mode==="Extended")&&<span className="text-[9px] text-slate-600">{mode==="Deep"?"(up to 8k tokens)":"(up to 4k tokens)"}</span>}
             </div>
           </div>
         )}
