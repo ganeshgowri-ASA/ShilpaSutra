@@ -7,7 +7,29 @@ import {
   Loader2, Brain, LayoutTemplate, HelpCircle, SkipForward,
 } from "lucide-react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { matchTemplateFromPrompt, extractCapacityKWp } from "@/lib/solar-templates";
+
+// Dynamic imports for equipment templates (avoid SSR issues with SVG)
+const ThermalCyclingChamber = dynamic(() => import("@/components/drawings/templates/ThermalCyclingChamber"), { ssr: false });
+const UVConditioningChamber = dynamic(() => import("@/components/drawings/templates/UVConditioningChamber"), { ssr: false });
+const HumidityFreezeChamber = dynamic(() => import("@/components/drawings/templates/HumidityFreezeChamber"), { ssr: false });
+const SaltMistChamber = dynamic(() => import("@/components/drawings/templates/SaltMistChamber"), { ssr: false });
+const MechanicalLoadFrame = dynamic(() => import("@/components/drawings/templates/MechanicalLoadFrame"), { ssr: false });
+const SolarSimulatorComp = dynamic(() => import("@/components/drawings/templates/SolarSimulator"), { ssr: false });
+const IgnitabilityChamber = dynamic(() => import("@/components/drawings/templates/IgnitabilityChamber"), { ssr: false });
+const ChillerUnit = dynamic(() => import("@/components/drawings/templates/ChillerUnit"), { ssr: false });
+
+const EQUIPMENT_TEMPLATE_MAP: Record<string, React.ComponentType<{ params?: Record<string, unknown> }>> = {
+  thermal_cycling_chamber: ThermalCyclingChamber as unknown as React.ComponentType<{ params?: Record<string, unknown> }>,
+  iec_uv_conditioning_chamber: UVConditioningChamber as unknown as React.ComponentType<{ params?: Record<string, unknown> }>,
+  humidity_freeze_chamber: HumidityFreezeChamber as unknown as React.ComponentType<{ params?: Record<string, unknown> }>,
+  salt_mist_chamber: SaltMistChamber as unknown as React.ComponentType<{ params?: Record<string, unknown> }>,
+  mechanical_load_test: MechanicalLoadFrame as unknown as React.ComponentType<{ params?: Record<string, unknown> }>,
+  solar_simulator: SolarSimulatorComp as unknown as React.ComponentType<{ params?: Record<string, unknown> }>,
+  ignitability_chamber: IgnitabilityChamber as unknown as React.ComponentType<{ params?: Record<string, unknown> }>,
+  chiller_unit: ChillerUnit as unknown as React.ComponentType<{ params?: Record<string, unknown> }>,
+};
 import ThinkingModeSelector, { type ThinkingMode, resolveThinkingMode } from "@/components/cad/ThinkingModeSelector";
 import AttachmentBar, { type Attachment, buildAttachmentContext, getImageBase64 } from "@/components/cad/AttachmentBar";
 import { getClarifyingQuestions, buildEnrichedPrompt, type ClarifyingQuestion } from "@/lib/clarifying-questions";
@@ -50,6 +72,54 @@ const EXAMPLES = [
   { label: "Spur gear 20 teeth module 2", cat: "Gear" },
   { label: "Flange DN50 PN16", cat: "Piping" },
 ];
+
+// Equipment drawing prompt suggestions
+const EQUIPMENT_PROMPTS = [
+  { label: "Generate thermal cycling chamber 1500x2200x1200mm with 3 shelves", templateId: "thermal_cycling_chamber", cat: "IEC Equipment" },
+  { label: "Create UV conditioning chamber for IEC 61215 MQT 10", templateId: "iec_uv_conditioning_chamber", cat: "IEC Equipment" },
+  { label: "Draw solar simulator class AAA 2m x 2m test area", templateId: "solar_simulator", cat: "IEC Equipment" },
+  { label: "Design salt mist chamber per IEC 61701", templateId: "salt_mist_chamber", cat: "IEC Equipment" },
+  { label: "Mechanical load test frame IEC 62782 for PV modules", templateId: "mechanical_load_test", cat: "IEC Equipment" },
+  { label: "Humidity freeze chamber 85/85 test IEC 61215", templateId: "humidity_freeze_chamber", cat: "IEC Equipment" },
+  { label: "Ignitability test chamber with chimney per IEC 61730", templateId: "ignitability_chamber", cat: "IEC Equipment" },
+  { label: "Industrial chiller unit 80kW R-410A", templateId: "chiller_unit", cat: "IEC Equipment" },
+];
+
+// Equipment keyword → template ID mapping
+const EQUIPMENT_KEYWORDS: { keywords: string[]; templateId: string }[] = [
+  { keywords: ["thermal", "cycling", "temperature cycling", "tcc", "mqt 11"], templateId: "thermal_cycling_chamber" },
+  { keywords: ["uv", "ultraviolet", "uv conditioning", "mqt 10"], templateId: "iec_uv_conditioning_chamber" },
+  { keywords: ["humidity", "freeze", "humidity-freeze", "damp heat", "mqt 12", "85/85"], templateId: "humidity_freeze_chamber" },
+  { keywords: ["salt", "mist", "salt spray", "corrosion", "iec 61701"], templateId: "salt_mist_chamber" },
+  { keywords: ["mechanical load", "load frame", "load test", "mqt 16", "iec 62782"], templateId: "mechanical_load_test" },
+  { keywords: ["solar simulator", "sun simulator", "flash test", "aaa", "iec 60904"], templateId: "solar_simulator" },
+  { keywords: ["ignitability", "fire test", "flame test", "chimney", "ul 790", "iec 61730"], templateId: "ignitability_chamber" },
+  { keywords: ["chiller", "cooling unit", "refrigeration", "condenser unit"], templateId: "chiller_unit" },
+];
+
+/** Parse dimensions from text like "1500x2200x1200mm" */
+function parseDimensionsFromText(text: string): { w?: number; h?: number; d?: number } | null {
+  const match = text.match(/(\d+)\s*[x×]\s*(\d+)\s*[x×]\s*(\d+)\s*mm/i);
+  if (match) return { w: parseInt(match[1]), h: parseInt(match[2]), d: parseInt(match[3]) };
+  return null;
+}
+
+/** Parse IEC standard from text */
+function parseStandardFromText(text: string): string | null {
+  const match = text.match(/IEC\s*\d{5}(?:\s*MQT\s*\d+)?/i);
+  return match ? match[0] : null;
+}
+
+/** Match equipment type from prompt text */
+function matchEquipmentTemplate(text: string): string | null {
+  const lower = text.toLowerCase();
+  for (const { keywords, templateId } of EQUIPMENT_KEYWORDS) {
+    for (const kw of keywords) {
+      if (lower.includes(kw)) return templateId;
+    }
+  }
+  return null;
+}
 
 const FORMATS = ["STEP", "STL", "OBJ", "glTF", "IGES"];
 
@@ -111,6 +181,14 @@ export default function TextToCADPage() {
   const active = generations.find(g => g.id === activeId);
   const suggestedTemplate = useMemo(() => matchTemplateFromPrompt(prompt), [prompt]);
   const suggestedCapacity  = useMemo(() => extractCapacityKWp(prompt), [prompt]);
+  const [equipmentDrawingId, setEquipmentDrawingId] = useState<string | null>(null);
+  const [showEquipmentDrawing, setShowEquipmentDrawing] = useState(false);
+  const [showEquipmentPrompts, setShowEquipmentPrompts] = useState(false);
+
+  // Detect equipment template from prompt
+  const detectedEquipment = useMemo(() => matchEquipmentTemplate(prompt), [prompt]);
+  const detectedDimensions = useMemo(() => parseDimensionsFromText(prompt), [prompt]);
+  const detectedStandard = useMemo(() => parseStandardFromText(prompt), [prompt]);
 
   return (
     <div className="flex flex-col h-screen bg-[#0d1117] text-white overflow-hidden">
@@ -224,6 +302,48 @@ export default function TextToCADPage() {
               </div>
             )}
 
+            {/* Equipment drawing detection */}
+            {detectedEquipment && (
+              <div className="bg-[#0d1117] border border-[#00D4FF]/40 rounded-lg p-2.5 text-[11px]">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <LayoutTemplate size={12} className="text-[#00D4FF]" />
+                  <span className="font-semibold text-[#00D4FF]">Equipment Drawing Detected</span>
+                </div>
+                <div className="text-slate-400 text-[10px] mb-2">
+                  Matched: <span className="text-white">{detectedEquipment.replace(/_/g, " ")}</span>
+                  {detectedDimensions && <span className="ml-1 text-slate-500">({detectedDimensions.w}×{detectedDimensions.h}×{detectedDimensions.d}mm)</span>}
+                  {detectedStandard && <span className="ml-1 text-amber-400">{detectedStandard}</span>}
+                </div>
+                <button
+                  onClick={() => { setEquipmentDrawingId(detectedEquipment); setShowEquipmentDrawing(true); }}
+                  className="w-full bg-[#00D4FF] text-black text-[10px] font-bold py-1.5 rounded hover:bg-[#00b8d9] transition-colors"
+                >
+                  Generate 2D GA Drawing →
+                </button>
+              </div>
+            )}
+
+            {/* Equipment Drawing Prompts */}
+            <div>
+              <button onClick={() => setShowEquipmentPrompts(!showEquipmentPrompts)}
+                className="flex items-center gap-1.5 text-[10px] font-bold text-[#00D4FF] uppercase tracking-wider w-full mb-1">
+                {showEquipmentPrompts ? <ChevronDown size={10}/> : <ChevronRight size={10}/>}
+                <LayoutTemplate size={10}/>IEC Equipment Drawings
+              </button>
+              {showEquipmentPrompts && (
+                <div className="grid grid-cols-1 gap-1 mb-2">
+                  {EQUIPMENT_PROMPTS.map(ep => (
+                    <button key={ep.templateId}
+                      onClick={() => { setEquipmentDrawingId(ep.templateId); setShowEquipmentDrawing(true); setPrompt(ep.label); }}
+                      className="text-left bg-[#0d1117] hover:bg-[#21262d] border border-[#00D4FF]/20 hover:border-[#00D4FF]/50 rounded px-2.5 py-1.5 transition-colors group">
+                      <span className="text-[10px] text-slate-300 group-hover:text-[#00D4FF]">{ep.label}</span>
+                      <span className="ml-2 text-[8px] text-[#00D4FF]/60">{ep.cat}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Examples</div>
             <div className="grid grid-cols-1 gap-1">
               {EXAMPLES.map(ex=>(
@@ -236,37 +356,81 @@ export default function TextToCADPage() {
           </div>
         </div>
 
-        {/* CENTER - 3D Preview */}
-        <div className="flex-1 relative bg-[#0d1117]">
-          {active?.status==="generating"&&(
-            <div className="absolute inset-0 flex items-center justify-center z-10">
-              <div className="text-center"><Loader2 size={48} className="text-purple-400 animate-spin mx-auto mb-3"/>
-                <div className="text-purple-400 text-sm font-semibold">AI Reasoning Engine</div>
-                <div className="text-slate-500 text-xs mt-1">Thinking mode: {mode} · Decomposing into sub-parts...</div>
+        {/* CENTER - 3D Preview + 2D Drawing side by side */}
+        <div className={`flex-1 relative bg-[#0d1117] flex ${showEquipmentDrawing && equipmentDrawingId ? "flex-row" : ""}`}>
+          {/* 2D Equipment Drawing Panel */}
+          {showEquipmentDrawing && equipmentDrawingId && EQUIPMENT_TEMPLATE_MAP[equipmentDrawingId] && (() => {
+            const DrawingComp = EQUIPMENT_TEMPLATE_MAP[equipmentDrawingId];
+            const drawingParams: Record<string, unknown> = {};
+            if (detectedDimensions) {
+              // Map detected dimensions to template params
+              const dimKeys = ["chamberWidth", "frameWidth", "unitWidth", "chimneyWidth", "housingWidth", "testAreaW"];
+              const heightKeys = ["chamberHeight", "frameHeight", "unitHeight", "chimneyHeight", "housingHeight", "testAreaH"];
+              const depthKeys = ["chamberDepth", "frameDepth", "unitDepth", "chimneyDepth"];
+              if (detectedDimensions.w) dimKeys.forEach(k => drawingParams[k] = detectedDimensions.w);
+              if (detectedDimensions.h) heightKeys.forEach(k => drawingParams[k] = detectedDimensions.h);
+              if (detectedDimensions.d) depthKeys.forEach(k => drawingParams[k] = detectedDimensions.d);
+            }
+            return (
+              <div className="w-1/2 border-r border-[#21262d] flex flex-col">
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-[#161b22] border-b border-[#21262d] shrink-0">
+                  <LayoutTemplate size={12} className="text-[#00D4FF]" />
+                  <span className="text-[10px] font-bold text-[#00D4FF]">2D GA Drawing</span>
+                  <span className="text-[9px] text-slate-500">{equipmentDrawingId.replace(/_/g, " ")}</span>
+                  <button onClick={() => setShowEquipmentDrawing(false)}
+                    className="ml-auto text-[9px] text-slate-500 hover:text-white">✕ Close</button>
+                </div>
+                <div className="flex-1 overflow-auto p-2 flex items-center justify-center bg-[#0a0e14]">
+                  <div style={{ width: "100%", maxWidth: 700, aspectRatio: "841/594" }}>
+                    <DrawingComp params={drawingParams} />
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-[#161b22] border-t border-[#21262d] shrink-0">
+                  <Link href={`/drawings?template=${equipmentDrawingId}`}
+                    className="text-[9px] text-[#00D4FF] hover:text-white">Open in Drawings →</Link>
+                </div>
               </div>
-            </div>
-          )}
-          {active?.status==="complete"&&active.parts&&active.parts.length>0&&(
-            <Suspense fallback={null}>
-              <Canvas camera={{position:[3,2,3],fov:40}}>
-                <ambientLight intensity={0.5}/><directionalLight position={[3,4,2]} intensity={1}/><directionalLight position={[-2,3,-1]} intensity={0.3}/>
-                <group>{active.parts.map((p,i)=><PartMesh key={i} part={p}/>)}</group>
-                <OrbitControls autoRotate autoRotateSpeed={1}/>
-                <gridHelper args={[6,30,"#21262d","#21262d"]}/>
-              </Canvas>
-              <div className="absolute bottom-4 left-4 bg-[#161b22]/90 border border-[#21262d] rounded px-3 py-2 text-xs max-w-sm">
-                <div className="text-[#00D4FF] font-semibold truncate">{active.objectType||active.prompt}</div>
-                <div className="text-slate-500 mt-0.5">{active.isAssembly?`${active.parts.length} parts`:"1 part"} · {active.time} · {active.format}</div>
-                {active.summary&&<div className="text-slate-400 mt-1 text-[10px] leading-relaxed">{active.summary}</div>}
+            );
+          })()}
+
+          {/* 3D Preview */}
+          <div className={`relative ${showEquipmentDrawing && equipmentDrawingId ? "w-1/2" : "flex-1"}`}>
+            {showEquipmentDrawing && equipmentDrawingId && (
+              <div className="absolute top-2 left-2 z-10 bg-[#161b22]/80 border border-[#21262d] rounded px-2 py-1">
+                <span className="text-[9px] text-slate-400">3D Isometric View</span>
               </div>
-              <div className="absolute bottom-4 right-4 flex gap-2">
-                <button className="bg-[#00D4FF] hover:bg-[#00b8d9] text-black px-3 py-1.5 rounded text-xs font-bold">Send to Designer</button>
-                <button className="bg-[#21262d] hover:bg-[#30363d] text-white px-3 py-1.5 rounded text-xs">Export {active.format}</button>
+            )}
+            {active?.status==="generating"&&(
+              <div className="absolute inset-0 flex items-center justify-center z-10">
+                <div className="text-center"><Loader2 size={48} className="text-purple-400 animate-spin mx-auto mb-3"/>
+                  <div className="text-purple-400 text-sm font-semibold">AI Reasoning Engine</div>
+                  <div className="text-slate-500 text-xs mt-1">Thinking mode: {mode} · Decomposing into sub-parts...</div>
+                </div>
               </div>
-            </Suspense>
-          )}
-          {active?.status==="error"&&<div className="absolute inset-0 flex items-center justify-center text-red-400 text-sm">Generation failed. Try again.</div>}
-          {!active&&<div className="absolute inset-0 flex items-center justify-center text-slate-600 text-sm">Describe a part or assembly to generate</div>}
+            )}
+            {active?.status==="complete"&&active.parts&&active.parts.length>0&&(
+              <Suspense fallback={null}>
+                <Canvas camera={{position:[3,2,3],fov:40}}>
+                  <ambientLight intensity={0.5}/><directionalLight position={[3,4,2]} intensity={1}/><directionalLight position={[-2,3,-1]} intensity={0.3}/>
+                  <group>{active.parts.map((p,i)=><PartMesh key={i} part={p}/>)}</group>
+                  <OrbitControls autoRotate autoRotateSpeed={1}/>
+                  <gridHelper args={[6,30,"#21262d","#21262d"]}/>
+                </Canvas>
+                <div className="absolute bottom-4 left-4 bg-[#161b22]/90 border border-[#21262d] rounded px-3 py-2 text-xs max-w-sm">
+                  <div className="text-[#00D4FF] font-semibold truncate">{active.objectType||active.prompt}</div>
+                  <div className="text-slate-500 mt-0.5">{active.isAssembly?`${active.parts.length} parts`:"1 part"} · {active.time} · {active.format}</div>
+                  {active.summary&&<div className="text-slate-400 mt-1 text-[10px] leading-relaxed">{active.summary}</div>}
+                </div>
+                <div className="absolute bottom-4 right-4 flex gap-2">
+                  <button className="bg-[#00D4FF] hover:bg-[#00b8d9] text-black px-3 py-1.5 rounded text-xs font-bold">Send to Designer</button>
+                  <button className="bg-[#21262d] hover:bg-[#30363d] text-white px-3 py-1.5 rounded text-xs">Export {active.format}</button>
+                </div>
+              </Suspense>
+            )}
+            {active?.status==="error"&&<div className="absolute inset-0 flex items-center justify-center text-red-400 text-sm">Generation failed. Try again.</div>}
+            {!active&&!showEquipmentDrawing&&<div className="absolute inset-0 flex items-center justify-center text-slate-600 text-sm">Describe a part or assembly to generate</div>}
+            {!active&&showEquipmentDrawing&&<div className="absolute inset-0 flex items-center justify-center text-slate-600 text-sm">3D preview will appear here after generation</div>}
+          </div>
         </div>
 
         {/* RIGHT - Assembly Tree + History */}
