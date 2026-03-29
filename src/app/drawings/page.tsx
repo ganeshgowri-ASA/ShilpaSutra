@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { getIECDrawingData, type IECDrawingData } from "@/lib/iecDrawingData";
 import IECDrawingSheet from "@/components/drawings/IECDrawingSheet";
+import { addRecentDrawing, showToast, TemplateCompareMode } from "@/components/CommandPalette";
 import {
   ThermalCyclingChamber,
   UVConditioningChamber,
@@ -641,9 +642,57 @@ export default function DrawingsPage() {
   const [viewToggles, setViewToggles] = useState({ front: true, side: true, detail: true, spec: true });
   const [dimPanelOpen, setDimPanelOpen] = useState(true);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [compareMode, setCompareMode] = useState(false);
 
   // Tab state for default view: "equipment" (primary) or "bracket" (legacy mounting bracket)
   const [defaultTab, setDefaultTab] = useState<"equipment" | "bracket">("equipment");
+
+  // Listen for custom events from command palette
+  useEffect(() => {
+    const handleExport = () => {
+      const svgEl = drawingRef.current?.querySelector("svg");
+      if (!svgEl) return;
+      const clone = svgEl.cloneNode(true) as SVGSVGElement;
+      clone.setAttribute("width", "1100");
+      clone.setAttribute("height", String(Math.round(1100 * 594 / 841)));
+      clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+      const blob = new Blob([new XMLSerializer().serializeToString(clone)], { type: "image/svg+xml" });
+      const a = document.createElement("a");
+      a.download = `ShilpaSutra_${equipmentTemplate || "drawing"}.svg`;
+      a.href = URL.createObjectURL(blob);
+      a.click();
+      URL.revokeObjectURL(a.href);
+      showToast("SVG exported successfully");
+    };
+    const handleToggleDims = () => setDimPanelOpen(prev => !prev);
+    const handleCompare = () => setCompareMode(true);
+
+    document.addEventListener("shilpasutra:export", handleExport);
+    document.addEventListener("shilpasutra:toggle-dims", handleToggleDims);
+    document.addEventListener("shilpasutra:compare", handleCompare);
+    return () => {
+      document.removeEventListener("shilpasutra:export", handleExport);
+      document.removeEventListener("shilpasutra:toggle-dims", handleToggleDims);
+      document.removeEventListener("shilpasutra:compare", handleCompare);
+    };
+  }, [equipmentTemplate]);
+
+  // Track recently opened templates and explored progress
+  useEffect(() => {
+    if (equipmentTemplate) {
+      const tmeta = EQUIPMENT_TEMPLATES[equipmentTemplate];
+      addRecentDrawing(equipmentTemplate, tmeta.name, tmeta.standard, window.location.href);
+      // Track exploration progress
+      try {
+        const stored = localStorage.getItem("shilpasutra_explored");
+        const explored: string[] = stored ? JSON.parse(stored) : [];
+        if (!explored.includes(equipmentTemplate)) {
+          explored.push(equipmentTemplate);
+          localStorage.setItem("shilpasutra_explored", JSON.stringify(explored));
+        }
+      } catch {}
+    }
+  }, [equipmentTemplate]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -924,6 +973,7 @@ export default function DrawingsPage() {
       const blob = new Blob([new XMLSerializer().serializeToString(clone)], { type: "image/svg+xml" });
       const a = document.createElement("a"); a.download = `ShilpaSutra_${equipmentTemplate}.svg`;
       a.href = URL.createObjectURL(blob); a.click(); URL.revokeObjectURL(a.href);
+      showToast("SVG exported successfully");
     };
 
     const handleExportPDF = async () => {
@@ -939,6 +989,7 @@ export default function DrawingsPage() {
         const ph = pdf.internal.pageSize.getHeight();
         pdf.addImage(imgData, "JPEG", 0, 0, pw, ph);
         pdf.save(`ShilpaSutra_${equipmentTemplate}.pdf`);
+        showToast("PDF exported successfully");
       } catch (err) { console.error("PDF export failed:", err); }
       finally { setExporting(null); }
     };
@@ -1210,6 +1261,8 @@ export default function DrawingsPage() {
             <span className="text-xs text-white font-medium">Generating {exporting.toUpperCase()}…</span>
           </div>
         )}
+
+        {compareMode && <TemplateCompareMode onClose={() => setCompareMode(false)} />}
       </div>
     );
   }

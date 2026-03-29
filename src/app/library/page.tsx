@@ -1,6 +1,7 @@
 "use client";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { ExplorationProgress } from "@/components/CommandPalette";
 import {
   EQUIPMENT_TEMPLATES,
   type EquipmentTemplateId,
@@ -288,6 +289,7 @@ export default function LibraryPage() {
             <div className="text-right">
               <div className="text-[11px] text-slate-500">{EQUIPMENT_CATALOG.length} templates available</div>
               <div className="text-[10px] text-slate-600 mt-0.5">IEC 61215 / 61730 / 60904 / 62782</div>
+              <ExplorationProgress />
             </div>
           </div>
 
