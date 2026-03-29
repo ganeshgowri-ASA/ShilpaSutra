@@ -1,48 +1,61 @@
 "use client";
 // ═══════════════════════════════════════════════════════════════════════════════
-// SolarSimulator — Class AAA Solar Simulator (WACOM/Eternal Sun reference)
-// IEC 60904-9 compliant multi-view GA drawing
+// SolarSimulator — Class AAA Solar Simulator IEC 60904-9
+// Professional A3 multi-view GA drawing with parametric dimensions
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import React from "react";
 
 export interface SolarSimulatorParams {
-  testAreaW?: number;     // mm
-  testAreaH?: number;     // mm
-  irradiance?: number;    // W/m²
+  cabinetWidth?: number;
+  cabinetHeight?: number;
+  cabinetDepth?: number;
+  testAreaW?: number;
+  testAreaH?: number;
+  irradiance?: number;
   lampRows?: number;
   lampCols?: number;
-  housingWidth?: number;  // mm
-  housingHeight?: number; // mm
-  ductDiameter?: number;  // mm
+  housingWidth?: number;
+  housingHeight?: number;
+  ductDiameter?: number;
 }
 
-const DEFAULTS: Required<SolarSimulatorParams> = {
+const DEFAULTS = {
+  cabinetWidth: 2400,
+  cabinetHeight: 1200,
+  cabinetDepth: 1200,
   testAreaW: 2000,
   testAreaH: 2000,
   irradiance: 1000,
   lampRows: 4,
   lampCols: 4,
-  housingWidth: 2400,
-  housingHeight: 1200,
   ductDiameter: 200,
 };
 
-const C = "#c9d1d9";
-const CA = "#00D4FF";
-const CD = "#8b949e";
-const CT = "#58a6ff";
-const BG = "#0d1117";
+function resolve(params: SolarSimulatorParams) {
+  return {
+    W: params.cabinetWidth ?? params.housingWidth ?? DEFAULTS.cabinetWidth,
+    H: params.cabinetHeight ?? params.housingHeight ?? DEFAULTS.cabinetHeight,
+    D: params.cabinetDepth ?? DEFAULTS.cabinetDepth,
+    testAreaW: params.testAreaW ?? DEFAULTS.testAreaW,
+    testAreaH: params.testAreaH ?? DEFAULTS.testAreaH,
+    irradiance: params.irradiance ?? DEFAULTS.irradiance,
+    lampRows: params.lampRows ?? DEFAULTS.lampRows,
+    lampCols: params.lampCols ?? DEFAULTS.lampCols,
+    ductDiameter: params.ductDiameter ?? DEFAULTS.ductDiameter,
+  };
+}
 
-function DimH({ x1, x2, y, label, ext = 12 }: { x1: number; x2: number; y: number; label: string; ext?: number }) {
+const TXT = "#CCCCCC"; const LN = "#E0E0E0"; const DIM = "#88CCFF"; const TITLE = "#58a6ff"; const ACCENT = "#00D4FF"; const SUB = "#8b949e";
+
+function DimH({ x1, x2, y, label }: { x1: number; x2: number; y: number; label: string }) {
   return (
-    <g stroke={CD} strokeWidth={0.5} fill="none">
-      <line x1={x1} y1={y - ext} x2={x1} y2={y + 3} />
-      <line x1={x2} y1={y - ext} x2={x2} y2={y + 3} />
-      <line x1={x1 + 3} y1={y} x2={x2 - 3} y2={y} />
-      <polygon points={`${x1},${y} ${x1 + 4},${y - 1.5} ${x1 + 4},${y + 1.5}`} fill={CD} stroke="none" />
-      <polygon points={`${x2},${y} ${x2 - 4},${y - 1.5} ${x2 - 4},${y + 1.5}`} fill={CD} stroke="none" />
-      <text x={(x1 + x2) / 2} y={y - 3} fontSize={5} textAnchor="middle" fill={CA} stroke="none" fontFamily="monospace">{label}</text>
+    <g stroke={SUB} strokeWidth={0.7} fill="none">
+      <line x1={x1} y1={y - 15} x2={x1} y2={y + 4} /><line x1={x2} y1={y - 15} x2={x2} y2={y + 4} />
+      <line x1={x1 + 4} y1={y} x2={x2 - 4} y2={y} />
+      <polygon points={`${x1},${y} ${x1 + 5},${y - 2} ${x1 + 5},${y + 2}`} fill={SUB} stroke="none" />
+      <polygon points={`${x2},${y} ${x2 - 5},${y - 2} ${x2 - 5},${y + 2}`} fill={SUB} stroke="none" />
+      <text x={(x1 + x2) / 2} y={y - 4} fontSize={7} textAnchor="middle" fill={DIM} stroke="none" fontFamily="monospace">{label}</text>
     </g>
   );
 }
@@ -50,149 +63,135 @@ function DimH({ x1, x2, y, label, ext = 12 }: { x1: number; x2: number; y: numbe
 function DimV({ y1, y2, x, label }: { y1: number; y2: number; x: number; label: string }) {
   const mid = (y1 + y2) / 2;
   return (
-    <g stroke={CD} strokeWidth={0.5} fill="none">
-      <line x1={x - 12} y1={y1} x2={x + 3} y2={y1} />
-      <line x1={x - 12} y1={y2} x2={x + 3} y2={y2} />
-      <line x1={x} y1={y1 + 3} x2={x} y2={y2 - 3} />
-      <polygon points={`${x},${y1} ${x - 1.5},${y1 + 4} ${x + 1.5},${y1 + 4}`} fill={CD} stroke="none" />
-      <polygon points={`${x},${y2} ${x - 1.5},${y2 - 4} ${x + 1.5},${y2 - 4}`} fill={CD} stroke="none" />
-      <text x={x - 4} y={mid} fontSize={5} textAnchor="middle" fill={CA} stroke="none" fontFamily="monospace"
-        transform={`rotate(-90,${x - 4},${mid})`}>{label}</text>
+    <g stroke={SUB} strokeWidth={0.7} fill="none">
+      <line x1={x - 15} y1={y1} x2={x + 4} y2={y1} /><line x1={x - 15} y1={y2} x2={x + 4} y2={y2} />
+      <line x1={x} y1={y1 + 4} x2={x} y2={y2 - 4} />
+      <polygon points={`${x},${y1} ${x - 2},${y1 + 5} ${x + 2},${y1 + 5}`} fill={SUB} stroke="none" />
+      <polygon points={`${x},${y2} ${x - 2},${y2 - 5} ${x + 2},${y2 - 5}`} fill={SUB} stroke="none" />
+      <text x={x - 6} y={mid} fontSize={7} textAnchor="middle" fill={DIM} stroke="none" fontFamily="monospace"
+        transform={`rotate(-90,${x - 6},${mid})`}>{label}</text>
     </g>
   );
 }
 
-// ── Front View ──
-function FrontView({ ox, oy, p }: { ox: number; oy: number; p: Required<SolarSimulatorParams> }) {
-  const s = 0.065;
-  const hw = p.housingWidth * s;
-  const hh = p.housingHeight * s;
-  const tw = p.testAreaW * s;
-  const th = p.testAreaH * s;
+function FrontView({ ox, oy, p }: { ox: number; oy: number; p: ReturnType<typeof resolve> }) {
+  const s = 350 / 2400;
+  const hw = p.W * s, hh = p.H * s;
   const lampSpX = hw / (p.lampCols + 1);
   const lampSpY = hh / (p.lampRows + 1);
-  const totalH = hh + 100; // housing + gap + test plane
+  const tw = p.testAreaW * s;
+  const totalH = hh + 140;
 
   return (
     <g transform={`translate(${ox},${oy})`}>
-      <text x={hw / 2} y={-8} fontSize={6} textAnchor="middle" fill={CT} fontWeight="bold" fontFamily="monospace">FRONT VIEW</text>
+      <text x={hw / 2} y={-12} fontSize={9} textAnchor="middle" fill={TITLE} fontWeight="bold" fontFamily="monospace">FRONT VIEW</text>
 
-      {/* Light source housing */}
-      <rect x={0} y={0} width={hw} height={hh} fill="none" stroke={C} strokeWidth={1.2} rx={2} />
-      <text x={hw / 2} y={hh + 7} fontSize={3.5} textAnchor="middle" fill={CD} fontFamily="monospace">LAMP HOUSING</text>
+      {/* Lamp housing */}
+      <rect x={0} y={0} width={hw} height={hh} fill="none" stroke={LN} strokeWidth={1.5} rx={2} />
+      <text x={hw / 2} y={hh + 10} fontSize={5} textAnchor="middle" fill={SUB} fontFamily="monospace">LAMP HOUSING</text>
 
-      {/* Lamp array (circles in grid) */}
+      {/* Lamp array */}
       {Array.from({ length: p.lampRows }).map((_, r) =>
         Array.from({ length: p.lampCols }).map((_, c) => {
-          const lx = lampSpX * (c + 1);
-          const ly = lampSpY * (r + 1);
+          const lx = lampSpX * (c + 1), ly = lampSpY * (r + 1);
           return (
             <g key={`lamp-${r}-${c}`}>
-              <circle cx={lx} cy={ly} r={6} fill="none" stroke={CA} strokeWidth={0.5} />
-              <circle cx={lx} cy={ly} r={2} fill={CA} opacity={0.3} />
+              <circle cx={lx} cy={ly} r={8} fill="none" stroke={ACCENT} strokeWidth={0.6} />
+              <circle cx={lx} cy={ly} r={3} fill={ACCENT} opacity={0.2} />
             </g>
           );
         })
       )}
 
-      {/* Optical filter assembly (layered rectangles below lamps) */}
-      <rect x={10} y={hh + 12} width={hw - 20} height={4} fill="none" stroke="#a855f7" strokeWidth={0.6} />
-      <text x={hw / 2} y={hh + 15} fontSize={3} textAnchor="middle" fill="#a855f7" fontFamily="monospace">AM1.5 FILTER</text>
-      <rect x={10} y={hh + 18} width={hw - 20} height={3} fill="none" stroke="#a855f7" strokeWidth={0.4} />
-      <text x={hw / 2} y={hh + 20.5} fontSize={2.5} textAnchor="middle" fill="#a855f7" fontFamily="monospace">DIFFUSER</text>
+      {/* Filter assembly */}
+      <rect x={15} y={hh + 16} width={hw - 30} height={6} fill="none" stroke="#a855f7" strokeWidth={0.6} />
+      <text x={hw / 2} y={hh + 20} fontSize={4} textAnchor="middle" fill="#a855f7" fontFamily="monospace">AM1.5 FILTER</text>
+      <rect x={15} y={hh + 24} width={hw - 30} height={4} fill="none" stroke="#a855f7" strokeWidth={0.4} />
+      <text x={hw / 2} y={hh + 27} fontSize={3.5} textAnchor="middle" fill="#a855f7" fontFamily="monospace">DIFFUSER</text>
 
-      {/* Collimating optics - angled trapezoids */}
-      <polygon points={`${hw * 0.15},${hh + 24} ${hw * 0.05},${hh + 38} ${hw * 0.95},${hh + 38} ${hw * 0.85},${hh + 24}`}
-        fill="none" stroke={C} strokeWidth={0.5} strokeDasharray="2,1" />
-
-      {/* Light beam cone (dotted lines) */}
-      <line x1={hw * 0.1} y1={hh + 38} x2={(hw - tw) / 2} y2={totalH - 8} stroke="#fbbf24" strokeWidth={0.3} strokeDasharray="3,2" />
-      <line x1={hw * 0.9} y1={hh + 38} x2={(hw + tw) / 2} y2={totalH - 8} stroke="#fbbf24" strokeWidth={0.3} strokeDasharray="3,2" />
+      {/* Light cone */}
+      <line x1={hw * 0.1} y1={hh + 30} x2={(hw - tw) / 2} y2={totalH - 12} stroke="#fbbf24" strokeWidth={0.4} strokeDasharray="4,3" />
+      <line x1={hw * 0.9} y1={hh + 30} x2={(hw + tw) / 2} y2={totalH - 12} stroke="#fbbf24" strokeWidth={0.4} strokeDasharray="4,3" />
 
       {/* Test plane */}
-      <line x1={(hw - tw) / 2} y1={totalH} x2={(hw + tw) / 2} y2={totalH} stroke={CA} strokeWidth={1} />
-      <text x={hw / 2} y={totalH + 9} fontSize={4} textAnchor="middle" fill={CA} fontFamily="monospace">TEST PLANE</text>
+      <line x1={(hw - tw) / 2} y1={totalH} x2={(hw + tw) / 2} y2={totalH} stroke={ACCENT} strokeWidth={1.2} />
+      <text x={hw / 2} y={totalH + 12} fontSize={6} textAnchor="middle" fill={ACCENT} fontFamily="monospace">TEST PLANE</text>
 
-      {/* Module positioning table */}
-      <rect x={(hw - tw) / 2 - 5} y={totalH + 2} width={tw + 10} height={6} fill="none" stroke={C} strokeWidth={0.7} />
-      {/* Alignment marks */}
-      {[0.25, 0.5, 0.75].map((f, i) => (
-        <g key={i}>
-          <line x1={(hw - tw) / 2 + tw * f - 2} y1={totalH + 5} x2={(hw - tw) / 2 + tw * f + 2} y2={totalH + 5} stroke={CA} strokeWidth={0.3} />
-          <line x1={(hw - tw) / 2 + tw * f} y1={totalH + 3} x2={(hw - tw) / 2 + tw * f} y2={totalH + 7} stroke={CA} strokeWidth={0.3} />
-        </g>
-      ))}
+      {/* Module table */}
+      <rect x={(hw - tw) / 2 - 6} y={totalH + 3} width={tw + 12} height={8} fill="none" stroke={LN} strokeWidth={0.8} />
 
-      {/* Uniformity measurement points */}
-      {[0.2, 0.4, 0.6, 0.8].map((fx) =>
-        [0.0].map((fy) => (
-          <g key={`u-${fx}-${fy}`}>
-            <line x1={(hw - tw) / 2 + tw * fx - 1.5} y1={totalH - 1} x2={(hw - tw) / 2 + tw * fx + 1.5} y2={totalH - 1} stroke="#22c55e" strokeWidth={0.3} />
-            <line x1={(hw - tw) / 2 + tw * fx} y1={totalH - 2.5} x2={(hw - tw) / 2 + tw * fx} y2={totalH + 0.5} stroke="#22c55e" strokeWidth={0.3} />
-          </g>
-        ))
-      )}
-
-      {/* Dimensions */}
-      <DimH x1={0} x2={hw} y={totalH + 22} label={`${p.housingWidth}`} />
-      <DimV y1={0} y2={hh} x={-18} label={`${p.housingHeight}`} />
+      <DimH x1={0} x2={hw} y={totalH + 30} label={`${p.W}`} />
+      <DimV y1={0} y2={hh} x={-25} label={`${p.H}`} />
     </g>
   );
 }
 
-// ── Side View (System Layout) ──
-function SystemLayout({ ox, oy, p }: { ox: number; oy: number; p: Required<SolarSimulatorParams> }) {
+function RightView({ ox, oy, p }: { ox: number; oy: number; p: ReturnType<typeof resolve> }) {
   return (
     <g transform={`translate(${ox},${oy})`}>
-      <text x={80} y={-8} fontSize={6} textAnchor="middle" fill={CT} fontWeight="bold" fontFamily="monospace">SIDE VIEW — SYSTEM LAYOUT</text>
+      <text x={100} y={-12} fontSize={9} textAnchor="middle" fill={TITLE} fontWeight="bold" fontFamily="monospace">SIDE VIEW — SYSTEM LAYOUT</text>
 
-      {/* Lamp housing with cooling duct */}
-      <rect x={20} y={0} width={80} height={50} fill="none" stroke={C} strokeWidth={1} rx={2} />
-      <text x={60} y={28} fontSize={4} textAnchor="middle" fill={CD} fontFamily="monospace">LAMP HOUSING</text>
+      {/* Lamp housing */}
+      <rect x={25} y={0} width={100} height={65} fill="none" stroke={LN} strokeWidth={1} rx={2} />
+      <text x={75} y={35} fontSize={6} textAnchor="middle" fill={SUB} fontFamily="monospace">LAMP HOUSING</text>
 
       {/* Cooling duct */}
-      <rect x={105} y={10} width={40} height={14} fill="none" stroke={C} strokeWidth={0.6} rx={2} />
-      {/* Airflow arrows */}
-      {[112, 125, 138].map((ax, i) => (
+      <rect x={130} y={12} width={50} height={18} fill="none" stroke={LN} strokeWidth={0.6} rx={2} />
+      {[138, 153, 168].map((ax, i) => (
         <g key={i}>
-          <line x1={ax} y1={17} x2={ax + 6} y2={17} stroke="#22c55e" strokeWidth={0.4} />
-          <polygon points={`${ax + 6},${17} ${ax + 4},${15.5} ${ax + 4},${18.5}`} fill="#22c55e" />
+          <line x1={ax} y1={21} x2={ax + 8} y2={21} stroke="#22c55e" strokeWidth={0.5} />
+          <polygon points={`${ax + 8},${21} ${ax + 5},${19} ${ax + 5},${23}`} fill="#22c55e" />
         </g>
       ))}
-      <text x={125} y={8} fontSize={3} textAnchor="middle" fill={CD} fontFamily="monospace">Ø{p.ductDiameter}mm DUCT</text>
+      <text x={155} y={8} fontSize={5} textAnchor="middle" fill={SUB} fontFamily="monospace">Ø{p.ductDiameter}mm DUCT</text>
 
-      {/* Chilled water connections */}
-      <line x1={100} y1={35} x2={130} y2={35} stroke="#3b82f6" strokeWidth={0.6} />
-      <line x1={100} y1={42} x2={130} y2={42} stroke="#3b82f6" strokeWidth={0.6} />
-      {/* Valve symbols */}
-      <polygon points="130,33 137,35 130,37" fill="none" stroke="#3b82f6" strokeWidth={0.4} />
-      <polygon points="130,40 137,42 130,44" fill="none" stroke="#3b82f6" strokeWidth={0.4} />
-      <text x={140} y={37} fontSize={3} fill="#3b82f6" fontFamily="monospace">CW SUPPLY</text>
-      <text x={140} y={44} fontSize={3} fill="#3b82f6" fontFamily="monospace">CW RETURN</text>
+      {/* Chilled water */}
+      <line x1={125} y1={44} x2={165} y2={44} stroke="#3b82f6" strokeWidth={0.7} />
+      <line x1={125} y1={54} x2={165} y2={54} stroke="#3b82f6" strokeWidth={0.7} />
+      <text x={175} y={46} fontSize={5} fill="#3b82f6" fontFamily="monospace">CW SUPPLY</text>
+      <text x={175} y={56} fontSize={5} fill="#3b82f6" fontFamily="monospace">CW RETURN</text>
 
-      {/* Power supply unit */}
-      <rect x={20} y={70} width={50} height={35} fill="none" stroke={C} strokeWidth={0.8} rx={2} />
-      <text x={45} y={90} fontSize={4} textAnchor="middle" fill={CD} fontFamily="monospace">PSU</text>
-      {/* Cable routing */}
-      <path d="M45,70 L45,55 L45,50" fill="none" stroke="#f59e0b" strokeWidth={0.5} strokeDasharray="2,1" />
+      {/* PSU */}
+      <rect x={25} y={90} width={65} height={45} fill="none" stroke={LN} strokeWidth={0.8} rx={2} />
+      <text x={57} y={116} fontSize={6} textAnchor="middle" fill={SUB} fontFamily="monospace">PSU</text>
+      <path d="M57,90 L57,70 L57,65" fill="none" stroke="#f59e0b" strokeWidth={0.6} strokeDasharray="3,2" />
 
       {/* Control rack */}
-      <rect x={90} y={60} width={30} height={50} fill="none" stroke={C} strokeWidth={0.8} rx={1} />
-      <text x={105} y={88} fontSize={3.5} textAnchor="middle" fill={CD} fontFamily="monospace">CONTROL</text>
-      <text x={105} y={93} fontSize={3.5} textAnchor="middle" fill={CD} fontFamily="monospace">RACK</text>
-      {/* Module indicators */}
+      <rect x={115} y={80} width={40} height={65} fill="none" stroke={LN} strokeWidth={0.8} rx={1} />
+      <text x={135} y={116} fontSize={5} textAnchor="middle" fill={SUB} fontFamily="monospace">CONTROL</text>
+      <text x={135} y={124} fontSize={5} textAnchor="middle" fill={SUB} fontFamily="monospace">RACK</text>
       {[0, 1, 2, 3, 4].map((i) => (
-        <rect key={i} x={95} y={65 + i * 7} width={20} height={4} fill="none" stroke={CD} strokeWidth={0.3} rx={0.5} />
+        <rect key={i} x={120} y={86 + i * 9} width={28} height={5} fill="none" stroke={SUB} strokeWidth={0.3} rx={0.5} />
       ))}
-
-      {/* Duct diameter callout */}
-      <text x={125} y={28} fontSize={3} fill={CD} fontFamily="monospace">Ø{p.ductDiameter}</text>
     </g>
   );
 }
 
-// ── Specification Table ──
-function SpecTable({ ox, oy, p }: { ox: number; oy: number; p: Required<SolarSimulatorParams> }) {
+function TopView({ ox, oy, p }: { ox: number; oy: number; p: ReturnType<typeof resolve> }) {
+  const s = 350 / 2400;
+  const w = p.W * s, d = Math.min(p.D * s, 120);
+
+  return (
+    <g transform={`translate(${ox},${oy})`}>
+      <text x={w / 2} y={-8} fontSize={9} textAnchor="middle" fill={TITLE} fontWeight="bold" fontFamily="monospace">TOP VIEW</text>
+      <rect x={0} y={0} width={w} height={d} fill="none" stroke={LN} strokeWidth={1.2} />
+      {/* Lamp grid dots */}
+      {Array.from({ length: p.lampCols }).map((_, c) =>
+        Array.from({ length: Math.min(p.lampRows, 3) }).map((_, r) => (
+          <circle key={`${c}-${r}`} cx={w * (c + 1) / (p.lampCols + 1)} cy={d * (r + 1) / 4}
+            r={4} fill="none" stroke={ACCENT} strokeWidth={0.3} />
+        ))
+      )}
+      {/* Duct connection */}
+      <circle cx={w + 20} cy={d * 0.5} r={10} fill="none" stroke={LN} strokeWidth={0.5} />
+      <text x={w + 20} y={d * 0.5 + 16} fontSize={4} textAnchor="middle" fill={SUB} fontFamily="monospace">Ø{p.ductDiameter}</text>
+      <line x1={w} y1={d * 0.5} x2={w + 10} y2={d * 0.5} stroke={LN} strokeWidth={0.4} />
+      <DimH x1={0} x2={w} y={d + 15} label={`${p.W}`} />
+    </g>
+  );
+}
+
+function SpecTable({ ox, oy, p }: { ox: number; oy: number; p: ReturnType<typeof resolve> }) {
   const rows = [
     ["Parameter", "Value"],
     ["Classification", "AAA (IEC 60904-9)"],
@@ -203,68 +202,87 @@ function SpecTable({ ox, oy, p }: { ox: number; oy: number; p: Required<SolarSim
     ["Spectral Match", "0.75–1.25 (Class A)"],
     ["Non-Uniformity", "≤±2% (Class A)"],
     ["Temporal Instab.", "≤±2% (Class A)"],
+    ["Cooling", "Forced air + chilled water"],
+    ["Lamp Life", ">2000 hrs"],
+    ["Power Supply", "3-Ph 415V 50Hz"],
   ];
-  const cw = [65, 85];
-  const rh = 9;
-
+  const cw = [120, 140]; const rh = 14;
   return (
     <g transform={`translate(${ox},${oy})`}>
-      <text x={0} y={-4} fontSize={5} fill={CT} fontWeight="bold" fontFamily="monospace">SPECIFICATION TABLE</text>
+      <text x={0} y={-6} fontSize={9} fill={TITLE} fontWeight="bold" fontFamily="monospace">SPECIFICATION TABLE</text>
       {rows.map((row, ri) => (
-        <g key={ri}>
-          {row.map((cell, ci) => {
-            const rx = cw.slice(0, ci).reduce((a, b) => a + b, 0);
-            return (
-              <g key={ci}>
-                <rect x={rx} y={ri * rh} width={cw[ci]} height={rh}
-                  fill={ri === 0 ? "#21262d" : "none"} stroke={CD} strokeWidth={0.4} />
-                <text x={rx + 3} y={ri * rh + 6.5} fontSize={3.8}
-                  fill={ri === 0 ? CA : C} fontWeight={ri === 0 ? "bold" : "normal"} fontFamily="monospace">{cell}</text>
-              </g>
-            );
-          })}
-        </g>
+        <g key={ri}>{row.map((cell, ci) => {
+          const rx = cw.slice(0, ci).reduce((a, b) => a + b, 0);
+          return (
+            <g key={ci}>
+              <rect x={rx} y={ri * rh} width={cw[ci]} height={rh}
+                fill={ri === 0 ? "#21262d" : "none"} stroke={SUB} strokeWidth={0.5} />
+              <text x={rx + 4} y={ri * rh + 10} fontSize={6}
+                fill={ri === 0 ? ACCENT : TXT} fontWeight={ri === 0 ? "bold" : "normal"} fontFamily="monospace">{cell}</text>
+            </g>
+          );
+        })}</g>
+      ))}
+    </g>
+  );
+}
+
+function TitleBlock({ y: ty }: { y: number }) {
+  const bw = 1189, bh = 60;
+  return (
+    <g transform={`translate(0,${ty})`}>
+      <rect x={0} y={0} width={bw} height={bh} fill="#161b22" stroke={SUB} strokeWidth={1} />
+      <line x1={240} y1={0} x2={240} y2={bh} stroke={SUB} strokeWidth={0.5} />
+      <line x1={540} y1={0} x2={540} y2={bh} stroke={SUB} strokeWidth={0.5} />
+      <line x1={740} y1={0} x2={740} y2={bh} stroke={SUB} strokeWidth={0.5} />
+      <line x1={920} y1={0} x2={920} y2={bh} stroke={SUB} strokeWidth={0.5} />
+      <line x1={0} y1={bh / 2} x2={bw} y2={bh / 2} stroke={SUB} strokeWidth={0.3} />
+      <text x={10} y={18} fontSize={10} fill={ACCENT} fontWeight="bold" fontFamily="monospace">ShilpaSutra AI</text>
+      <text x={10} y={48} fontSize={7} fill={TXT} fontFamily="monospace">www.shilpasutra.com</text>
+      <text x={250} y={18} fontSize={8} fill={SUB} fontFamily="monospace">TITLE</text>
+      <text x={250} y={45} fontSize={10} fill={TXT} fontWeight="bold" fontFamily="monospace">SOLAR SIMULATOR — CLASS AAA — IEC 60904-9</text>
+      <text x={550} y={18} fontSize={8} fill={SUB} fontFamily="monospace">SCALE</text>
+      <text x={550} y={45} fontSize={10} fill={TXT} fontFamily="monospace">1:50</text>
+      <text x={750} y={18} fontSize={8} fill={SUB} fontFamily="monospace">MATERIAL</text>
+      <text x={750} y={45} fontSize={9} fill={TXT} fontFamily="monospace">Aluminium / Steel frame</text>
+      <text x={930} y={18} fontSize={8} fill={SUB} fontFamily="monospace">DATE: 2026-03-29</text>
+      <text x={930} y={45} fontSize={8} fill={TXT} fontFamily="monospace">DWG NO: SS-SIM-001 REV A</text>
+    </g>
+  );
+}
+
+function GeneralNotes({ ox, oy }: { ox: number; oy: number }) {
+  const notes = [
+    "1. ALL DIMENSIONS IN MILLIMETERS UNLESS OTHERWISE STATED.",
+    "2. CLASSIFICATION PER IEC 60904-9:2020.",
+    "3. COOLING: FORCED AIR + CHILLED WATER LOOP.",
+    "4. LAMP LIFE: >2000 HRS, REPLACE AS ARRAY.",
+  ];
+  return (
+    <g transform={`translate(${ox},${oy})`}>
+      <text x={0} y={-6} fontSize={9} fill={TITLE} fontWeight="bold" fontFamily="monospace">GENERAL NOTES</text>
+      <rect x={0} y={0} width={260} height={notes.length * 16 + 8} fill="none" stroke={SUB} strokeWidth={0.5} />
+      {notes.map((note, i) => (
+        <text key={i} x={6} y={14 + i * 16} fontSize={6} fill={TXT} fontFamily="monospace">{note}</text>
       ))}
     </g>
   );
 }
 
 export default function SolarSimulator({ params = {} }: { params?: SolarSimulatorParams }) {
-  const p = { ...DEFAULTS, ...params };
-  const W = 841, H = 594;
+  const p = resolve(params);
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full" style={{ background: BG }} fontFamily="monospace">
-      <rect x={8} y={8} width={W - 16} height={H - 16} fill="none" stroke="#30363d" strokeWidth={1.2} />
-      <rect x={14} y={14} width={W - 28} height={H - 28} fill="none" stroke="#21262d" strokeWidth={0.6} />
+    <svg viewBox="0 0 1189 841" className="w-full h-full" style={{ background: "transparent" }} fontFamily="monospace">
+      <rect x={5} y={5} width={1179} height={831} fill="none" stroke="#30363d" strokeWidth={1.5} />
+      <rect x={12} y={12} width={1165} height={817} fill="none" stroke="#21262d" strokeWidth={0.7} />
 
-      <text x={W / 2} y={30} fontSize={10} textAnchor="middle" fill={CA} fontWeight="bold">
-        SOLAR SIMULATOR — CLASS AAA — IEC 60904-9
-      </text>
-
-      <FrontView ox={40} oy={50} p={p} />
-      <SystemLayout ox={440} oy={50} p={p} />
-      <SpecTable ox={440} oy={300} p={p} />
-
-      {/* Title block */}
-      <g transform={`translate(${W - 260},${H - 55})`}>
-        <rect x={0} y={0} width={240} height={40} fill="#161b22" stroke="#30363d" strokeWidth={0.8} />
-        <line x1={80} y1={0} x2={80} y2={40} stroke="#21262d" strokeWidth={0.4} />
-        <line x1={160} y1={0} x2={160} y2={40} stroke="#21262d" strokeWidth={0.4} />
-        <line x1={0} y1={20} x2={240} y2={20} stroke="#21262d" strokeWidth={0.4} />
-        <text x={4} y={12} fontSize={4} fill={CD}>DRAWN BY</text>
-        <text x={4} y={34} fontSize={5} fill={C} fontWeight="bold">ShilpaSutra AI</text>
-        <text x={84} y={12} fontSize={4} fill={CD}>PART NO.</text>
-        <text x={84} y={34} fontSize={5} fill={C} fontWeight="bold">SS-SIM-001</text>
-        <text x={164} y={12} fontSize={4} fill={CD}>SCALE</text>
-        <text x={164} y={34} fontSize={5} fill={C}>NOT TO SCALE</text>
-      </g>
-
-      <g transform={`translate(20,${H - 70})`}>
-        <text fontSize={4.5} fill={CD} fontWeight="bold">NOTES:</text>
-        <text y={8} fontSize={3.8} fill={CD}>1. ALL DIMENSIONS IN MM. 2. CLASSIFICATION PER IEC 60904-9:2020.</text>
-        <text y={15} fontSize={3.8} fill={CD}>3. COOLING SYSTEM: FORCED AIR + CHILLED WATER. 4. LAMP LIFE: &gt;2000 hrs.</text>
-      </g>
+      <TopView ox={50} oy={50} p={p} />
+      <FrontView ox={50} oy={190} p={p} />
+      <RightView ox={460} oy={190} p={p} />
+      <SpecTable ox={700} oy={340} p={p} />
+      <GeneralNotes ox={700} oy={600} />
+      <TitleBlock y={770} />
     </svg>
   );
 }

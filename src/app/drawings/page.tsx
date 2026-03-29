@@ -603,6 +603,26 @@ export default function DrawingsPage() {
       // Check if it's an equipment template first
       if (tid in EQUIPMENT_TEMPLATES) {
         setEquipmentTemplate(tid as EquipmentTemplateId);
+
+        // Read cabinetWidth/Height/Depth from URL params and pass to template
+        const urlParams: Record<string, number> = {};
+        const cabinetWidth = params.get("cabinetWidth");
+        const cabinetHeight = params.get("cabinetHeight");
+        const cabinetDepth = params.get("cabinetDepth");
+        if (cabinetWidth) urlParams.cabinetWidth = Number(cabinetWidth);
+        if (cabinetHeight) urlParams.cabinetHeight = Number(cabinetHeight);
+        if (cabinetDepth) urlParams.cabinetDepth = Number(cabinetDepth);
+
+        // Also read any other numeric params from the URL
+        for (const [key, val] of params.entries()) {
+          if (key !== "template" && !isNaN(Number(val)) && val !== "") {
+            urlParams[key] = Number(val);
+          }
+        }
+
+        if (Object.keys(urlParams).length > 0) {
+          setTemplateParams(urlParams);
+        }
       } else {
         setIecData(getIECDrawingData(tid));
       }
