@@ -1,737 +1,415 @@
 "use client";
-import { useState, useMemo, useCallback, Suspense } from "react";
-import { Canvas } from "@react-three/fiber";
-import { OrbitControls } from "@react-three/drei";
-import { useCadStore } from "@/stores/cad-store";
+import { useState, useMemo, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { ExplorationProgress } from "@/components/CommandPalette";
+import {
+  EQUIPMENT_TEMPLATES,
+  type EquipmentTemplateId,
+} from "@/components/drawings/templates";
 
-// --- Types ---
-interface PartParam {
-  key: string;
-  label: string;
-  min: number;
-  max: number;
-  step: number;
-  default: number;
-  unit: string;
-}
+// ─── Equipment Catalog Data ───────────────────────────────────────────────────
 
-interface PartDef {
-  id: string;
+type Category = "All" | "Climatic" | "Mechanical" | "Optical" | "Fire" | "Support";
+
+interface EquipmentItem {
+  id: EquipmentTemplateId;
   name: string;
-  category: string;
+  standard: string;
+  category: Category;
   description: string;
-  params: PartParam[];
-  downloads: number;
-  rating: number;
-  author: string;
+  specs: string[];
+  tempRange?: string;
+  capacity?: string;
 }
 
-// --- Parametric Part Definitions ---
-const partDefinitions: PartDef[] = [
+const EQUIPMENT_CATALOG: EquipmentItem[] = [
   {
-    id: "bolt", name: "Hex Bolt", category: "Fasteners",
-    description: "ISO hex head bolt with adjustable size and length",
-    params: [
-      { key: "size", label: "Size (M)", min: 3, max: 20, step: 1, default: 8, unit: "mm" },
-      { key: "length", label: "Length", min: 10, max: 100, step: 5, default: 30, unit: "mm" },
-      { key: "headHeight", label: "Head Height", min: 2, max: 14, step: 0.5, default: 5, unit: "mm" },
-    ],
-    downloads: 2450, rating: 4.8, author: "ISO Standard",
+    id: "thermal_cycling_chamber",
+    name: "Thermal Cycling Chamber",
+    standard: "IEC 61215 MQT 11",
+    category: "Climatic",
+    description: "Temperature cycling test for PV modules",
+    specs: ["-40\u00B0C to +85\u00B0C", "200 cycles standard", "Ramp rate 100\u00B0C/hr"],
+    tempRange: "-40\u00B0C to +85\u00B0C",
+    capacity: "Full-size PV modules",
   },
   {
-    id: "nut", name: "Hex Nut", category: "Fasteners",
-    description: "Standard hex nut with configurable size",
-    params: [
-      { key: "size", label: "Size (M)", min: 3, max: 20, step: 1, default: 8, unit: "mm" },
-      { key: "height", label: "Height", min: 2, max: 16, step: 0.5, default: 6, unit: "mm" },
-    ],
-    downloads: 1890, rating: 4.7, author: "ISO Standard",
+    id: "iec_uv_conditioning_chamber",
+    name: "UV Conditioning Chamber",
+    standard: "IEC 61215 MQT 10",
+    category: "Optical",
+    description: "UV preconditioning exposure for PV modules",
+    specs: ["60 kWh/m\u00B2 UV exposure", "UV-A & UV-B lamps", "Irradiance monitoring"],
+    tempRange: "60\u00B0C \u00B15\u00B0C",
+    capacity: "60 kWh/m\u00B2",
   },
   {
-    id: "washer", name: "Flat Washer", category: "Fasteners",
-    description: "Flat washer for bolt/nut assemblies",
-    params: [
-      { key: "size", label: "Size (M)", min: 3, max: 20, step: 1, default: 8, unit: "mm" },
-      { key: "thickness", label: "Thickness", min: 0.5, max: 4, step: 0.5, default: 1.5, unit: "mm" },
-    ],
-    downloads: 1340, rating: 4.5, author: "DIN Standard",
+    id: "humidity_freeze_chamber",
+    name: "Humidity Freeze Chamber",
+    standard: "IEC 61215 MQT 12/13",
+    category: "Climatic",
+    description: "Combined humidity and freeze testing for PV modules",
+    specs: ["85\u00B0C / 85% RH", "-40\u00B0C freeze", "10 cycles DH + HF"],
+    tempRange: "-40\u00B0C to +85\u00B0C",
+    capacity: "85% RH max",
   },
   {
-    id: "lbracket", name: "L-Bracket", category: "Brackets",
-    description: "L-shaped mounting bracket with adjustable dimensions",
-    params: [
-      { key: "width", label: "Width", min: 20, max: 100, step: 5, default: 50, unit: "mm" },
-      { key: "height", label: "Height", min: 20, max: 100, step: 5, default: 50, unit: "mm" },
-      { key: "thickness", label: "Thickness", min: 1, max: 10, step: 0.5, default: 3, unit: "mm" },
-    ],
-    downloads: 2100, rating: 4.6, author: "ShilpaSutra",
+    id: "salt_mist_chamber",
+    name: "Salt Mist Chamber",
+    standard: "IEC 61701",
+    category: "Climatic",
+    description: "Salt spray corrosion testing for PV modules",
+    specs: ["5% NaCl solution", "35\u00B0C chamber temp", "96hr exposure cycles"],
+    tempRange: "35\u00B0C \u00B12\u00B0C",
+    capacity: "5% NaCl salt spray",
   },
   {
-    id: "uchannel", name: "U-Channel", category: "Brackets",
-    description: "U-shaped channel profile",
-    params: [
-      { key: "width", label: "Width", min: 20, max: 120, step: 5, default: 50, unit: "mm" },
-      { key: "height", label: "Height", min: 10, max: 80, step: 5, default: 40, unit: "mm" },
-      { key: "depth", label: "Depth", min: 30, max: 200, step: 10, default: 100, unit: "mm" },
-      { key: "thickness", label: "Wall Thickness", min: 1, max: 8, step: 0.5, default: 3, unit: "mm" },
-    ],
-    downloads: 890, rating: 4.3, author: "Community",
+    id: "mechanical_load_test",
+    name: "Mechanical Load Frame",
+    standard: "IEC 62782",
+    category: "Mechanical",
+    description: "Uniform mechanical load testing for PV modules",
+    specs: ["Up to 5400Pa front", "Up to 2400Pa rear", "Pneumatic/hydraulic"],
+    capacity: "5400Pa uniform load",
   },
   {
-    id: "spurgear", name: "Spur Gear", category: "Gears",
-    description: "Involute spur gear with configurable teeth and module",
-    params: [
-      { key: "teeth", label: "Teeth Count", min: 10, max: 60, step: 1, default: 20, unit: "" },
-      { key: "module", label: "Module", min: 0.5, max: 5, step: 0.5, default: 2, unit: "mm" },
-      { key: "faceWidth", label: "Face Width", min: 5, max: 30, step: 1, default: 10, unit: "mm" },
-      { key: "bore", label: "Bore Dia", min: 3, max: 25, step: 1, default: 8, unit: "mm" },
-    ],
-    downloads: 1750, rating: 4.9, author: "Community",
+    id: "solar_simulator",
+    name: "Solar Simulator",
+    standard: "IEC 60904-9",
+    category: "Optical",
+    description: "Class AAA solar simulator for I-V characterization",
+    specs: ["1000 W/m\u00B2 irradiance", "Class AAA rating", "AM1.5G spectrum"],
+    capacity: "1000 W/m\u00B2",
   },
   {
-    id: "boxenclosure", name: "Box Enclosure", category: "Enclosures",
-    description: "Rectangular enclosure with lid and wall thickness",
-    params: [
-      { key: "length", label: "Length", min: 40, max: 200, step: 10, default: 120, unit: "mm" },
-      { key: "width", label: "Width", min: 30, max: 150, step: 10, default: 80, unit: "mm" },
-      { key: "height", label: "Height", min: 20, max: 100, step: 5, default: 40, unit: "mm" },
-      { key: "wall", label: "Wall Thickness", min: 1, max: 5, step: 0.5, default: 2, unit: "mm" },
-    ],
-    downloads: 1420, rating: 4.4, author: "ShilpaSutra",
+    id: "ignitability_chamber",
+    name: "Ignitability Test Chamber",
+    standard: "IEC 61730 MST 23",
+    category: "Fire",
+    description: "Fire/ignitability test chamber for PV modules",
+    specs: ["Chimney-type design", "Flame spread test", "Burning brand test"],
+    tempRange: "Up to 750\u00B0C",
   },
   {
-    id: "pipe", name: "Pipe", category: "Pipes & Fittings",
-    description: "Round pipe section with adjustable OD, ID, and length",
-    params: [
-      { key: "od", label: "Outer Dia", min: 10, max: 100, step: 5, default: 50, unit: "mm" },
-      { key: "id", label: "Inner Dia", min: 5, max: 95, step: 5, default: 40, unit: "mm" },
-      { key: "length", label: "Length", min: 20, max: 500, step: 10, default: 100, unit: "mm" },
-    ],
-    downloads: 980, rating: 4.5, author: "ASME",
-  },
-  {
-    id: "flange", name: "Pipe Flange", category: "Pipes & Fittings",
-    description: "Flange with bolt circle and configurable holes",
-    params: [
-      { key: "od", label: "Outer Dia", min: 60, max: 200, step: 10, default: 100, unit: "mm" },
-      { key: "id", label: "Inner Dia", min: 20, max: 100, step: 5, default: 50, unit: "mm" },
-      { key: "thickness", label: "Thickness", min: 5, max: 25, step: 1, default: 12, unit: "mm" },
-      { key: "holes", label: "Bolt Holes", min: 4, max: 12, step: 1, default: 4, unit: "" },
-    ],
-    downloads: 1560, rating: 4.8, author: "ASME",
-  },
-  {
-    id: "heatsink", name: "Heat Sink", category: "Electronic Components",
-    description: "Finned heat sink for thermal management",
-    params: [
-      { key: "width", label: "Width", min: 20, max: 80, step: 5, default: 40, unit: "mm" },
-      { key: "fins", label: "Fin Count", min: 4, max: 20, step: 1, default: 8, unit: "" },
-      { key: "finHeight", label: "Fin Height", min: 5, max: 30, step: 1, default: 15, unit: "mm" },
-      { key: "baseThick", label: "Base Thickness", min: 2, max: 8, step: 0.5, default: 3, unit: "mm" },
-    ],
-    downloads: 720, rating: 4.2, author: "Community",
-  },
-  {
-    id: "pcbstandoff", name: "PCB Standoff", category: "Electronic Components",
-    description: "Threaded standoff for PCB mounting",
-    params: [
-      { key: "od", label: "Outer Dia", min: 3, max: 8, step: 0.5, default: 5, unit: "mm" },
-      { key: "height", label: "Height", min: 3, max: 20, step: 1, default: 8, unit: "mm" },
-      { key: "thread", label: "Thread (M)", min: 2, max: 5, step: 0.5, default: 3, unit: "mm" },
-    ],
-    downloads: 560, rating: 4.3, author: "Community",
-  },
-  {
-    id: "motormount", name: "Motor Mount", category: "Brackets",
-    description: "NEMA-style motor mounting plate",
-    params: [
-      { key: "width", label: "Width", min: 30, max: 80, step: 5, default: 56, unit: "mm" },
-      { key: "thickness", label: "Thickness", min: 2, max: 8, step: 1, default: 4, unit: "mm" },
-      { key: "boreSize", label: "Center Bore", min: 10, max: 40, step: 1, default: 22, unit: "mm" },
-    ],
-    downloads: 1320, rating: 4.7, author: "ShilpaSutra",
+    id: "chiller_unit",
+    name: "Chiller Unit",
+    standard: "Support Equipment",
+    category: "Support",
+    description: "Industrial chiller unit for test lab cooling",
+    specs: ["40\u201380 TR cooling", "R-410A refrigerant", "Variable speed compressor"],
+    capacity: "40\u201380 TR cooling",
   },
 ];
 
-const categories = ["All", "Fasteners", "Brackets", "Gears", "Enclosures", "Pipes & Fittings", "Electronic Components"];
+const CATEGORIES: Category[] = ["All", "Climatic", "Mechanical", "Optical", "Fire", "Support"];
 
-// --- 3D Preview Components ---
-function BoltPreview({ params }: { params: Record<string, number> }) {
-  const s = (params.size || 8) / 20;
-  const len = (params.length || 30) / 40;
-  return (
-    <group>
-      <mesh position={[0, len / 2, 0]}>
-        <cylinderGeometry args={[s * 0.4, s * 0.4, len, 16]} />
-        <meshStandardMaterial color="#8899aa" metalness={0.6} roughness={0.3} />
-      </mesh>
-      <mesh position={[0, len + s * 0.2, 0]}>
-        <cylinderGeometry args={[s * 0.8, s * 0.8, s * 0.4, 6]} />
-        <meshStandardMaterial color="#778899" metalness={0.6} roughness={0.3} />
-      </mesh>
-    </group>
-  );
-}
-
-function NutPreview({ params }: { params: Record<string, number> }) {
-  const s = (params.size || 8) / 12;
-  const h = (params.height || 6) / 12;
-  return (
-    <group>
-      <mesh>
-        <cylinderGeometry args={[s * 0.7, s * 0.7, h, 6]} />
-        <meshStandardMaterial color="#8899aa" metalness={0.6} roughness={0.3} />
-      </mesh>
-      <mesh>
-        <cylinderGeometry args={[s * 0.35, s * 0.35, h + 0.01, 16]} />
-        <meshStandardMaterial color="#0d1117" />
-      </mesh>
-    </group>
-  );
-}
-
-function WasherPreview({ params }: { params: Record<string, number> }) {
-  const s = (params.size || 8) / 12;
-  return (
-    <mesh rotation={[Math.PI / 2, 0, 0]}>
-      <torusGeometry args={[s * 0.5, s * 0.15, 8, 24]} />
-      <meshStandardMaterial color="#c0c8d0" metalness={0.5} roughness={0.4} />
-    </mesh>
-  );
-}
-
-function LBracketPreview({ params }: { params: Record<string, number> }) {
-  const w = (params.width || 50) / 60;
-  const h = (params.height || 50) / 60;
-  const t = (params.thickness || 3) / 20;
-  return (
-    <group>
-      <mesh position={[0, t / 2, 0]}>
-        <boxGeometry args={[w, t, w * 0.6]} />
-        <meshStandardMaterial color="#c0c8d0" metalness={0.4} roughness={0.5} />
-      </mesh>
-      <mesh position={[-w / 2 + t / 2, h / 2, 0]}>
-        <boxGeometry args={[t, h, w * 0.6]} />
-        <meshStandardMaterial color="#c0c8d0" metalness={0.4} roughness={0.5} />
-      </mesh>
-    </group>
-  );
-}
-
-function UChannelPreview({ params }: { params: Record<string, number> }) {
-  const w = (params.width || 50) / 70;
-  const h = (params.height || 40) / 70;
-  const d = (params.depth || 100) / 120;
-  const t = (params.thickness || 3) / 30;
-  return (
-    <group rotation={[0, 0.3, 0]}>
-      <mesh position={[0, -h / 2 + t / 2, 0]}>
-        <boxGeometry args={[w, t, d]} />
-        <meshStandardMaterial color="#c0c8d0" metalness={0.4} roughness={0.5} />
-      </mesh>
-      <mesh position={[-w / 2 + t / 2, 0, 0]}>
-        <boxGeometry args={[t, h, d]} />
-        <meshStandardMaterial color="#c0c8d0" metalness={0.4} roughness={0.5} />
-      </mesh>
-      <mesh position={[w / 2 - t / 2, 0, 0]}>
-        <boxGeometry args={[t, h, d]} />
-        <meshStandardMaterial color="#c0c8d0" metalness={0.4} roughness={0.5} />
-      </mesh>
-    </group>
-  );
-}
-
-function GearPreview({ params }: { params: Record<string, number> }) {
-  const teeth = params.teeth || 20;
-  const fw = (params.faceWidth || 10) / 20;
-  const bore = (params.bore || 8) / 30;
-  return (
-    <group>
-      <mesh>
-        <cylinderGeometry args={[0.8, 0.8, fw, teeth]} />
-        <meshStandardMaterial color="#b87333" metalness={0.5} roughness={0.4} />
-      </mesh>
-      <mesh>
-        <cylinderGeometry args={[bore, bore, fw + 0.01, 16]} />
-        <meshStandardMaterial color="#0d1117" />
-      </mesh>
-    </group>
-  );
-}
-
-function BoxEnclosurePreview({ params }: { params: Record<string, number> }) {
-  const l = (params.length || 120) / 150;
-  const w = (params.width || 80) / 150;
-  const h = (params.height || 40) / 100;
-  return (
-    <mesh>
-      <boxGeometry args={[l, h, w]} />
-      <meshStandardMaterial color="#4a5568" metalness={0.2} roughness={0.6} transparent opacity={0.85} />
-    </mesh>
-  );
-}
-
-function PipePreview({ params }: { params: Record<string, number> }) {
-  const od = (params.od || 50) / 80;
-  const len = (params.length || 100) / 120;
-  return (
-    <mesh rotation={[Math.PI / 2, 0, 0]}>
-      <torusGeometry args={[od * 0.3, od * 0.15, 16, 32, Math.PI * 2]} />
-      <meshStandardMaterial color="#8899aa" metalness={0.5} roughness={0.3} />
-    </mesh>
-  );
-}
-
-function FlangePreview({ params }: { params: Record<string, number> }) {
-  const od = (params.od || 100) / 120;
-  const thick = (params.thickness || 12) / 30;
-  const holes = params.holes || 4;
-  return (
-    <group>
-      <mesh>
-        <cylinderGeometry args={[od, od, thick, 32]} />
-        <meshStandardMaterial color="#8899aa" metalness={0.5} roughness={0.3} />
-      </mesh>
-      {Array.from({ length: holes }).map((_, i) => {
-        const a = (i / holes) * Math.PI * 2;
-        return (
-          <mesh key={i} position={[Math.cos(a) * od * 0.7, 0, Math.sin(a) * od * 0.7]}>
-            <cylinderGeometry args={[0.06, 0.06, thick + 0.01, 8]} />
-            <meshStandardMaterial color="#0d1117" />
-          </mesh>
-        );
-      })}
-    </group>
-  );
-}
-
-function HeatSinkPreview({ params }: { params: Record<string, number> }) {
-  const w = (params.width || 40) / 60;
-  const fins = params.fins || 8;
-  const fh = (params.finHeight || 15) / 30;
-  const bt = (params.baseThick || 3) / 20;
-  return (
-    <group>
-      <mesh position={[0, -fh / 2, 0]}>
-        <boxGeometry args={[w, bt, w]} />
-        <meshStandardMaterial color="#c0c8d0" metalness={0.5} roughness={0.4} />
-      </mesh>
-      {Array.from({ length: fins }).map((_, i) => {
-        const x = -w / 2 + (w / (fins - 1)) * i;
-        return (
-          <mesh key={i} position={[x, 0, 0]}>
-            <boxGeometry args={[0.02, fh, w * 0.9]} />
-            <meshStandardMaterial color="#c0c8d0" metalness={0.5} roughness={0.4} />
-          </mesh>
-        );
-      })}
-    </group>
-  );
-}
-
-function GenericPreview() {
-  return (
-    <mesh>
-      <cylinderGeometry args={[0.4, 0.4, 0.8, 16]} />
-      <meshStandardMaterial color="#8899aa" metalness={0.4} roughness={0.5} />
-    </mesh>
-  );
-}
-
-const previewMap: Record<string, React.FC<{ params: Record<string, number> }>> = {
-  bolt: BoltPreview,
-  nut: NutPreview,
-  washer: WasherPreview,
-  lbracket: LBracketPreview,
-  uchannel: UChannelPreview,
-  spurgear: GearPreview,
-  boxenclosure: BoxEnclosurePreview,
-  pipe: PipePreview,
-  flange: FlangePreview,
-  heatsink: HeatSinkPreview,
+const CATEGORY_COLORS: Record<Category, string> = {
+  All: "#00D4FF",
+  Climatic: "#3b82f6",
+  Mechanical: "#f59e0b",
+  Optical: "#a855f7",
+  Fire: "#ef4444",
+  Support: "#6b7280",
 };
 
-function PartThumbnail({ partId, params }: { partId: string; params: Record<string, number> }) {
-  const PreviewComp = previewMap[partId];
-  return (
-    <Canvas camera={{ position: [2, 1.5, 2], fov: 40 }} style={{ background: "transparent" }}>
-      <ambientLight intensity={0.5} />
-      <directionalLight position={[3, 4, 2]} intensity={1} />
-      {PreviewComp ? <PreviewComp params={params} /> : <GenericPreview />}
-      <OrbitControls enableZoom={false} enablePan={false} autoRotate autoRotateSpeed={3} />
-    </Canvas>
-  );
+// ─── Mini SVG Thumbnails per template ──────────────────────────────────────────
+
+function EquipmentThumbnail({ id }: { id: EquipmentTemplateId }) {
+  const thumbnails: Record<string, React.ReactNode> = {
+    thermal_cycling_chamber: (
+      <svg viewBox="0 0 200 140" className="w-full h-full">
+        <rect x="20" y="15" width="160" height="110" rx="4" fill="#1a2332" stroke="#3b82f6" strokeWidth="2" />
+        <rect x="35" y="30" width="130" height="70" rx="2" fill="none" stroke="#3b82f6" strokeWidth="1" strokeDasharray="4,2" />
+        <line x1="35" y1="55" x2="165" y2="55" stroke="#3b82f6" strokeWidth="0.5" opacity="0.5" />
+        <line x1="35" y1="75" x2="165" y2="75" stroke="#3b82f6" strokeWidth="0.5" opacity="0.5" />
+        <rect x="60" y="35" width="80" height="25" rx="1" fill="#3b82f6" opacity="0.15" stroke="#3b82f6" strokeWidth="0.5" />
+        <text x="100" y="52" fontSize="8" fill="#3b82f6" textAnchor="middle" fontFamily="monospace">-40/+85°C</text>
+        <circle cx="45" cy="110" r="5" fill="none" stroke="#3b82f6" strokeWidth="1" />
+        <circle cx="155" cy="110" r="5" fill="none" stroke="#3b82f6" strokeWidth="1" />
+        <rect x="75" y="105" width="50" height="12" rx="2" fill="#3b82f6" opacity="0.2" stroke="#3b82f6" strokeWidth="0.5" />
+        <text x="100" y="114" fontSize="7" fill="#60a5fa" textAnchor="middle" fontFamily="monospace">CTRL</text>
+      </svg>
+    ),
+    iec_uv_conditioning_chamber: (
+      <svg viewBox="0 0 200 140" className="w-full h-full">
+        <rect x="20" y="15" width="160" height="110" rx="4" fill="#1a2332" stroke="#a855f7" strokeWidth="2" />
+        <rect x="35" y="30" width="130" height="70" rx="2" fill="none" stroke="#a855f7" strokeWidth="1" />
+        {[50, 75, 100, 125, 150].map(x => (
+          <g key={x}>
+            <line x1={x} y1="32" x2={x} y2="55" stroke="#a855f7" strokeWidth="1.5" opacity="0.7" />
+            <circle cx={x} cy="32" r="2" fill="#a855f7" opacity="0.8" />
+          </g>
+        ))}
+        <rect x="45" y="62" width="110" height="30" rx="1" fill="#a855f7" opacity="0.1" stroke="#a855f7" strokeWidth="0.5" strokeDasharray="3,2" />
+        <text x="100" y="80" fontSize="7" fill="#a855f7" textAnchor="middle" fontFamily="monospace">MODULE AREA</text>
+        <text x="100" y="118" fontSize="7" fill="#c084fc" textAnchor="middle" fontFamily="monospace">60 kWh/m²</text>
+      </svg>
+    ),
+    humidity_freeze_chamber: (
+      <svg viewBox="0 0 200 140" className="w-full h-full">
+        <rect x="20" y="15" width="160" height="110" rx="4" fill="#1a2332" stroke="#3b82f6" strokeWidth="2" />
+        <rect x="35" y="30" width="130" height="70" rx="2" fill="none" stroke="#3b82f6" strokeWidth="1" />
+        {[45, 60, 75, 90, 105, 120, 135, 150].map((x, i) => (
+          <circle key={x} cx={x} cy={40 + (i % 3) * 5} r="2" fill="#60a5fa" opacity="0.5" />
+        ))}
+        <path d="M50,85 Q65,70 80,85 Q95,100 110,85 Q125,70 140,85" fill="none" stroke="#93c5fd" strokeWidth="1" opacity="0.5" />
+        <text x="100" y="65" fontSize="8" fill="#3b82f6" textAnchor="middle" fontFamily="monospace">85°C/85%RH</text>
+        <text x="100" y="118" fontSize="7" fill="#60a5fa" textAnchor="middle" fontFamily="monospace">DH + HF TEST</text>
+      </svg>
+    ),
+    salt_mist_chamber: (
+      <svg viewBox="0 0 200 140" className="w-full h-full">
+        <rect x="20" y="15" width="160" height="110" rx="4" fill="#1a2332" stroke="#3b82f6" strokeWidth="2" />
+        <path d="M30,25 L30,95 Q30,100 35,100 L165,100 Q170,100 170,95 L170,25" fill="none" stroke="#3b82f6" strokeWidth="1" />
+        {[55, 80, 105, 130, 155].map(x => (
+          <g key={x}>
+            <line x1={x} y1="35" x2={x} y2="45" stroke="#60a5fa" strokeWidth="1" />
+            <circle cx={x} cy="48" r="1.5" fill="#60a5fa" opacity="0.6" />
+            <circle cx={x - 3} cy="55" r="1" fill="#60a5fa" opacity="0.4" />
+            <circle cx={x + 4} cy="52" r="1" fill="#60a5fa" opacity="0.3" />
+          </g>
+        ))}
+        <rect x="50" y="65" width="100" height="25" rx="1" fill="#3b82f6" opacity="0.1" stroke="#3b82f6" strokeWidth="0.5" strokeDasharray="3,2" />
+        <text x="100" y="82" fontSize="7" fill="#3b82f6" textAnchor="middle" fontFamily="monospace">5% NaCl</text>
+        <text x="100" y="118" fontSize="7" fill="#60a5fa" textAnchor="middle" fontFamily="monospace">SALT SPRAY</text>
+      </svg>
+    ),
+    mechanical_load_test: (
+      <svg viewBox="0 0 200 140" className="w-full h-full">
+        <rect x="30" y="15" width="10" height="110" rx="1" fill="#1a2332" stroke="#f59e0b" strokeWidth="1.5" />
+        <rect x="160" y="15" width="10" height="110" rx="1" fill="#1a2332" stroke="#f59e0b" strokeWidth="1.5" />
+        <line x1="30" y1="20" x2="170" y2="20" stroke="#f59e0b" strokeWidth="2" />
+        <line x1="30" y1="120" x2="170" y2="120" stroke="#f59e0b" strokeWidth="2" />
+        <rect x="50" y="35" width="100" height="65" rx="2" fill="#f59e0b" opacity="0.08" stroke="#f59e0b" strokeWidth="1" strokeDasharray="4,2" />
+        <text x="100" y="72" fontSize="8" fill="#f59e0b" textAnchor="middle" fontFamily="monospace">5400 Pa</text>
+        {[60, 80, 100, 120, 140].map(x => (
+          <g key={x}>
+            <line x1={x} y1="28" x2={x} y2="35" stroke="#fbbf24" strokeWidth="1" />
+            <polygon points={`${x},35 ${x - 2},30 ${x + 2},30`} fill="#fbbf24" />
+          </g>
+        ))}
+        <text x="100" y="118" fontSize="7" fill="#fbbf24" textAnchor="middle" fontFamily="monospace">LOAD FRAME</text>
+      </svg>
+    ),
+    solar_simulator: (
+      <svg viewBox="0 0 200 140" className="w-full h-full">
+        <rect x="25" y="10" width="150" height="40" rx="3" fill="#1a2332" stroke="#a855f7" strokeWidth="1.5" />
+        {[50, 75, 100, 125, 150].map(x => (
+          <g key={x}>
+            <circle cx={x} cy="30" r="6" fill="#fbbf24" opacity="0.3" stroke="#fbbf24" strokeWidth="0.5" />
+            <circle cx={x} cy="30" r="3" fill="#fbbf24" opacity="0.6" />
+            <line x1={x} y1="50" x2={x} y2="80" stroke="#fbbf24" strokeWidth="0.5" opacity="0.3" />
+          </g>
+        ))}
+        <rect x="40" y="85" width="120" height="35" rx="2" fill="#a855f7" opacity="0.08" stroke="#a855f7" strokeWidth="1" strokeDasharray="3,2" />
+        <text x="100" y="107" fontSize="7" fill="#a855f7" textAnchor="middle" fontFamily="monospace">MODULE UNDER TEST</text>
+        <text x="100" y="72" fontSize="8" fill="#fbbf24" textAnchor="middle" fontFamily="monospace">1000 W/m²</text>
+      </svg>
+    ),
+    ignitability_chamber: (
+      <svg viewBox="0 0 200 140" className="w-full h-full">
+        <rect x="60" y="10" width="80" height="105" rx="3" fill="#1a2332" stroke="#ef4444" strokeWidth="1.5" />
+        <rect x="70" y="18" width="60" height="55" rx="1" fill="none" stroke="#ef4444" strokeWidth="0.8" />
+        <circle cx="100" cy="90" r="12" fill="none" stroke="#ef4444" strokeWidth="1" />
+        <circle cx="100" cy="90" r="8" fill="#ef4444" opacity="0.1" />
+        <path d="M95,50 Q98,35 100,30 Q102,35 105,50" fill="none" stroke="#ef4444" strokeWidth="1" opacity="0.6" />
+        <path d="M92,55 Q96,40 100,33 Q104,40 108,55" fill="none" stroke="#fbbf24" strokeWidth="0.8" opacity="0.4" />
+        <text x="100" y="130" fontSize="7" fill="#ef4444" textAnchor="middle" fontFamily="monospace">CHIMNEY TEST</text>
+      </svg>
+    ),
+    chiller_unit: (
+      <svg viewBox="0 0 200 140" className="w-full h-full">
+        <rect x="20" y="25" width="160" height="90" rx="4" fill="#1a2332" stroke="#6b7280" strokeWidth="1.5" />
+        {[45, 75, 105, 135].map(x => (
+          <g key={x}>
+            <circle cx={x} cy="55" r="12" fill="none" stroke="#6b7280" strokeWidth="1" />
+            <circle cx={x} cy="55" r="8" fill="#6b7280" opacity="0.1" />
+            <line x1={x - 5} y1="55" x2={x + 5} y2="55" stroke="#6b7280" strokeWidth="0.5" />
+            <line x1={x} y1="50" x2={x} y2="60" stroke="#6b7280" strokeWidth="0.5" />
+          </g>
+        ))}
+        <rect x="35" y="80" width="130" height="22" rx="2" fill="#6b7280" opacity="0.1" stroke="#6b7280" strokeWidth="0.5" />
+        <text x="100" y="95" fontSize="7" fill="#6b7280" textAnchor="middle" fontFamily="monospace">COMPRESSOR UNIT</text>
+        <text x="100" y="130" fontSize="7" fill="#9ca3af" textAnchor="middle" fontFamily="monospace">40-80 TR</text>
+      </svg>
+    ),
+  };
+  return <>{thumbnails[id] || thumbnails.thermal_cycling_chamber}</>;
 }
 
-// --- Main Component ---
+// ─── Library Page ─────────────────────────────────────────────────────────────
+
 export default function LibraryPage() {
+  const router = useRouter();
   const [search, setSearch] = useState("");
-  const [activeCat, setActiveCat] = useState("All");
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
-  const [sortBy, setSortBy] = useState("downloads");
-  const [selectedPart, setSelectedPart] = useState<string | null>(null);
-  const [partParams, setPartParams] = useState<Record<string, Record<string, number>>>({});
+  const [category, setCategory] = useState<Category>("All");
+  const [favorites, setFavorites] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set();
+    try {
+      const stored = localStorage.getItem("shilpasutra_favorites");
+      return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch { return new Set(); }
+  });
 
-  const addObject = useCadStore((s) => s.addGeneratedObject);
-
-  const getParams = useCallback(
-    (part: PartDef): Record<string, number> => {
-      if (partParams[part.id]) return partParams[part.id];
-      const defaults: Record<string, number> = {};
-      part.params.forEach((p) => (defaults[p.key] = p.default));
-      return defaults;
-    },
-    [partParams]
-  );
-
-  const updateParam = useCallback((partId: string, key: string, value: number) => {
-    setPartParams((prev) => ({
-      ...prev,
-      [partId]: { ...prev[partId], [key]: value },
-    }));
-  }, []);
+  const toggleFavorite = (id: string) => {
+    setFavorites(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      try { localStorage.setItem("shilpasutra_favorites", JSON.stringify(Array.from(next))); } catch {}
+      return next;
+    });
+  };
 
   const filtered = useMemo(() => {
-    const lower = search.toLowerCase();
-    return partDefinitions
-      .filter(
-        (p) =>
-          (activeCat === "All" || p.category === activeCat) &&
-          (p.name.toLowerCase().includes(lower) ||
-            p.category.toLowerCase().includes(lower) ||
-            p.description.toLowerCase().includes(lower))
-      )
-      .sort((a, b) =>
-        sortBy === "downloads"
-          ? b.downloads - a.downloads
-          : sortBy === "rating"
-          ? b.rating - a.rating
-          : a.name.localeCompare(b.name)
-      );
-  }, [search, activeCat, sortBy]);
-
-  const selectedDef = partDefinitions.find((p) => p.id === selectedPart);
-
-  const handleAddToDesigner = useCallback(
-    (part: PartDef) => {
-      const params = getParams(part);
-      const dimStr = part.params.map((p) => `${p.label}: ${params[p.key]}${p.unit}`).join(", ");
-      addObject({
-        type: "box",
-        name: `${part.name} (${dimStr})`,
-        dimensions: {
-          width: params.width || params.size || params.od || 2,
-          height: params.height || params.length || params.faceWidth || 2,
-          depth: params.depth || params.width || params.size || 2,
-        },
-      });
-    },
-    [getParams, addObject]
-  );
+    return EQUIPMENT_CATALOG.filter(item => {
+      if (category !== "All" && item.category !== category) return false;
+      if (search) {
+        const q = search.toLowerCase();
+        return (
+          item.name.toLowerCase().includes(q) ||
+          item.standard.toLowerCase().includes(q) ||
+          item.description.toLowerCase().includes(q) ||
+          item.specs.some(s => s.toLowerCase().includes(q))
+        );
+      }
+      return true;
+    });
+  }, [search, category]);
 
   return (
     <div className="flex flex-col h-screen bg-[#0d1117] text-white overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2.5 bg-[#161b22] border-b border-[#21262d] flex-shrink-0">
-        <div className="flex items-center gap-3">
-          <span className="font-bold text-[#00D4FF] text-sm">Parts Library</span>
-          <span className="text-[10px] text-slate-500 bg-[#21262d] px-2 py-0.5 rounded-full">
-            {filtered.length} parts
-          </span>
-        </div>
-        <div className="flex gap-2">
-          <button className="bg-[#00D4FF] hover:bg-[#00b8d9] text-black px-4 py-1.5 rounded-lg text-xs font-bold transition-colors">
-            + Upload Part
-          </button>
-        </div>
-      </div>
+      {/* ── Header ── */}
+      <div className="shrink-0 border-b border-[#21262d] bg-[#161b22]">
+        <div className="max-w-7xl mx-auto px-6 py-5">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h1 className="text-2xl font-bold text-white">IEC PV Test Equipment Library</h1>
+              <p className="text-sm text-slate-400 mt-1">Professional engineering drawings for photovoltaic testing equipment</p>
+            </div>
+            <div className="text-right">
+              <div className="text-[11px] text-slate-500">{EQUIPMENT_CATALOG.length} templates available</div>
+              <div className="text-[10px] text-slate-600 mt-0.5">IEC 61215 / 61730 / 60904 / 62782</div>
+              <ExplorationProgress />
+            </div>
+          </div>
 
-      {/* Filters Bar */}
-      <div className="flex items-center gap-3 px-4 py-2 bg-[#161b22]/50 border-b border-[#21262d] flex-shrink-0">
-        <div className="relative">
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search parts..."
-            className="bg-[#0d1117] rounded-lg px-3 py-1.5 pl-8 text-xs w-56 outline-none border border-[#21262d] focus:border-[#00D4FF] transition-colors"
-          />
-          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 text-xs">
-            &#128269;
-          </span>
-        </div>
-        <div className="flex gap-1 overflow-x-auto">
-          {categories.map((c) => (
-            <button
-              key={c}
-              onClick={() => setActiveCat(c)}
-              className={`px-3 py-1 rounded-lg text-xs whitespace-nowrap transition-colors ${
-                activeCat === c
-                  ? "bg-[#00D4FF]/20 text-[#00D4FF] border border-[#00D4FF]/30"
-                  : "bg-[#21262d] text-slate-400 hover:text-white hover:bg-[#30363d] border border-transparent"
-              }`}
-            >
-              {c}
-            </button>
-          ))}
-        </div>
-        <div className="ml-auto flex items-center gap-2">
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value)}
-            className="bg-[#0d1117] text-xs rounded-lg px-2 py-1.5 border border-[#21262d] text-slate-300"
-          >
-            <option value="downloads">Most Downloaded</option>
-            <option value="rating">Highest Rated</option>
-            <option value="name">Alphabetical</option>
-          </select>
-          <div className="flex border border-[#21262d] rounded-lg overflow-hidden">
-            <button
-              onClick={() => setViewMode("grid")}
-              className={`px-2.5 py-1.5 text-xs transition-colors ${
-                viewMode === "grid" ? "bg-[#00D4FF]/20 text-[#00D4FF]" : "text-slate-500 hover:text-white"
-              }`}
-            >
-              &#9638;&#9638;
-            </button>
-            <button
-              onClick={() => setViewMode("list")}
-              className={`px-2.5 py-1.5 text-xs border-l border-[#21262d] transition-colors ${
-                viewMode === "list" ? "bg-[#00D4FF]/20 text-[#00D4FF]" : "text-slate-500 hover:text-white"
-              }`}
-            >
-              &#9776;
-            </button>
+          {/* Search + Filter */}
+          <div className="flex items-center gap-3">
+            <div className="flex-1 relative">
+              <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M11.5 7a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0zm-.82 4.74a6 6 0 1 1 1.06-1.06l3.04 3.04a.75.75 0 1 1-1.06 1.06l-3.04-3.04z" />
+              </svg>
+              <input
+                type="text"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search equipment by name, standard, or specs..."
+                className="w-full bg-[#0d1117] border border-[#21262d] rounded-lg pl-10 pr-4 py-2.5 text-sm text-white placeholder-slate-500 focus:border-[#00D4FF] focus:outline-none transition-colors"
+              />
+            </div>
+            <div className="flex gap-1.5">
+              {CATEGORIES.map(cat => (
+                <button
+                  key={cat}
+                  onClick={() => setCategory(cat)}
+                  className={`px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                    category === cat
+                      ? "text-white shadow-lg"
+                      : "bg-[#21262d] text-slate-400 hover:text-white hover:bg-[#2d333b]"
+                  }`}
+                  style={category === cat ? { backgroundColor: CATEGORY_COLORS[cat] + "30", color: CATEGORY_COLORS[cat], border: `1px solid ${CATEGORY_COLORS[cat]}60` } : {}}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Content */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Parts Grid/List */}
-        <div className="flex-1 overflow-y-auto p-4">
-          {viewMode === "grid" ? (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-              {filtered.map((p) => (
-                <div
-                  key={p.id}
-                  onClick={() => setSelectedPart(p.id)}
-                  className={`bg-[#161b22] rounded-xl cursor-pointer hover:shadow-lg hover:shadow-[#00D4FF]/5 transition-all group ${
-                    selectedPart === p.id
-                      ? "ring-2 ring-[#00D4FF] shadow-lg shadow-[#00D4FF]/10"
-                      : "border border-[#21262d] hover:border-[#30363d]"
-                  }`}
-                >
-                  <div className="h-28 rounded-t-xl overflow-hidden bg-[#0d1117]">
-                    <Suspense
-                      fallback={
-                        <div className="h-full flex items-center justify-center text-slate-600">
-                          <div className="w-6 h-6 border-2 border-[#00D4FF]/30 border-t-[#00D4FF] rounded-full animate-spin" />
-                        </div>
-                      }
-                    >
-                      <PartThumbnail partId={p.id} params={getParams(p)} />
-                    </Suspense>
-                  </div>
-                  <div className="p-2.5">
-                    <div className="text-xs font-semibold truncate group-hover:text-[#00D4FF] transition-colors">
-                      {p.name}
-                    </div>
-                    <div className="flex items-center justify-between mt-1">
-                      <span className="text-[10px] text-slate-500">{p.category}</span>
-                      <span className="text-[10px] text-[#00D4FF]/70">{p.author}</span>
-                    </div>
-                    <div className="flex items-center justify-between mt-1.5 text-[10px] text-slate-500">
-                      <span className="text-amber-400">&#9733; {p.rating}</span>
-                      <span>{p.downloads.toLocaleString()} dl</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
+      {/* ── Equipment Grid ── */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-7xl mx-auto px-6 py-6">
+          {filtered.length === 0 ? (
+            <div className="text-center py-20">
+              <div className="text-slate-500 text-lg mb-2">No equipment found</div>
+              <div className="text-slate-600 text-sm">Try adjusting your search or filter</div>
             </div>
           ) : (
-            <div className="space-y-1">
-              {filtered.map((p) => (
-                <div
-                  key={p.id}
-                  onClick={() => setSelectedPart(p.id)}
-                  className={`flex items-center gap-3 p-2.5 rounded-lg cursor-pointer transition-all ${
-                    selectedPart === p.id
-                      ? "bg-[#00D4FF]/10 border border-[#00D4FF]/30"
-                      : "hover:bg-[#161b22] border border-transparent"
-                  }`}
-                >
-                  <div className="w-12 h-12 rounded-lg overflow-hidden bg-[#0d1117] flex-shrink-0">
-                    <Suspense fallback={<div className="w-full h-full" />}>
-                      <PartThumbnail partId={p.id} params={getParams(p)} />
-                    </Suspense>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-xs font-semibold truncate">{p.name}</div>
-                    <div className="text-[10px] text-slate-500 truncate">{p.description}</div>
-                  </div>
-                  <span className="text-[10px] text-slate-500 flex-shrink-0">{p.category}</span>
-                  <span className="text-[10px] text-amber-400 flex-shrink-0">&#9733; {p.rating}</span>
-                  <span className="text-[10px] text-slate-500 flex-shrink-0">{p.downloads.toLocaleString()}</span>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleAddToDesigner(p);
-                    }}
-                    className="bg-[#00D4FF] hover:bg-[#00b8d9] text-black px-3 py-1 rounded-lg text-[10px] font-bold flex-shrink-0 transition-colors"
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              {filtered.map(item => {
+                const catColor = CATEGORY_COLORS[item.category];
+                return (
+                  <div
+                    key={item.id}
+                    className="bg-[#161b22] border border-[#21262d] rounded-xl overflow-hidden hover:border-[#30363d] transition-all group hover:shadow-xl hover:shadow-black/20"
                   >
-                    Add
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-          {filtered.length === 0 && (
-            <div className="flex flex-col items-center justify-center h-64 text-slate-500">
-              <div className="text-3xl mb-3">&#128270;</div>
-              <div className="text-sm">No parts found</div>
-              <div className="text-xs mt-1">Try adjusting your search or category filter</div>
+                    {/* Thumbnail */}
+                    <div className="relative bg-[#0d1117] border-b border-[#21262d] p-2" style={{ height: 160 }}>
+                      <EquipmentThumbnail id={item.id} />
+                      {/* Favorite star */}
+                      <button
+                        onClick={() => toggleFavorite(item.id)}
+                        className="absolute top-2 right-2 p-1.5 rounded-lg bg-[#161b22]/80 hover:bg-[#21262d] transition-colors"
+                        title={favorites.has(item.id) ? "Remove from favorites" : "Add to favorites"}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 16 16" fill={favorites.has(item.id) ? "#fbbf24" : "none"} stroke={favorites.has(item.id) ? "#fbbf24" : "#6b7280"} strokeWidth="1.5">
+                          <path d="M8 1.5l2.1 4.3 4.7.7-3.4 3.3.8 4.7L8 12.2 3.8 14.5l.8-4.7L1.2 6.5l4.7-.7L8 1.5z" />
+                        </svg>
+                      </button>
+                      {/* Category badge */}
+                      <div
+                        className="absolute top-2 left-2 px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider"
+                        style={{ backgroundColor: catColor + "20", color: catColor, border: `1px solid ${catColor}40` }}
+                      >
+                        {item.category}
+                      </div>
+                    </div>
+
+                    {/* Content */}
+                    <div className="p-4">
+                      {/* Name + Standard */}
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <h3 className="text-sm font-bold text-white group-hover:text-[#00D4FF] transition-colors leading-tight">{item.name}</h3>
+                        <span className="shrink-0 px-2 py-0.5 rounded text-[9px] font-mono font-bold bg-[#00D4FF]/10 text-[#00D4FF] border border-[#00D4FF]/20">
+                          {item.standard}
+                        </span>
+                      </div>
+
+                      {/* Description */}
+                      <p className="text-[11px] text-slate-400 mb-3 line-clamp-1">{item.description}</p>
+
+                      {/* Specs */}
+                      <div className="flex flex-wrap gap-1.5 mb-4">
+                        {item.specs.map((spec, i) => (
+                          <span key={i} className="px-1.5 py-0.5 rounded bg-[#21262d] text-[9px] text-slate-400 font-mono">
+                            {spec}
+                          </span>
+                        ))}
+                      </div>
+
+                      {/* Action buttons */}
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => router.push(`/drawings?template=${item.id}`)}
+                          className="flex-1 px-3 py-2 rounded-lg text-[11px] font-semibold bg-[#00D4FF]/10 text-[#00D4FF] border border-[#00D4FF]/30 hover:bg-[#00D4FF]/20 transition-colors"
+                        >
+                          Open Drawing
+                        </button>
+                        <button
+                          onClick={() => router.push(`/drawings?template=${item.id}&edit=true`)}
+                          className="flex-1 px-3 py-2 rounded-lg text-[11px] font-semibold bg-[#21262d] text-slate-300 border border-[#30363d] hover:bg-[#2d333b] hover:text-white transition-colors"
+                        >
+                          Customize
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
-
-        {/* Detail Panel */}
-        {selectedDef && (
-          <div className="w-80 bg-[#161b22] border-l border-[#21262d] flex flex-col flex-shrink-0">
-            <div className="flex justify-between items-center px-4 py-2.5 border-b border-[#21262d]">
-              <h3 className="text-xs font-bold text-[#00D4FF]">Part Details</h3>
-              <button
-                onClick={() => setSelectedPart(null)}
-                className="text-slate-500 hover:text-white text-sm transition-colors"
-              >
-                &#x2715;
-              </button>
-            </div>
-
-            {/* 3D Preview */}
-            <div className="h-48 bg-[#0d1117] border-b border-[#21262d]">
-              <Suspense
-                fallback={
-                  <div className="h-full flex items-center justify-center">
-                    <div className="w-8 h-8 border-2 border-[#00D4FF]/30 border-t-[#00D4FF] rounded-full animate-spin" />
-                  </div>
-                }
-              >
-                <PartThumbnail partId={selectedDef.id} params={getParams(selectedDef)} />
-              </Suspense>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              {/* Info */}
-              <div>
-                <h4 className="font-semibold text-sm">{selectedDef.name}</h4>
-                <p className="text-[10px] text-slate-500 mt-1">{selectedDef.description}</p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 text-[10px]">
-                <div className="bg-[#0d1117] p-2 rounded-lg">
-                  <div className="text-slate-500">Category</div>
-                  <div className="text-white mt-0.5">{selectedDef.category}</div>
-                </div>
-                <div className="bg-[#0d1117] p-2 rounded-lg">
-                  <div className="text-slate-500">Author</div>
-                  <div className="text-white mt-0.5">{selectedDef.author}</div>
-                </div>
-                <div className="bg-[#0d1117] p-2 rounded-lg">
-                  <div className="text-slate-500">Rating</div>
-                  <div className="text-amber-400 mt-0.5">&#9733; {selectedDef.rating}</div>
-                </div>
-                <div className="bg-[#0d1117] p-2 rounded-lg">
-                  <div className="text-slate-500">Downloads</div>
-                  <div className="text-white mt-0.5">{selectedDef.downloads.toLocaleString()}</div>
-                </div>
-              </div>
-
-              {/* Parametric Sliders */}
-              <div>
-                <h4 className="text-xs font-bold text-slate-300 mb-2">Parameters</h4>
-                <div className="space-y-3">
-                  {selectedDef.params.map((param) => {
-                    const val = getParams(selectedDef)[param.key];
-                    return (
-                      <div key={param.key}>
-                        <div className="flex justify-between text-[10px] mb-1">
-                          <span className="text-slate-400">{param.label}</span>
-                          <span className="text-[#00D4FF] font-mono">
-                            {val}
-                            {param.unit}
-                          </span>
-                        </div>
-                        <input
-                          type="range"
-                          min={param.min}
-                          max={param.max}
-                          step={param.step}
-                          value={val}
-                          onChange={(e) =>
-                            updateParam(selectedDef.id, param.key, parseFloat(e.target.value))
-                          }
-                          className="w-full h-1 bg-[#21262d] rounded-lg appearance-none cursor-pointer accent-[#00D4FF]"
-                        />
-                        <div className="flex justify-between text-[9px] text-slate-600 mt-0.5">
-                          <span>
-                            {param.min}
-                            {param.unit}
-                          </span>
-                          <span>
-                            {param.max}
-                            {param.unit}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Dimension Summary */}
-              <div className="bg-[#0d1117] rounded-lg p-3">
-                <div className="text-[10px] font-bold text-slate-400 mb-1.5">Current Dimensions</div>
-                {selectedDef.params.map((param) => (
-                  <div key={param.key} className="flex justify-between text-[10px] py-0.5">
-                    <span className="text-slate-500">{param.label}</span>
-                    <span className="text-white font-mono">
-                      {getParams(selectedDef)[param.key]}
-                      {param.unit}
-                    </span>
-                  </div>
-                ))}
-              </div>
-
-              {/* Actions */}
-              <div className="space-y-2">
-                <button
-                  onClick={() => handleAddToDesigner(selectedDef)}
-                  className="w-full bg-[#00D4FF] hover:bg-[#00b8d9] text-black py-2.5 rounded-lg text-xs font-bold transition-colors shadow-lg shadow-[#00D4FF]/20"
-                >
-                  Add to Designer
-                </button>
-                <button className="w-full bg-[#21262d] hover:bg-[#30363d] text-slate-300 py-2 rounded-lg text-xs transition-colors">
-                  Export as STEP
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Status Bar */}
-      <div className="flex items-center gap-4 px-4 py-1 bg-[#161b22] border-t border-[#21262d] text-[10px] text-slate-500 flex-shrink-0">
-        <span>
-          Category: <span className="text-white">{activeCat}</span>
-        </span>
-        <span>
-          Showing: <span className="text-white">{filtered.length}</span> of{" "}
-          <span className="text-white">{partDefinitions.length}</span>
-        </span>
-        <span>
-          View: <span className="text-white capitalize">{viewMode}</span>
-        </span>
-        <span className="ml-auto">ShilpaSutra Parts Library v2.0 | Parametric Components</span>
       </div>
     </div>
   );

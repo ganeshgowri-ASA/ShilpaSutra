@@ -74,7 +74,7 @@ const navSections: NavSection[] = [
     items: [
       { href: "/assembly", label: "Assembly", icon: <Boxes size={iconSize} /> },
       { href: "/assembly-advanced", label: "Assembly Advanced", icon: <Box size={iconSize} /> },
-      { href: "/library", label: "Parts Library", icon: <Library size={iconSize} /> },
+      { href: "/library", label: "Equipment Library", icon: <Library size={iconSize} /> },
       { href: "/templates", label: "Templates", icon: <LayoutTemplate size={iconSize} /> },
       { href: "/import-export", label: "Import / Export", icon: <Import size={iconSize} /> },
       { href: "/pv-workflows", label: "PV Workflows", icon: <Sun size={iconSize} /> },
