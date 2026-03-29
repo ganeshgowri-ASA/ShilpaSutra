@@ -726,11 +726,11 @@ export default function DrawingsPage() {
         }
 
         // Also read any other numeric params from the URL
-        for (const [key, val] of params.entries()) {
+        params.forEach((val, key) => {
           if (key !== "template" && key !== "edit" && !isNaN(Number(val)) && val !== "" && !(key in urlParams)) {
             urlParams[key] = parseInt(val, 10) || Number(val);
           }
-        }
+        });
 
         if (Object.keys(urlParams).length > 0) {
           setTemplateParams(urlParams);
