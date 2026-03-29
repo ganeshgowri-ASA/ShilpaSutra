@@ -596,32 +596,54 @@ export default function DrawingsPage() {
   const [templateParams, setTemplateParams] = useState<Record<string, number>>({});
   const [viewToggles, setViewToggles] = useState({ front: true, side: true, detail: true, spec: true });
 
+  // Tab state for default view: "equipment" (primary) or "bracket" (legacy mounting bracket)
+  const [defaultTab, setDefaultTab] = useState<"equipment" | "bracket">("equipment");
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const tid = params.get("template");
+    const editMode = params.get("edit");
     if (tid) {
       // Check if it's an equipment template first
       if (tid in EQUIPMENT_TEMPLATES) {
         setEquipmentTemplate(tid as EquipmentTemplateId);
 
-        // Read cabinetWidth/Height/Depth from URL params and pass to template
+        // Read all dimension params from URL with parseInt + fallback to template defaults
+        const dims = TEMPLATE_DIMENSIONS[tid] || [];
         const urlParams: Record<string, number> = {};
-        const cabinetWidth = params.get("cabinetWidth");
-        const cabinetHeight = params.get("cabinetHeight");
-        const cabinetDepth = params.get("cabinetDepth");
-        if (cabinetWidth) urlParams.cabinetWidth = Number(cabinetWidth);
-        if (cabinetHeight) urlParams.cabinetHeight = Number(cabinetHeight);
-        if (cabinetDepth) urlParams.cabinetDepth = Number(cabinetDepth);
+
+        // Read cabinetWidth/Height/Depth/shelves explicitly
+        for (const paramKey of ["cabinetWidth", "cabinetHeight", "cabinetDepth", "shelves"]) {
+          const raw = params.get(paramKey);
+          if (raw) {
+            const parsed = parseInt(raw, 10);
+            if (!isNaN(parsed)) urlParams[paramKey] = parsed;
+          }
+        }
+
+        // Read any dimension keys defined for this template
+        for (const dim of dims) {
+          const raw = params.get(dim.key);
+          if (raw) {
+            const parsed = parseInt(raw, 10);
+            urlParams[dim.key] = !isNaN(parsed) ? parsed : dim.default;
+          }
+        }
 
         // Also read any other numeric params from the URL
         for (const [key, val] of params.entries()) {
-          if (key !== "template" && !isNaN(Number(val)) && val !== "") {
-            urlParams[key] = Number(val);
+          if (key !== "template" && key !== "edit" && !isNaN(Number(val)) && val !== "" && !(key in urlParams)) {
+            urlParams[key] = parseInt(val, 10) || Number(val);
           }
         }
 
         if (Object.keys(urlParams).length > 0) {
           setTemplateParams(urlParams);
+        }
+
+        // If edit=true, open dimension panel by default (handled by existing UI)
+        if (editMode === "true") {
+          setEditOpen(true);
         }
       } else {
         setIecData(getIECDrawingData(tid));
@@ -836,7 +858,14 @@ export default function DrawingsPage() {
     const dims = TEMPLATE_DIMENSIONS[equipmentTemplate] || [];
 
     const updateParam = (key: string, value: number) => {
-      setTemplateParams(prev => ({ ...prev, [key]: value }));
+      setTemplateParams(prev => {
+        const next = { ...prev, [key]: value };
+        // Update URL params in real-time
+        const url = new URL(window.location.href);
+        url.searchParams.set(key, String(value));
+        window.history.replaceState({}, "", url.toString());
+        return next;
+      });
     };
 
     const handleExportSVG = () => {
@@ -881,7 +910,18 @@ export default function DrawingsPage() {
             <div className="text-[10px] text-slate-400 uppercase mb-1 font-bold">Template</div>
             <select
               value={equipmentTemplate}
-              onChange={e => { setEquipmentTemplate(e.target.value as EquipmentTemplateId); setTemplateParams({}); }}
+              onChange={e => {
+                const newId = e.target.value as EquipmentTemplateId;
+                setEquipmentTemplate(newId);
+                setTemplateParams({});
+                const url = new URL(window.location.href);
+                url.searchParams.set("template", newId);
+                // Clear old dimension params
+                for (const key of Array.from(url.searchParams.keys())) {
+                  if (key !== "template") url.searchParams.delete(key);
+                }
+                window.history.replaceState({}, "", url.toString());
+              }}
               className="w-full bg-[#0d1117] border border-[#21262d] rounded px-2 py-1 text-[10px] text-white"
             >
               {Object.entries(EQUIPMENT_TEMPLATES).map(([id, t]) => (
@@ -1001,260 +1041,321 @@ export default function DrawingsPage() {
     <div className="flex h-screen bg-[#0d1117] text-white overflow-hidden">
       {/* ── Left sidebar ── */}
       <div className="w-60 bg-[#161b22] border-r border-[#21262d] flex flex-col shrink-0 overflow-y-auto">
-        <div className="px-3 py-2 border-b border-[#21262d]">
-          <span className="text-xs font-bold text-[#00D4FF]">Engineering Drawing</span>
+        {/* Tab switcher: Equipment Templates (primary) | Engineering Drawing */}
+        <div className="flex border-b border-[#21262d]">
+          <button
+            onClick={() => setDefaultTab("equipment")}
+            className={`flex-1 px-3 py-2 text-[10px] font-bold uppercase tracking-wider transition-colors ${
+              defaultTab === "equipment"
+                ? "text-[#00D4FF] border-b-2 border-[#00D4FF] bg-[#161b22]"
+                : "text-slate-500 hover:text-slate-300"
+            }`}
+          >
+            Equipment
+          </button>
+          <button
+            onClick={() => setDefaultTab("bracket")}
+            className={`flex-1 px-3 py-2 text-[10px] font-bold uppercase tracking-wider transition-colors ${
+              defaultTab === "bracket"
+                ? "text-[#00D4FF] border-b-2 border-[#00D4FF] bg-[#161b22]"
+                : "text-slate-500 hover:text-slate-300"
+            }`}
+          >
+            Drawing
+          </button>
         </div>
 
-        {/* GD&T Toolbar */}
-        <div className="px-3 py-2 border-b border-[#21262d]">
-          <div className="text-[10px] text-slate-400 uppercase mb-1 font-bold">GD&T Annotations</div>
-          <div className="flex gap-1 mb-1">
-            <button onClick={() => setGdtTab("symbols")}
-              className={`text-[9px] px-2 py-0.5 rounded ${gdtTab === "symbols" ? "bg-[#00D4FF] text-black" : "bg-[#21262d] text-slate-400"}`}>
-              Symbols
-            </button>
-            <button onClick={() => setGdtTab("datums")}
-              className={`text-[9px] px-2 py-0.5 rounded ${gdtTab === "datums" ? "bg-[#00D4FF] text-black" : "bg-[#21262d] text-slate-400"}`}>
-              Datums
-            </button>
-          </div>
-
-          {gdtTab === "symbols" && (
-            <>
-              <div className="grid grid-cols-5 gap-0.5 mb-2">
-                {gdtToolbar.map(tool => {
-                  const Sym = GdtSymbols[tool.id];
-                  return (
-                    <button
-                      key={tool.id}
-                      onClick={() => setActiveGdtSymbol(activeGdtSymbol === tool.id ? null : tool.id)}
-                      title={tool.label}
-                      className={`p-1 rounded flex items-center justify-center text-xs border ${
-                        activeGdtSymbol === tool.id
-                          ? "bg-[#00D4FF]/20 border-[#00D4FF] text-[#00D4FF]"
-                          : "bg-[#0d1117] border-[#21262d] text-slate-300 hover:border-[#00D4FF]"
-                      }`}
-                    >
-                      {Sym ? <Sym /> : <span className="text-xs">{tool.symbol}</span>}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {activeGdtSymbol && (
-                <div className="bg-[#0d1117] rounded p-2 border border-[#00D4FF]/40 space-y-1.5 mb-2">
-                  <div className="text-[9px] text-[#00D4FF] font-bold uppercase">
-                    {gdtToolbar.find(t => t.id === activeGdtSymbol)?.label}
-                  </div>
-                  <div>
-                    <div className="text-[8px] text-slate-500">Tolerance</div>
-                    <input value={newTolerance} onChange={e => setNewTolerance(e.target.value)}
-                      className="w-full bg-[#161b22] border border-[#21262d] rounded px-1.5 py-0.5 text-[9px] text-white" />
-                  </div>
-                  <div>
-                    <div className="text-[8px] text-slate-500">Datum Ref.</div>
-                    <input value={newDatum} onChange={e => setNewDatum(e.target.value)} placeholder="A, B, C..."
-                      className="w-full bg-[#161b22] border border-[#21262d] rounded px-1.5 py-0.5 text-[9px] text-white" />
-                  </div>
-                  <button onClick={() => addGdtAnnotation(activeGdtSymbol)}
-                    className="w-full bg-[#00D4FF] text-black text-[9px] font-bold py-1 rounded">
-                    + Place Annotation
+        {defaultTab === "equipment" ? (
+          <>
+            {/* Equipment Templates - PRIMARY */}
+            <div className="px-3 py-2 border-b border-[#21262d]">
+              <div className="text-[10px] text-slate-400 uppercase mb-2 font-bold tracking-wider">IEC PV Test Equipment</div>
+              <div className="space-y-1">
+                {Object.entries(EQUIPMENT_TEMPLATES).map(([id, t]) => (
+                  <button
+                    key={id}
+                    onClick={() => {
+                      setEquipmentTemplate(id as EquipmentTemplateId);
+                      setTemplateParams({});
+                      const url = new URL(window.location.href);
+                      url.searchParams.set("template", id);
+                      window.history.replaceState({}, "", url.toString());
+                    }}
+                    className="w-full text-left px-2 py-1.5 rounded text-[9px] bg-[#0d1117] hover:bg-[#21262d] border border-[#21262d] hover:border-[#00D4FF]/40 transition-colors"
+                  >
+                    <div className="text-slate-200 font-medium">{t.name}</div>
+                    <div className="text-slate-500 text-[8px]">{t.standard}</div>
                   </button>
-                </div>
-              )}
-
-              <div className="space-y-0.5 max-h-32 overflow-y-auto">
-                {gdtAnnotations.map(a => {
-                  const sym = gdtToolbar.find(t => t.id === a.symbol);
-                  return (
-                    <div key={a.id} className="flex items-center justify-between bg-[#0d1117] rounded px-2 py-0.5 border border-[#21262d]">
-                      <span className="text-[9px] text-slate-300">{sym?.symbol} {a.label} ⌀{a.tolerance}{a.datum ? ` |${a.datum}|` : ""}</span>
-                      <button onClick={() => removeGdtAnnotation(a.id)} className="text-slate-600 hover:text-red-400 text-[9px]">×</button>
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          )}
-
-          {gdtTab === "datums" && (
-            <>
-              <div className="flex items-center gap-1 mb-1">
-                <div className="text-[8px] text-slate-500">Letter:</div>
-                <input value={newDatumLetter} onChange={e => setNewDatumLetter(e.target.value.toUpperCase())}
-                  maxLength={2}
-                  className="w-10 bg-[#0d1117] border border-[#21262d] rounded px-1 py-0.5 text-[9px] text-white text-center" />
-                <button onClick={addDatumLabel}
-                  className="flex-1 bg-[#21262d] hover:bg-[#00D4FF] hover:text-black text-[9px] py-0.5 rounded text-white">
-                  + Add Datum ▲
-                </button>
-              </div>
-              <div className="space-y-0.5">
-                {datumLabels.map(d => (
-                  <div key={d.id} className="flex items-center justify-between bg-[#0d1117] rounded px-2 py-0.5 border border-[#21262d]">
-                    <span className="text-[9px] text-slate-300">▲ Datum {d.letter}</span>
-                    <button onClick={() => removeDatumLabel(d.id)} className="text-slate-600 hover:text-red-400 text-[9px]">×</button>
-                  </div>
                 ))}
               </div>
-            </>
-          )}
-        </div>
+            </div>
 
-        {/* Scale */}
-        <div className="px-3 py-2 border-b border-[#21262d]">
-          <div className="text-[10px] text-slate-400 uppercase mb-1">Scale</div>
-          <select
-            value={scale}
-            onChange={(e) => setScale(e.target.value)}
-            className="w-full bg-[#0d1117] border border-[#21262d] rounded px-2 py-1 text-xs text-white"
-          >
-            {SCALES.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
-        </div>
+            <div className="px-3 py-3 text-center">
+              <div className="text-[9px] text-slate-600 mb-2">Select a template above to view its engineering drawing</div>
+              <a href="/library" className="text-[10px] text-[#00D4FF] hover:text-white transition-colors font-medium">
+                Browse Full Catalog →
+              </a>
+            </div>
+          </>
+        ) : (
+          <>
+            {/* Legacy Mounting Bracket Drawing sidebar */}
+            {/* GD&T Toolbar */}
+            <div className="px-3 py-2 border-b border-[#21262d]">
+              <div className="text-[10px] text-slate-400 uppercase mb-1 font-bold">GD&T Annotations</div>
+              <div className="flex gap-1 mb-1">
+                <button onClick={() => setGdtTab("symbols")}
+                  className={`text-[9px] px-2 py-0.5 rounded ${gdtTab === "symbols" ? "bg-[#00D4FF] text-black" : "bg-[#21262d] text-slate-400"}`}>
+                  Symbols
+                </button>
+                <button onClick={() => setGdtTab("datums")}
+                  className={`text-[9px] px-2 py-0.5 rounded ${gdtTab === "datums" ? "bg-[#00D4FF] text-black" : "bg-[#21262d] text-slate-400"}`}>
+                  Datums
+                </button>
+              </div>
 
-        {/* Title block editor */}
-        <div className="px-3 py-2 border-b border-[#21262d]">
-          <button
-            onClick={() => setEditOpen(!editOpen)}
-            className="text-[10px] text-[#00D4FF] hover:text-white w-full text-left font-bold uppercase"
-          >
-            {editOpen ? "▾" : "▸"} Title Block
-          </button>
-          {editOpen && (
-            <div className="mt-2 space-y-1.5">
-              {(Object.keys(title) as (keyof TitleBlock)[]).map((k) => (
-                <div key={k}>
-                  <div className="text-[9px] text-slate-500 capitalize">{k.replace(/([A-Z])/g, " $1")}</div>
-                  <input
-                    value={title[k]}
-                    onChange={(e) => updateTitle(k, e.target.value)}
-                    className="w-full bg-[#0d1117] border border-[#21262d] rounded px-1.5 py-0.5 text-[10px] text-white"
-                  />
+              {gdtTab === "symbols" && (
+                <>
+                  <div className="grid grid-cols-5 gap-0.5 mb-2">
+                    {gdtToolbar.map(tool => {
+                      const Sym = GdtSymbols[tool.id];
+                      return (
+                        <button
+                          key={tool.id}
+                          onClick={() => setActiveGdtSymbol(activeGdtSymbol === tool.id ? null : tool.id)}
+                          title={tool.label}
+                          className={`p-1 rounded flex items-center justify-center text-xs border ${
+                            activeGdtSymbol === tool.id
+                              ? "bg-[#00D4FF]/20 border-[#00D4FF] text-[#00D4FF]"
+                              : "bg-[#0d1117] border-[#21262d] text-slate-300 hover:border-[#00D4FF]"
+                          }`}
+                        >
+                          {Sym ? <Sym /> : <span className="text-xs">{tool.symbol}</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {activeGdtSymbol && (
+                    <div className="bg-[#0d1117] rounded p-2 border border-[#00D4FF]/40 space-y-1.5 mb-2">
+                      <div className="text-[9px] text-[#00D4FF] font-bold uppercase">
+                        {gdtToolbar.find(t => t.id === activeGdtSymbol)?.label}
+                      </div>
+                      <div>
+                        <div className="text-[8px] text-slate-500">Tolerance</div>
+                        <input value={newTolerance} onChange={e => setNewTolerance(e.target.value)}
+                          className="w-full bg-[#161b22] border border-[#21262d] rounded px-1.5 py-0.5 text-[9px] text-white" />
+                      </div>
+                      <div>
+                        <div className="text-[8px] text-slate-500">Datum Ref.</div>
+                        <input value={newDatum} onChange={e => setNewDatum(e.target.value)} placeholder="A, B, C..."
+                          className="w-full bg-[#161b22] border border-[#21262d] rounded px-1.5 py-0.5 text-[9px] text-white" />
+                      </div>
+                      <button onClick={() => addGdtAnnotation(activeGdtSymbol)}
+                        className="w-full bg-[#00D4FF] text-black text-[9px] font-bold py-1 rounded">
+                        + Place Annotation
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="space-y-0.5 max-h-32 overflow-y-auto">
+                    {gdtAnnotations.map(a => {
+                      const sym = gdtToolbar.find(t => t.id === a.symbol);
+                      return (
+                        <div key={a.id} className="flex items-center justify-between bg-[#0d1117] rounded px-2 py-0.5 border border-[#21262d]">
+                          <span className="text-[9px] text-slate-300">{sym?.symbol} {a.label} ⌀{a.tolerance}{a.datum ? ` |${a.datum}|` : ""}</span>
+                          <button onClick={() => removeGdtAnnotation(a.id)} className="text-slate-600 hover:text-red-400 text-[9px]">×</button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+
+              {gdtTab === "datums" && (
+                <>
+                  <div className="flex items-center gap-1 mb-1">
+                    <div className="text-[8px] text-slate-500">Letter:</div>
+                    <input value={newDatumLetter} onChange={e => setNewDatumLetter(e.target.value.toUpperCase())}
+                      maxLength={2}
+                      className="w-10 bg-[#0d1117] border border-[#21262d] rounded px-1 py-0.5 text-[9px] text-white text-center" />
+                    <button onClick={addDatumLabel}
+                      className="flex-1 bg-[#21262d] hover:bg-[#00D4FF] hover:text-black text-[9px] py-0.5 rounded text-white">
+                      + Add Datum ▲
+                    </button>
+                  </div>
+                  <div className="space-y-0.5">
+                    {datumLabels.map(d => (
+                      <div key={d.id} className="flex items-center justify-between bg-[#0d1117] rounded px-2 py-0.5 border border-[#21262d]">
+                        <span className="text-[9px] text-slate-300">▲ Datum {d.letter}</span>
+                        <button onClick={() => removeDatumLabel(d.id)} className="text-slate-600 hover:text-red-400 text-[9px]">×</button>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Scale */}
+            <div className="px-3 py-2 border-b border-[#21262d]">
+              <div className="text-[10px] text-slate-400 uppercase mb-1">Scale</div>
+              <select
+                value={scale}
+                onChange={(e) => setScale(e.target.value)}
+                className="w-full bg-[#0d1117] border border-[#21262d] rounded px-2 py-1 text-xs text-white"
+              >
+                {SCALES.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+
+            {/* Title block editor */}
+            <div className="px-3 py-2 border-b border-[#21262d]">
+              <button
+                onClick={() => setEditOpen(!editOpen)}
+                className="text-[10px] text-[#00D4FF] hover:text-white w-full text-left font-bold uppercase"
+              >
+                {editOpen ? "▾" : "▸"} Title Block
+              </button>
+              {editOpen && (
+                <div className="mt-2 space-y-1.5">
+                  {(Object.keys(title) as (keyof TitleBlock)[]).map((k) => (
+                    <div key={k}>
+                      <div className="text-[9px] text-slate-500 capitalize">{k.replace(/([A-Z])/g, " $1")}</div>
+                      <input
+                        value={title[k]}
+                        onChange={(e) => updateTitle(k, e.target.value)}
+                        className="w-full bg-[#0d1117] border border-[#21262d] rounded px-1.5 py-0.5 text-[10px] text-white"
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Revisions */}
+            <div className="px-3 py-2 border-b border-[#21262d]">
+              <div className="text-[10px] text-slate-400 uppercase mb-1">Revisions</div>
+              {revisions.map((r, i) => (
+                <div key={i} className="mb-2 p-1.5 bg-[#0d1117] rounded border border-[#21262d]">
+                  <div className="grid grid-cols-2 gap-1 mb-1">
+                    <div>
+                      <div className="text-[8px] text-slate-500">Rev</div>
+                      <input value={r.rev}
+                        onChange={(e) => setRevisions((prev) => prev.map((row, idx) => idx === i ? { ...row, rev: e.target.value } : row))}
+                        className="w-full bg-[#161b22] border border-[#21262d] rounded px-1 py-0.5 text-[9px] text-white" />
+                    </div>
+                    <div>
+                      <div className="text-[8px] text-slate-500">Date</div>
+                      <input value={r.date}
+                        onChange={(e) => setRevisions((prev) => prev.map((row, idx) => idx === i ? { ...row, date: e.target.value } : row))}
+                        className="w-full bg-[#161b22] border border-[#21262d] rounded px-1 py-0.5 text-[9px] text-white" />
+                    </div>
+                  </div>
+                  <div className="text-[8px] text-slate-500">Description</div>
+                  <input value={r.description}
+                    onChange={(e) => setRevisions((prev) => prev.map((row, idx) => idx === i ? { ...row, description: e.target.value } : row))}
+                    className="w-full bg-[#161b22] border border-[#21262d] rounded px-1 py-0.5 text-[9px] text-white" />
                 </div>
               ))}
             </div>
-          )}
-        </div>
 
-        {/* Revisions */}
-        <div className="px-3 py-2 border-b border-[#21262d]">
-          <div className="text-[10px] text-slate-400 uppercase mb-1">Revisions</div>
-          {revisions.map((r, i) => (
-            <div key={i} className="mb-2 p-1.5 bg-[#0d1117] rounded border border-[#21262d]">
-              <div className="grid grid-cols-2 gap-1 mb-1">
-                <div>
-                  <div className="text-[8px] text-slate-500">Rev</div>
-                  <input value={r.rev}
-                    onChange={(e) => setRevisions((prev) => prev.map((row, idx) => idx === i ? { ...row, rev: e.target.value } : row))}
-                    className="w-full bg-[#161b22] border border-[#21262d] rounded px-1 py-0.5 text-[9px] text-white" />
-                </div>
-                <div>
-                  <div className="text-[8px] text-slate-500">Date</div>
-                  <input value={r.date}
-                    onChange={(e) => setRevisions((prev) => prev.map((row, idx) => idx === i ? { ...row, date: e.target.value } : row))}
-                    className="w-full bg-[#161b22] border border-[#21262d] rounded px-1 py-0.5 text-[9px] text-white" />
-                </div>
+            {/* Export */}
+            <div className="px-3 py-2">
+              <div className="text-[10px] text-slate-400 uppercase mb-2 font-bold tracking-wider">Export</div>
+              <div className="grid grid-cols-3 gap-1">
+                <button
+                  onClick={() => {
+                    const svg = drawingRef.current?.querySelector("svg");
+                    if (!svg) return;
+                    const clone = svg.cloneNode(true) as SVGSVGElement;
+                    clone.setAttribute("width", String(svg.clientWidth || 1100));
+                    clone.setAttribute("height", String(svg.clientHeight || Math.round(1100 * 594 / 841)));
+                    clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+                    const svgData = new XMLSerializer().serializeToString(clone);
+                    const blob = new Blob([svgData], { type: "image/svg+xml" });
+                    const a = document.createElement("a");
+                    a.download = getFilename("svg");
+                    a.href = URL.createObjectURL(blob);
+                    a.click();
+                    URL.revokeObjectURL(a.href);
+                  }}
+                  disabled={!!exporting}
+                  className="bg-[#21262d] hover:bg-[#2d333b] disabled:opacity-40 text-white text-[10px] font-semibold py-1.5 px-1 rounded border border-[#30363d] flex flex-col items-center justify-center gap-0.5 transition-colors"
+                  title="Export SVG"
+                >
+                  SVG
+                </button>
+                <button
+                  onClick={exportPDF}
+                  disabled={!!exporting}
+                  className="bg-[#21262d] hover:bg-[#2d333b] disabled:opacity-40 text-white text-[10px] font-semibold py-1.5 px-1 rounded border border-[#30363d] flex flex-col items-center justify-center gap-0.5 transition-colors"
+                  title="Export PDF"
+                >
+                  {exporting === "pdf" ? "..." : "PDF"}
+                </button>
+                <button
+                  onClick={exportDOCX}
+                  disabled={!!exporting}
+                  className="bg-[#21262d] hover:bg-[#2d333b] disabled:opacity-40 text-white text-[10px] font-semibold py-1.5 px-1 rounded border border-[#30363d] flex flex-col items-center justify-center gap-0.5 transition-colors"
+                  title="Export DOCX"
+                >
+                  {exporting === "docx" ? "..." : "DOCX"}
+                </button>
               </div>
-              <div className="text-[8px] text-slate-500">Description</div>
-              <input value={r.description}
-                onChange={(e) => setRevisions((prev) => prev.map((row, idx) => idx === i ? { ...row, description: e.target.value } : row))}
-                className="w-full bg-[#161b22] border border-[#21262d] rounded px-1 py-0.5 text-[9px] text-white" />
             </div>
-          ))}
-        </div>
-
-        {/* Equipment Templates */}
-        <div className="px-3 py-2 border-b border-[#21262d]">
-          <div className="text-[10px] text-slate-400 uppercase mb-1 font-bold tracking-wider">Equipment Templates</div>
-          <div className="space-y-0.5 max-h-48 overflow-y-auto">
-            {Object.entries(EQUIPMENT_TEMPLATES).map(([id, t]) => (
-              <button
-                key={id}
-                onClick={() => { setEquipmentTemplate(id as EquipmentTemplateId); setTemplateParams({}); }}
-                className="w-full text-left px-2 py-1 rounded text-[9px] bg-[#0d1117] hover:bg-[#21262d] border border-[#21262d] hover:border-[#00D4FF]/40 transition-colors"
-              >
-                <div className="text-slate-200 font-medium">{t.name}</div>
-                <div className="text-slate-500 text-[8px]">{t.standard}</div>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Export */}
-        <div className="px-3 py-2">
-          <div className="text-[10px] text-slate-400 uppercase mb-2 font-bold tracking-wider">Export</div>
-          <div className="grid grid-cols-3 gap-1">
-            <button
-              onClick={() => {
-                const svg = drawingRef.current?.querySelector("svg");
-                if (!svg) return;
-                const clone = svg.cloneNode(true) as SVGSVGElement;
-                clone.setAttribute("width", String(svg.clientWidth || 1100));
-                clone.setAttribute("height", String(svg.clientHeight || Math.round(1100 * 594 / 841)));
-                clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
-                const svgData = new XMLSerializer().serializeToString(clone);
-                const blob = new Blob([svgData], { type: "image/svg+xml" });
-                const a = document.createElement("a");
-                a.download = getFilename("svg");
-                a.href = URL.createObjectURL(blob);
-                a.click();
-                URL.revokeObjectURL(a.href);
-              }}
-              disabled={!!exporting}
-              className="bg-[#21262d] hover:bg-[#2d333b] disabled:opacity-40 text-white text-[10px] font-semibold py-1.5 px-1 rounded border border-[#30363d] flex flex-col items-center justify-center gap-0.5 transition-colors"
-              title="Export SVG"
-            >
-              <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" className="text-slate-400 shrink-0">
-                <path d="M2 2h12v12H2V2zm1 1v10h10V3H3z M7 5v4.5l-2-2-.7.7 3 3 3-3-.7-.7-2 2V5H7z"/>
-              </svg>
-              SVG
-            </button>
-            <button
-              onClick={exportPDF}
-              disabled={!!exporting}
-              className="bg-[#21262d] hover:bg-[#2d333b] disabled:opacity-40 text-white text-[10px] font-semibold py-1.5 px-1 rounded border border-[#30363d] flex flex-col items-center justify-center gap-0.5 transition-colors"
-              title="Export PDF"
-            >
-              {exporting === "pdf" ? (
-                <span className="inline-block w-3 h-3 border-2 border-[#00D4FF] border-t-transparent rounded-full animate-spin" />
-              ) : (
-                <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" className="text-red-400 shrink-0">
-                  <path d="M1 2.5A1.5 1.5 0 0 1 2.5 1h8.586a1.5 1.5 0 0 1 1.06.44l1.415 1.414A1.5 1.5 0 0 1 14 3.914V13.5A1.5 1.5 0 0 1 12.5 15h-10A1.5 1.5 0 0 1 1 13.5v-11zM5 7.5a.5.5 0 0 0 0 1h4.5a.5.5 0 0 0 0-1H5zm0 2a.5.5 0 0 0 0 1h2.5a.5.5 0 0 0 0-1H5zM5 5a.5.5 0 0 0 0 1h2a.5.5 0 0 0 0-1H5z"/>
-                </svg>
-              )}
-              PDF
-            </button>
-            <button
-              onClick={exportDOCX}
-              disabled={!!exporting}
-              className="bg-[#21262d] hover:bg-[#2d333b] disabled:opacity-40 text-white text-[10px] font-semibold py-1.5 px-1 rounded border border-[#30363d] flex flex-col items-center justify-center gap-0.5 transition-colors"
-              title="Export DOCX"
-            >
-              {exporting === "docx" ? (
-                <span className="inline-block w-3 h-3 border-2 border-[#00D4FF] border-t-transparent rounded-full animate-spin" />
-              ) : (
-                <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" className="text-blue-400 shrink-0">
-                  <path d="M1 2.5A1.5 1.5 0 0 1 2.5 1h8.586a1.5 1.5 0 0 1 1.06.44l1.415 1.414A1.5 1.5 0 0 1 14 3.914V13.5A1.5 1.5 0 0 1 12.5 15h-10A1.5 1.5 0 0 1 1 13.5v-11zM5 7.5a.5.5 0 0 0 0 1h6a.5.5 0 0 0 0-1H5zm0 2a.5.5 0 0 0 0 1h3.5a.5.5 0 0 0 0-1H5zM5 5a.5.5 0 0 0 0 1h2a.5.5 0 0 0 0-1H5z"/>
-                </svg>
-              )}
-              DOCX
-            </button>
-          </div>
-        </div>
+          </>
+        )}
       </div>
 
-      {/* ── Drawing canvas ── */}
+      {/* ── Main content area ── */}
       <div className="flex-1 bg-[#1a1f2e] flex items-center justify-center overflow-auto p-6">
-        <div ref={drawingRef} className="shadow-2xl" style={{ width: "min(100%, 1100px)", aspectRatio: "841/594" }}>
-          <EngineeringSheet
-            title={title}
-            revisions={revisions}
-            scale={scale}
-            gdtAnnotations={gdtAnnotations}
-            datumLabels={datumLabels}
-          />
-        </div>
+        {defaultTab === "equipment" ? (
+          <div className="flex flex-col items-center justify-center gap-6 max-w-3xl w-full">
+            <div className="text-center">
+              <h1 className="text-2xl font-bold text-white mb-2">IEC PV Test Equipment</h1>
+              <p className="text-sm text-slate-400">Select an equipment template from the sidebar to view its engineering drawing, or browse the full catalog.</p>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 w-full">
+              {Object.entries(EQUIPMENT_TEMPLATES).map(([id, t]) => (
+                <button
+                  key={id}
+                  onClick={() => {
+                    setEquipmentTemplate(id as EquipmentTemplateId);
+                    setTemplateParams({});
+                    const url = new URL(window.location.href);
+                    url.searchParams.set("template", id);
+                    window.history.replaceState({}, "", url.toString());
+                  }}
+                  className="bg-[#161b22] border border-[#21262d] hover:border-[#00D4FF]/60 rounded-lg p-3 text-left transition-all hover:bg-[#1c2333] group"
+                >
+                  <div className="w-full h-20 bg-[#0d1117] rounded mb-2 flex items-center justify-center border border-[#21262d] group-hover:border-[#00D4FF]/30">
+                    <svg viewBox="0 0 80 56" width="70" height="49" className="text-slate-600 group-hover:text-[#00D4FF]/60">
+                      <rect x="5" y="5" width="70" height="46" rx="3" fill="none" stroke="currentColor" strokeWidth="1.5" />
+                      <rect x="15" y="12" width="50" height="32" rx="1" fill="none" stroke="currentColor" strokeWidth="0.8" strokeDasharray="3,2" />
+                      <line x1="40" y1="5" x2="40" y2="51" stroke="currentColor" strokeWidth="0.5" strokeDasharray="2,2" />
+                    </svg>
+                  </div>
+                  <div className="text-[10px] font-semibold text-slate-200 group-hover:text-white truncate">{t.name}</div>
+                  <div className="text-[8px] text-slate-500 mt-0.5">{t.standard}</div>
+                </button>
+              ))}
+            </div>
+            <a href="/library"
+              className="mt-2 px-4 py-2 bg-[#00D4FF]/10 border border-[#00D4FF]/30 rounded-lg text-[#00D4FF] text-xs font-medium hover:bg-[#00D4FF]/20 transition-colors">
+              Browse Full Equipment Catalog →
+            </a>
+          </div>
+        ) : (
+          <div ref={drawingRef} className="shadow-2xl" style={{ width: "min(100%, 1100px)", aspectRatio: "841/594" }}>
+            <EngineeringSheet
+              title={title}
+              revisions={revisions}
+              scale={scale}
+              gdtAnnotations={gdtAnnotations}
+              datumLabels={datumLabels}
+            />
+          </div>
+        )}
       </div>
 
       {/* ── Export loading toast ── */}
