@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { getIECDrawingData, type IECDrawingData } from "@/lib/iecDrawingData";
 import IECDrawingSheet from "@/components/drawings/IECDrawingSheet";
 import {
@@ -589,12 +589,58 @@ const TEMPLATE_DIMENSIONS: Record<string, { key: string; label: string; min: num
   ],
 };
 
+// ─── Presets per template ─────────────────────────────────────────────────────
+const TEMPLATE_PRESETS: Record<string, { label: string; values: Record<string, number> }[]> = {
+  thermal_cycling_chamber: [
+    { label: "Small (Lab)", values: { chamberWidth: 1000, chamberHeight: 1600, chamberDepth: 800, shelfCount: 2 } },
+    { label: "Medium (Production)", values: { chamberWidth: 1500, chamberHeight: 2200, chamberDepth: 1200, shelfCount: 3 } },
+    { label: "Large (Utility)", values: { chamberWidth: 2500, chamberHeight: 2800, chamberDepth: 1800, shelfCount: 6 } },
+  ],
+  iec_uv_conditioning_chamber: [
+    { label: "Small (Lab)", values: { chamberWidth: 1000, chamberHeight: 1000, lampCount: 4 } },
+    { label: "Medium (Production)", values: { chamberWidth: 1800, chamberHeight: 1600, lampCount: 8 } },
+    { label: "Large (Utility)", values: { chamberWidth: 2800, chamberHeight: 2200, lampCount: 14 } },
+  ],
+  humidity_freeze_chamber: [
+    { label: "Small (Lab)", values: { chamberWidth: 1000, chamberHeight: 1400, humidityMax: 85 } },
+    { label: "Medium (Production)", values: { chamberWidth: 1800, chamberHeight: 2200, humidityMax: 85 } },
+    { label: "Large (Utility)", values: { chamberWidth: 2800, chamberHeight: 2800, humidityMax: 95 } },
+  ],
+  salt_mist_chamber: [
+    { label: "Small (Lab)", values: { chamberWidth: 1000, chamberHeight: 1000, nozzleCount: 3 } },
+    { label: "Medium (Production)", values: { chamberWidth: 2000, chamberHeight: 1800, nozzleCount: 6 } },
+    { label: "Large (Utility)", values: { chamberWidth: 2800, chamberHeight: 2400, nozzleCount: 10 } },
+  ],
+  mechanical_load_test: [
+    { label: "Small (Lab)", values: { frameWidth: 1200, frameHeight: 1800, maxLoadFront: 2400, maxLoadRear: 1200 } },
+    { label: "Medium (Production)", values: { frameWidth: 1600, frameHeight: 2200, maxLoadFront: 5400, maxLoadRear: 2400 } },
+    { label: "Large (Utility)", values: { frameWidth: 2200, frameHeight: 2800, maxLoadFront: 7000, maxLoadRear: 4000 } },
+  ],
+  solar_simulator: [
+    { label: "Small (Lab)", values: { testAreaW: 1000, testAreaH: 1000, lampRows: 2, lampCols: 2, irradiance: 1000 } },
+    { label: "Medium (Production)", values: { testAreaW: 2000, testAreaH: 2000, lampRows: 4, lampCols: 4, irradiance: 1000 } },
+    { label: "Large (Utility)", values: { testAreaW: 3500, testAreaH: 3500, lampRows: 6, lampCols: 6, irradiance: 1200 } },
+  ],
+  ignitability_chamber: [
+    { label: "Small (Lab)", values: { chimneyWidth: 600, chimneyHeight: 1800, windowDiameter: 400 } },
+    { label: "Medium (Production)", values: { chimneyWidth: 900, chimneyHeight: 2400, windowDiameter: 600 } },
+    { label: "Large (Utility)", values: { chimneyWidth: 1300, chimneyHeight: 3200, windowDiameter: 750 } },
+  ],
+  chiller_unit: [
+    { label: "Small (Lab)", values: { unitWidth: 1200, unitHeight: 1200, coolingCapacity: 30, fanCount: 2 } },
+    { label: "Medium (Production)", values: { unitWidth: 2200, unitHeight: 1800, coolingCapacity: 80, fanCount: 6 } },
+    { label: "Large (Utility)", values: { unitWidth: 3200, unitHeight: 2200, coolingCapacity: 180, fanCount: 10 } },
+  ],
+};
+
 export default function DrawingsPage() {
   // ── Template detection via URL params (no useSearchParams = no Suspense needed)
   const [iecData, setIecData] = useState<IECDrawingData | null>(null);
   const [equipmentTemplate, setEquipmentTemplate] = useState<EquipmentTemplateId | null>(null);
   const [templateParams, setTemplateParams] = useState<Record<string, number>>({});
   const [viewToggles, setViewToggles] = useState({ front: true, side: true, detail: true, spec: true });
+  const [dimPanelOpen, setDimPanelOpen] = useState(true);
+  const [copiedLink, setCopiedLink] = useState(false);
 
   // Tab state for default view: "equipment" (primary) or "bracket" (legacy mounting bracket)
   const [defaultTab, setDefaultTab] = useState<"equipment" | "bracket">("equipment");
@@ -999,10 +1045,163 @@ export default function DrawingsPage() {
         </div>
 
         {/* Drawing canvas */}
-        <div className="flex-1 bg-[#1a1f2e] flex items-center justify-center overflow-auto p-6">
+        <div className="flex-1 bg-[#1a1f2e] flex items-center justify-center overflow-auto p-6 relative">
           <div ref={drawingRef} className="shadow-2xl" style={{ width: "min(100%, 1100px)", aspectRatio: "841/594" }}>
             <TemplateComp params={templateParams} />
           </div>
+
+          {/* ── Floating Dimension Customizer Panel (right side) ── */}
+          {dims.length > 0 && (
+            <div className={`absolute top-4 right-4 z-40 transition-all duration-300 ${dimPanelOpen ? "w-72" : "w-10"}`}>
+              {/* Collapse toggle */}
+              <button
+                onClick={() => setDimPanelOpen(!dimPanelOpen)}
+                className="absolute -left-3 top-3 z-50 w-6 h-6 rounded-full bg-[#00D4FF] text-black flex items-center justify-center text-xs font-bold shadow-lg hover:scale-110 transition-transform"
+                title={dimPanelOpen ? "Collapse" : "Expand dimensions"}
+              >
+                {dimPanelOpen ? "›" : "‹"}
+              </button>
+
+              {dimPanelOpen && (
+                <div className="bg-[#161b22]/95 backdrop-blur-sm border border-[#21262d] rounded-xl shadow-2xl overflow-hidden">
+                  {/* Header */}
+                  <div className="px-4 py-3 border-b border-[#21262d] bg-[#0d1117]/60">
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs font-bold text-[#00D4FF] uppercase tracking-wider">Dimensions</div>
+                      <span className="text-[8px] text-slate-500 font-mono">{tmeta.name}</span>
+                    </div>
+                  </div>
+
+                  {/* Quick presets */}
+                  {TEMPLATE_PRESETS[equipmentTemplate] && (
+                    <div className="px-4 py-2 border-b border-[#21262d]">
+                      <div className="text-[9px] text-slate-500 uppercase font-bold mb-1.5">Quick Presets</div>
+                      <select
+                        onChange={e => {
+                          const preset = TEMPLATE_PRESETS[equipmentTemplate]?.[Number(e.target.value)];
+                          if (preset) {
+                            const url = new URL(window.location.href);
+                            Object.entries(preset.values).forEach(([k, v]) => {
+                              url.searchParams.set(k, String(v));
+                            });
+                            window.history.replaceState({}, "", url.toString());
+                            setTemplateParams(prev => ({ ...prev, ...preset.values }));
+                          }
+                          e.target.value = "";
+                        }}
+                        defaultValue=""
+                        className="w-full bg-[#0d1117] border border-[#21262d] rounded px-2 py-1.5 text-[10px] text-white cursor-pointer"
+                      >
+                        <option value="" disabled>Select a preset...</option>
+                        {TEMPLATE_PRESETS[equipmentTemplate]?.map((p, i) => (
+                          <option key={i} value={i}>{p.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Dimension sliders with numeric input */}
+                  <div className="px-4 py-3 space-y-3 max-h-[50vh] overflow-y-auto">
+                    {dims.map(dim => {
+                      const val = templateParams[dim.key] ?? dim.default;
+                      return (
+                        <div key={dim.key}>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-[10px] text-slate-400 font-medium">{dim.label}</span>
+                            <input
+                              type="number"
+                              min={dim.min} max={dim.max} step={dim.step} value={val}
+                              onChange={e => {
+                                const v = Number(e.target.value);
+                                if (!isNaN(v) && v >= dim.min && v <= dim.max) updateParam(dim.key, v);
+                              }}
+                              className="w-16 bg-[#0d1117] border border-[#21262d] rounded px-1.5 py-0.5 text-[10px] text-[#00D4FF] font-mono text-right focus:border-[#00D4FF] focus:outline-none"
+                            />
+                          </div>
+                          <input
+                            type="range"
+                            min={dim.min} max={dim.max} step={dim.step} value={val}
+                            onChange={e => updateParam(dim.key, Number(e.target.value))}
+                            className="w-full h-1.5 bg-[#21262d] rounded-lg appearance-none cursor-pointer accent-[#00D4FF]"
+                          />
+                          <div className="flex justify-between text-[8px] text-slate-600 mt-0.5">
+                            <span>{dim.min}</span>
+                            <span>{dim.max}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Mini 3D wireframe preview (CSS 3D) */}
+                  <div className="px-4 py-3 border-t border-[#21262d]">
+                    <div className="text-[9px] text-slate-500 uppercase font-bold mb-2">3D Preview</div>
+                    <div className="flex items-center justify-center h-24" style={{ perspective: "300px" }}>
+                      {(() => {
+                        const w = dims.find(d => d.key.includes("Width") || d.key.includes("testAreaW") || d.key.includes("frameWidth") || d.key.includes("chimneyWidth") || d.key.includes("unitWidth"));
+                        const h = dims.find(d => d.key.includes("Height") || d.key.includes("testAreaH") || d.key.includes("frameHeight") || d.key.includes("chimneyHeight") || d.key.includes("unitHeight"));
+                        const dDim = dims.find(d => d.key.includes("Depth"));
+                        const wVal = w ? (templateParams[w.key] ?? w.default) : 1500;
+                        const hVal = h ? (templateParams[h.key] ?? h.default) : 2000;
+                        const dVal = dDim ? (templateParams[dDim.key] ?? dDim.default) : 1000;
+                        const maxDim = Math.max(wVal, hVal, dVal);
+                        const sw = Math.max(20, (wVal / maxDim) * 70);
+                        const sh = Math.max(20, (hVal / maxDim) * 70);
+                        const sd = Math.max(8, (dVal / maxDim) * 30);
+                        return (
+                          <div
+                            className="relative"
+                            style={{
+                              width: sw,
+                              height: sh,
+                              transformStyle: "preserve-3d",
+                              transform: "rotateX(-20deg) rotateY(-30deg)",
+                            }}
+                          >
+                            {/* Front face */}
+                            <div className="absolute inset-0 border border-[#00D4FF]/50 bg-[#00D4FF]/5" style={{ transform: `translateZ(${sd / 2}px)` }} />
+                            {/* Back face */}
+                            <div className="absolute inset-0 border border-[#00D4FF]/20 bg-[#00D4FF]/3" style={{ transform: `translateZ(${-sd / 2}px)` }} />
+                            {/* Top face */}
+                            <div className="absolute border border-[#00D4FF]/30 bg-[#00D4FF]/5" style={{ width: sw, height: sd, top: 0, left: 0, transformOrigin: "top", transform: `rotateX(90deg) translateZ(0px) translateY(${-sd / 2}px)` }} />
+                            {/* Right face */}
+                            <div className="absolute border border-[#00D4FF]/30 bg-[#00D4FF]/3" style={{ width: sd, height: sh, top: 0, right: 0, transformOrigin: "right", transform: `rotateY(90deg) translateZ(0px) translateX(${sd / 2}px)` }} />
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* Action buttons */}
+                  <div className="px-4 py-3 border-t border-[#21262d] space-y-1.5">
+                    <button
+                      onClick={() => {
+                        setTemplateParams({});
+                        const url = new URL(window.location.href);
+                        for (const key of Array.from(url.searchParams.keys())) {
+                          if (key !== "template") url.searchParams.delete(key);
+                        }
+                        window.history.replaceState({}, "", url.toString());
+                      }}
+                      className="w-full text-[10px] text-slate-400 hover:text-white py-1.5 rounded border border-[#21262d] hover:border-[#30363d] transition-colors"
+                    >
+                      Reset to Default
+                    </button>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(window.location.href);
+                        setCopiedLink(true);
+                        setTimeout(() => setCopiedLink(false), 2000);
+                      }}
+                      className="w-full text-[10px] font-semibold py-1.5 rounded border transition-colors bg-[#00D4FF]/10 text-[#00D4FF] border-[#00D4FF]/30 hover:bg-[#00D4FF]/20"
+                    >
+                      {copiedLink ? "Copied!" : "Share Link"}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {exporting && (
