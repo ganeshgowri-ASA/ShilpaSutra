@@ -1,7 +1,19 @@
 "use client";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { getIECDrawingData, type IECDrawingData } from "@/lib/iecDrawingData";
 import IECDrawingSheet from "@/components/drawings/IECDrawingSheet";
+import {
+  ThermalCyclingChamber,
+  UVConditioningChamber,
+  HumidityFreezeChamber,
+  SaltMistChamber,
+  MechanicalLoadFrame,
+  SolarSimulator,
+  IgnitabilityChamber,
+  ChillerUnit,
+  EQUIPMENT_TEMPLATES,
+  type EquipmentTemplateId,
+} from "@/components/drawings/templates";
 
 // ─── GD&T SVG Symbols ──────────────────────────────────────────────────────
 
@@ -516,13 +528,85 @@ function EngineeringSheet({
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+// ── Equipment Template Renderer ─────────────────────────────────────────────
+const TEMPLATE_COMPONENTS: Record<EquipmentTemplateId, React.FC<{ params?: Record<string, unknown> }>> = {
+  thermal_cycling_chamber: ThermalCyclingChamber as React.FC<{ params?: Record<string, unknown> }>,
+  iec_uv_conditioning_chamber: UVConditioningChamber as React.FC<{ params?: Record<string, unknown> }>,
+  humidity_freeze_chamber: HumidityFreezeChamber as React.FC<{ params?: Record<string, unknown> }>,
+  salt_mist_chamber: SaltMistChamber as React.FC<{ params?: Record<string, unknown> }>,
+  mechanical_load_test: MechanicalLoadFrame as React.FC<{ params?: Record<string, unknown> }>,
+  solar_simulator: SolarSimulator as React.FC<{ params?: Record<string, unknown> }>,
+  ignitability_chamber: IgnitabilityChamber as React.FC<{ params?: Record<string, unknown> }>,
+  chiller_unit: ChillerUnit as React.FC<{ params?: Record<string, unknown> }>,
+};
+
+// Parametric dimension definitions per template
+const TEMPLATE_DIMENSIONS: Record<string, { key: string; label: string; min: number; max: number; step: number; default: number }[]> = {
+  thermal_cycling_chamber: [
+    { key: "chamberWidth", label: "Width (mm)", min: 800, max: 3000, step: 50, default: 1500 },
+    { key: "chamberHeight", label: "Height (mm)", min: 1200, max: 3000, step: 50, default: 2200 },
+    { key: "chamberDepth", label: "Depth (mm)", min: 600, max: 2000, step: 50, default: 1200 },
+    { key: "shelfCount", label: "Shelves", min: 1, max: 8, step: 1, default: 3 },
+  ],
+  iec_uv_conditioning_chamber: [
+    { key: "chamberWidth", label: "Width (mm)", min: 800, max: 3000, step: 50, default: 1800 },
+    { key: "chamberHeight", label: "Height (mm)", min: 800, max: 2500, step: 50, default: 1600 },
+    { key: "lampCount", label: "UV Lamps", min: 4, max: 16, step: 1, default: 8 },
+  ],
+  humidity_freeze_chamber: [
+    { key: "chamberWidth", label: "Width (mm)", min: 800, max: 3000, step: 50, default: 1800 },
+    { key: "chamberHeight", label: "Height (mm)", min: 1200, max: 3000, step: 50, default: 2200 },
+    { key: "humidityMax", label: "Max RH (%)", min: 50, max: 98, step: 1, default: 85 },
+  ],
+  salt_mist_chamber: [
+    { key: "chamberWidth", label: "Width (mm)", min: 800, max: 3000, step: 50, default: 2000 },
+    { key: "chamberHeight", label: "Height (mm)", min: 800, max: 2500, step: 50, default: 1800 },
+    { key: "nozzleCount", label: "Nozzles", min: 2, max: 12, step: 1, default: 6 },
+  ],
+  mechanical_load_test: [
+    { key: "frameWidth", label: "Frame W (mm)", min: 1000, max: 2500, step: 50, default: 1600 },
+    { key: "frameHeight", label: "Frame H (mm)", min: 1500, max: 3000, step: 50, default: 2200 },
+    { key: "maxLoadFront", label: "Front Load (Pa)", min: 1000, max: 8000, step: 100, default: 5400 },
+    { key: "maxLoadRear", label: "Rear Load (Pa)", min: 1000, max: 5000, step: 100, default: 2400 },
+  ],
+  solar_simulator: [
+    { key: "testAreaW", label: "Test Area W (mm)", min: 500, max: 4000, step: 100, default: 2000 },
+    { key: "testAreaH", label: "Test Area H (mm)", min: 500, max: 4000, step: 100, default: 2000 },
+    { key: "lampRows", label: "Lamp Rows", min: 2, max: 8, step: 1, default: 4 },
+    { key: "lampCols", label: "Lamp Cols", min: 2, max: 8, step: 1, default: 4 },
+    { key: "irradiance", label: "Irradiance (W/m²)", min: 200, max: 1500, step: 50, default: 1000 },
+  ],
+  ignitability_chamber: [
+    { key: "chimneyWidth", label: "Chimney W (mm)", min: 500, max: 1500, step: 50, default: 900 },
+    { key: "chimneyHeight", label: "Chimney H (mm)", min: 1500, max: 3500, step: 50, default: 2400 },
+    { key: "windowDiameter", label: "Window Ø (mm)", min: 300, max: 800, step: 50, default: 600 },
+  ],
+  chiller_unit: [
+    { key: "unitWidth", label: "Width (mm)", min: 1000, max: 3500, step: 50, default: 2200 },
+    { key: "unitHeight", label: "Height (mm)", min: 1000, max: 2500, step: 50, default: 1800 },
+    { key: "coolingCapacity", label: "Capacity (kW)", min: 20, max: 200, step: 10, default: 80 },
+    { key: "fanCount", label: "Fans", min: 2, max: 12, step: 1, default: 6 },
+  ],
+};
+
 export default function DrawingsPage() {
   // ── Template detection via URL params (no useSearchParams = no Suspense needed)
   const [iecData, setIecData] = useState<IECDrawingData | null>(null);
+  const [equipmentTemplate, setEquipmentTemplate] = useState<EquipmentTemplateId | null>(null);
+  const [templateParams, setTemplateParams] = useState<Record<string, number>>({});
+  const [viewToggles, setViewToggles] = useState({ front: true, side: true, detail: true, spec: true });
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const tid = params.get("template");
-    if (tid) setIecData(getIECDrawingData(tid));
+    if (tid) {
+      // Check if it's an equipment template first
+      if (tid in EQUIPMENT_TEMPLATES) {
+        setEquipmentTemplate(tid as EquipmentTemplateId);
+      } else {
+        setIecData(getIECDrawingData(tid));
+      }
+    }
   }, []);
 
   const [title, setTitle] = useState<TitleBlock>(defaultTitle);
@@ -725,6 +809,152 @@ export default function DrawingsPage() {
     }
   };
 
+  // ── Equipment template drawing ──
+  if (equipmentTemplate) {
+    const TemplateComp = TEMPLATE_COMPONENTS[equipmentTemplate];
+    const tmeta = EQUIPMENT_TEMPLATES[equipmentTemplate];
+    const dims = TEMPLATE_DIMENSIONS[equipmentTemplate] || [];
+
+    const updateParam = (key: string, value: number) => {
+      setTemplateParams(prev => ({ ...prev, [key]: value }));
+    };
+
+    const handleExportSVG = () => {
+      const svgEl = drawingRef.current?.querySelector("svg");
+      if (!svgEl) return;
+      const clone = svgEl.cloneNode(true) as SVGSVGElement;
+      clone.setAttribute("width", "1100");
+      clone.setAttribute("height", String(Math.round(1100 * 594 / 841)));
+      clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+      const blob = new Blob([new XMLSerializer().serializeToString(clone)], { type: "image/svg+xml" });
+      const a = document.createElement("a"); a.download = `ShilpaSutra_${equipmentTemplate}.svg`;
+      a.href = URL.createObjectURL(blob); a.click(); URL.revokeObjectURL(a.href);
+    };
+
+    const handleExportPDF = async () => {
+      const svgEl = drawingRef.current?.querySelector("svg");
+      if (!svgEl) return;
+      setExporting("pdf");
+      try {
+        const { jsPDF } = await import("jspdf");
+        const canvas = await captureCanvas();
+        const imgData = canvas.toDataURL("image/jpeg", 0.95);
+        const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a3" });
+        const pw = pdf.internal.pageSize.getWidth();
+        const ph = pdf.internal.pageSize.getHeight();
+        pdf.addImage(imgData, "JPEG", 0, 0, pw, ph);
+        pdf.save(`ShilpaSutra_${equipmentTemplate}.pdf`);
+      } catch (err) { console.error("PDF export failed:", err); }
+      finally { setExporting(null); }
+    };
+
+    return (
+      <div className="flex h-screen bg-[#0d1117] text-white overflow-hidden">
+        {/* Left sidebar - Template selector + dimension editor */}
+        <div className="w-64 bg-[#161b22] border-r border-[#21262d] flex flex-col shrink-0 overflow-y-auto">
+          <div className="px-3 py-2 border-b border-[#21262d]">
+            <span className="text-xs font-bold text-[#00D4FF]">Equipment Templates</span>
+          </div>
+
+          {/* Template selector */}
+          <div className="px-3 py-2 border-b border-[#21262d]">
+            <div className="text-[10px] text-slate-400 uppercase mb-1 font-bold">Template</div>
+            <select
+              value={equipmentTemplate}
+              onChange={e => { setEquipmentTemplate(e.target.value as EquipmentTemplateId); setTemplateParams({}); }}
+              className="w-full bg-[#0d1117] border border-[#21262d] rounded px-2 py-1 text-[10px] text-white"
+            >
+              {Object.entries(EQUIPMENT_TEMPLATES).map(([id, t]) => (
+                <option key={id} value={id}>{t.name}</option>
+              ))}
+            </select>
+            <div className="mt-1 text-[9px] text-slate-500">{tmeta.standard}</div>
+            <div className="mt-0.5 text-[9px] text-slate-600">{tmeta.description}</div>
+          </div>
+
+          {/* Dimension editor */}
+          {dims.length > 0 && (
+            <div className="px-3 py-2 border-b border-[#21262d]">
+              <div className="text-[10px] text-slate-400 uppercase mb-2 font-bold">Parametric Dimensions</div>
+              <div className="space-y-2">
+                {dims.map(dim => {
+                  const val = templateParams[dim.key] ?? dim.default;
+                  return (
+                    <div key={dim.key}>
+                      <div className="flex justify-between text-[9px]">
+                        <span className="text-slate-400">{dim.label}</span>
+                        <span className="text-[#00D4FF] font-mono">{val}</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={dim.min} max={dim.max} step={dim.step} value={val}
+                        onChange={e => updateParam(dim.key, Number(e.target.value))}
+                        className="w-full h-1 bg-[#21262d] rounded-lg appearance-none cursor-pointer accent-[#00D4FF]"
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* View toggles */}
+          <div className="px-3 py-2 border-b border-[#21262d]">
+            <div className="text-[10px] text-slate-400 uppercase mb-1 font-bold">View Toggles</div>
+            {(["front", "side", "detail", "spec"] as const).map(v => (
+              <label key={v} className="flex items-center gap-2 py-0.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={viewToggles[v]}
+                  onChange={e => setViewToggles(prev => ({ ...prev, [v]: e.target.checked }))}
+                  className="w-3 h-3 rounded accent-[#00D4FF]"
+                />
+                <span className="text-[10px] text-slate-300 capitalize">{v} view</span>
+              </label>
+            ))}
+          </div>
+
+          {/* Export */}
+          <div className="px-3 py-2">
+            <div className="text-[10px] text-slate-400 uppercase mb-2 font-bold">Export</div>
+            <div className="grid grid-cols-3 gap-1">
+              <button onClick={handleExportSVG}
+                className="bg-[#21262d] hover:bg-[#2d333b] text-white text-[10px] font-semibold py-1.5 rounded border border-[#30363d]">SVG</button>
+              <button onClick={handleExportPDF} disabled={!!exporting}
+                className="bg-[#21262d] hover:bg-[#2d333b] disabled:opacity-40 text-white text-[10px] font-semibold py-1.5 rounded border border-[#30363d]">
+                {exporting === "pdf" ? "..." : "PDF"}
+              </button>
+              <button disabled title="DXF export (coming soon)"
+                className="bg-[#21262d] text-slate-600 text-[10px] font-semibold py-1.5 rounded border border-[#30363d] cursor-not-allowed">DXF</button>
+            </div>
+          </div>
+
+          {/* Back button */}
+          <div className="px-3 py-2 mt-auto">
+            <button onClick={() => { setEquipmentTemplate(null); setTemplateParams({}); }}
+              className="w-full text-[10px] text-slate-400 hover:text-white py-1.5 rounded border border-[#21262d] hover:border-[#30363d] transition-colors">
+              ← Default Drawing
+            </button>
+          </div>
+        </div>
+
+        {/* Drawing canvas */}
+        <div className="flex-1 bg-[#1a1f2e] flex items-center justify-center overflow-auto p-6">
+          <div ref={drawingRef} className="shadow-2xl" style={{ width: "min(100%, 1100px)", aspectRatio: "841/594" }}>
+            <TemplateComp params={templateParams} />
+          </div>
+        </div>
+
+        {exporting && (
+          <div className="fixed bottom-6 right-6 z-50 bg-[#161b22] border border-[#00D4FF]/60 rounded-lg px-4 py-3 flex items-center gap-3 shadow-2xl">
+            <span className="inline-block w-4 h-4 border-2 border-[#00D4FF] border-t-transparent rounded-full animate-spin" />
+            <span className="text-xs text-white font-medium">Generating {exporting.toUpperCase()}…</span>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   // ── IEC template drawing (if URL ?template= matches a known IEC template) ──
   if (iecData) {
     return (
@@ -912,6 +1142,23 @@ export default function DrawingsPage() {
                 className="w-full bg-[#161b22] border border-[#21262d] rounded px-1 py-0.5 text-[9px] text-white" />
             </div>
           ))}
+        </div>
+
+        {/* Equipment Templates */}
+        <div className="px-3 py-2 border-b border-[#21262d]">
+          <div className="text-[10px] text-slate-400 uppercase mb-1 font-bold tracking-wider">Equipment Templates</div>
+          <div className="space-y-0.5 max-h-48 overflow-y-auto">
+            {Object.entries(EQUIPMENT_TEMPLATES).map(([id, t]) => (
+              <button
+                key={id}
+                onClick={() => { setEquipmentTemplate(id as EquipmentTemplateId); setTemplateParams({}); }}
+                className="w-full text-left px-2 py-1 rounded text-[9px] bg-[#0d1117] hover:bg-[#21262d] border border-[#21262d] hover:border-[#00D4FF]/40 transition-colors"
+              >
+                <div className="text-slate-200 font-medium">{t.name}</div>
+                <div className="text-slate-500 text-[8px]">{t.standard}</div>
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Export */}
