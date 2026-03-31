@@ -33,6 +33,8 @@ const EQUIPMENT_TEMPLATE_MAP: Record<string, React.ComponentType<{ params?: Reco
 import ThinkingModeSelector, { type ThinkingMode, resolveThinkingMode } from "@/components/cad/ThinkingModeSelector";
 import AttachmentBar, { type Attachment, buildAttachmentContext, getImageBase64 } from "@/components/cad/AttachmentBar";
 import { getClarifyingQuestions, buildEnrichedPrompt, type ClarifyingQuestion } from "@/lib/clarifying-questions";
+import ParametricSliders from "@/components/cad/ParametricSliders";
+import { type SimulationIntent } from "@/lib/ai-reasoning-engine";
 
 // --- Types ---
 interface ReasoningStep { step: number; action: string; detail: string; status: string; }
@@ -48,6 +50,9 @@ interface Generation {
   format: string; time?: string; parts?: AssemblyPart[];
   reasoning?: ReasoningStep[]; bom?: BOMEntry[];
   isAssembly?: boolean; objectType?: string; summary?: string;
+  simulationIntent?: SimulationIntent;
+  simulationRunning?: boolean;
+  simulationResults?: any;
 }
 
 // --- 3D Part Mesh ---
@@ -150,19 +155,59 @@ export default function TextToCADPage() {
       });
       const data = await res.json();
       const elapsed = ((Date.now()-t0)/1000).toFixed(1);
+      
+      let newGenUpdate: Partial<Generation> = { status: "error" };
+      
       if (data.isAssembly && data.assemblyParts) {
-        setGens(prev => prev.map(g => g.id!==id ? g : { ...g, status:"complete", time:`${elapsed}s`, parts:data.assemblyParts, reasoning:data.reasoning, bom:data.bom, isAssembly:true, objectType:data.object?.name||"Assembly", summary:data.message }));
+        newGenUpdate = { status:"complete", time:`${elapsed}s`, parts:data.assemblyParts, reasoning:data.reasoning, bom:data.bom, isAssembly:true, objectType:data.object?.name||"Assembly", summary:data.message, simulationIntent: data.simulationIntent };
       } else if (data.object) {
         const obj = data.object;
         const singlePart: AssemblyPart = { type:obj.type, name:obj.name, position:[0,obj.dimensions.height/2,0], dimensions:obj.dimensions, material:"Steel", color:"#00D4FF", metalness:0.35, roughness:0.45 };
-        setGens(prev => prev.map(g => g.id!==id ? g : { ...g, status:"complete", time:`${elapsed}s`, parts:[singlePart], objectType:obj.name, summary:data.message }));
-      } else {
-        setGens(prev => prev.map(g => g.id!==id ? g : { ...g, status:"error" }));
+        newGenUpdate = { status:"complete", time:`${elapsed}s`, parts:[singlePart], objectType:obj.name, summary:data.message, simulationIntent: data.simulationIntent };
       }
+      
+      setGens(prev => prev.map(g => g.id!==id ? g : { ...g, ...newGenUpdate }));
+
+      // Automatically run simulation if intent exists
+      if (newGenUpdate.simulationIntent) {
+         runSimulation(id, newGenUpdate.simulationIntent, newGenUpdate.parts || []);
+      }
+
     } catch {
       setGens(prev => prev.map(g => g.id!==id ? g : { ...g, status:"error" }));
     }
   }, [mode, attachments, format]);
+
+  const runSimulation = async (id: string, intent: SimulationIntent, parts: AssemblyPart[]) => {
+    setGens(prev => prev.map(g => g.id !== id ? g : { ...g, simulationRunning: true }));
+    try {
+      // Mock simulation delay
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      const res = await fetch("/api/simulate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          analysisType: intent.analysisType,
+          meshElements: 400,
+          material: { name: parts[0]?.material || "Steel", E: "205e9", v: "0.29", rho: "7850", k: "50" },
+          boundaryConditions: intent.constraints,
+          solverConfig: { type: "static", maxIterations: 100, tolerance: 1e-4 },
+        })
+      });
+      const simData = await res.json();
+      setGens(prev => prev.map(g => g.id !== id ? g : { ...g, simulationRunning: false, simulationResults: simData.results }));
+    } catch {
+      setGens(prev => prev.map(g => g.id !== id ? g : { ...g, simulationRunning: false }));
+    }
+  };
+
+  const handleParametricUpdate = (dims: Record<string, number>) => {
+    if (!active) return;
+    // Reconstruct prompt with new dims to regenerate
+    const appendedDims = Object.entries(dims).map(([k,v]) => `${k} ${v}mm`).join(", ");
+    const newPrompt = `Regenerate ${active.objectType} but with ${appendedDims}. KEEP other details same as: ${active.prompt}`;
+    doGenerate(newPrompt);
+  };
 
   const handleGenerate = useCallback((overrideText?: string) => {
     const text = (overrideText ?? prompt).trim();
@@ -268,7 +313,7 @@ export default function TextToCADPage() {
                 </button>
                 {showReasoning&&(
                   <div className="mt-1.5 space-y-1 bg-[#0d1117] rounded-lg border border-purple-500/20 p-2">
-                    {active.reasoning.map(step=>(
+                    {active.reasoning.map((step: any) =>(
                       <div key={step.step} className="flex items-start gap-1.5 text-[10px]">
                         <span className="mt-0.5 shrink-0">{step.status==="done"?<CheckCircle2 size={10} className="text-emerald-400"/>:<Circle size={10} className="text-slate-600"/>}</span>
                         <span className="text-purple-400 font-medium shrink-0">{step.action}:</span>
@@ -278,6 +323,14 @@ export default function TextToCADPage() {
                   </div>
                 )}
               </div>
+            )}
+
+            {active?.status === "complete" && active.parts && (
+              <ParametricSliders 
+                parts={active.parts} 
+                onUpdate={handleParametricUpdate} 
+                isRunning={active.simulationRunning} 
+              />
             )}
 
             {/* BOM */}
@@ -421,10 +474,45 @@ export default function TextToCADPage() {
                   <div className="text-slate-500 mt-0.5">{active.isAssembly?`${active.parts.length} parts`:"1 part"} · {active.time} · {active.format}</div>
                   {active.summary&&<div className="text-slate-400 mt-1 text-[10px] leading-relaxed">{active.summary}</div>}
                 </div>
-                <div className="absolute bottom-4 right-4 flex gap-2">
-                  <button className="bg-[#00D4FF] hover:bg-[#00b8d9] text-black px-3 py-1.5 rounded text-xs font-bold">Send to Designer</button>
-                  <button className="bg-[#21262d] hover:bg-[#30363d] text-white px-3 py-1.5 rounded text-xs">Export {active.format}</button>
+                <div className="absolute top-4 right-4 flex gap-2">
+                  <button className="bg-[#00D4FF] hover:bg-[#00b8d9] text-black px-3 py-1.5 rounded text-xs font-bold shadow-lg">Send to Designer</button>
+                  <button className="bg-[#21262d] hover:bg-[#30363d] text-white px-3 py-1.5 rounded text-xs shadow">Export {active.format}</button>
                 </div>
+
+                {active.simulationIntent && (
+                  <div className="absolute top-4 left-4 bg-[#161b22]/95 border border-[#4ecdc4]/30 rounded p-3 w-64 shadow-xl backdrop-blur">
+                    <div className="flex items-center gap-2 mb-2 pb-2 border-b border-[#21262d]">
+                      <div className="w-2 h-2 rounded-full bg-[#4ecdc4] animate-pulse" />
+                      <span className="text-xs font-bold text-[#4ecdc4] uppercase tracking-wider">Simulation</span>
+                      {active.simulationRunning && <Loader2 size={12} className="text-[#4ecdc4] animate-spin ml-auto"/>}
+                    </div>
+                    
+                    <div className="text-[10px] space-y-1 text-slate-300">
+                      <div className="flex justify-between"><span>Analysis:</span> <span className="font-mono text-white capitalize">{active.simulationIntent.analysisType}</span></div>
+                      {active.simulationIntent.loads[0] && (
+                        <div className="flex justify-between"><span>Load:</span> <span className="font-mono text-white">{active.simulationIntent.loads[0].magnitude}</span></div>
+                      )}
+                    </div>
+
+                    {active.simulationResults && (
+                      <div className="mt-3 pt-2 border-t border-[#21262d] space-y-1">
+                        {active.simulationResults.vonMisesStress && (
+                           <div className="flex justify-between text-[10px]"><span className="text-slate-400">Max Stress:</span> <span className="text-amber-400 font-bold">{active.simulationResults.vonMisesStress.max} {active.simulationResults.vonMisesStress.unit}</span></div>
+                        )}
+                        {active.simulationResults.displacement && (
+                           <div className="flex justify-between text-[10px]"><span className="text-slate-400">Displacement:</span> <span className="text-blue-400 font-bold">{active.simulationResults.displacement.max} {active.simulationResults.displacement.unit}</span></div>
+                        )}
+                        {active.simulationResults.temperature && (
+                           <div className="flex justify-between text-[10px]"><span className="text-slate-400">Max Temp:</span> <span className="text-red-400 font-bold">{active.simulationResults.temperature.max} {active.simulationResults.temperature.unit}</span></div>
+                        )}
+                        {active.simulationResults.safetyFactor !== undefined && (
+                           <div className="flex justify-between text-[10px]"><span className="text-slate-400">Safety Factor:</span> <span className={active.simulationResults.safetyFactor > 2 ? "text-green-400 font-bold" : "text-red-400 font-bold"}>{active.simulationResults.safetyFactor}</span></div>
+                        )}
+                        <Link href="/simulator" className="block w-full text-center mt-2 bg-[#4ecdc4]/10 hover:bg-[#4ecdc4]/20 border border-[#4ecdc4]/30 text-[#4ecdc4] text-[10px] py-1 rounded transition-colors">View Detailed Report →</Link>
+                      </div>
+                    )}
+                  </div>
+                )}
               </Suspense>
             )}
             {active?.status==="error"&&<div className="absolute inset-0 flex items-center justify-center text-red-400 text-sm">Generation failed. Try again.</div>}

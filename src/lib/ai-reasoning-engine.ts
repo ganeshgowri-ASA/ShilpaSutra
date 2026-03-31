@@ -35,6 +35,12 @@ export interface AssemblyPart {
   locked: boolean;
 }
 
+export interface SimulationIntent {
+  analysisType: "structural" | "thermal" | "cfd";
+  loads: { magnitude: number; type: string }[];
+  constraints: string[];
+}
+
 export interface ReasoningResult {
   objectType: string;
   reasoning: ReasoningStep[];
@@ -42,6 +48,7 @@ export interface ReasoningResult {
   bom: BOMEntry[];
   kclCode: string;
   summary: string;
+  simulationIntent?: SimulationIntent;
 }
 
 // ─── Parsed Dimensions ───────────────────────────────────────────────────
@@ -1263,6 +1270,42 @@ function buildSolarPVArray(dims: ParsedDims, prompt: string): { parts: AssemblyP
   return { parts, bom, reasoning };
 }
 
+// ─── Simulation Intent Detection ───────────────────────────────────────────
+
+export function detectSimulationIntent(prompt: string, domain: DomainType): SimulationIntent | undefined {
+  const t = prompt.toLowerCase();
+  
+  const hasStructural = t.includes("structural") || t.includes("stress") || t.includes("strain") || t.includes("deflection") || t.includes("load") || t.includes("force") || t.includes("weight");
+  const hasThermal = t.includes("thermal") || t.includes("temperature") || t.includes("heat") || t.includes("cooling");
+  const hasCFD = t.includes("cfd") || t.includes("flow") || t.includes("fluid") || t.includes("wind") || t.includes("aerodynamics");
+
+  if (!hasStructural && !hasThermal && !hasCFD) {
+    if (domain === "heat_sink") return { analysisType: "thermal", loads: [{ magnitude: 100, type: "thermal" }], constraints: ["Bottom (-Y)"] };
+    if (domain === "l_bracket" || domain === "hex_bolt_assembly" || domain === "gear") return { analysisType: "structural", loads: [{ magnitude: 1000, type: "force" }], constraints: ["Bottom (-Y)"] };
+    if (domain === "pipe_tube" || domain === "pipe_fitting" || domain === "pipe_flange") return { analysisType: "cfd", loads: [], constraints: [] };
+    return undefined;
+  }
+
+  let finalType: "structural" | "thermal" | "cfd" = "structural";
+  if (hasCFD) finalType = "cfd";
+  else if (hasThermal) finalType = "thermal";
+
+  // Parse load if present
+  const loadMatch = t.match(/(\d+(?:\.\d+)?)\s*(n|newton|w|watt|pa|pascal)/);
+  const loads = [];
+  if (loadMatch) {
+    loads.push({ magnitude: parseFloat(loadMatch[1]), type: finalType === "thermal" ? "thermal" : finalType === "structural" ? "force" : "pressure" });
+  } else {
+    loads.push({ magnitude: finalType === "thermal" ? 100 : 1000, type: finalType === "thermal" ? "thermal" : "force" });
+  }
+
+  return {
+    analysisType: finalType,
+    loads,
+    constraints: ["Bottom (-Y)"]
+  };
+}
+
 // ─── Main Reasoning Entry Point ──────────────────────────────────────────
 
 export function runReasoningEngine(prompt: string): ReasoningResult {
@@ -1324,6 +1367,11 @@ export function runReasoningEngine(prompt: string): ReasoningResult {
 
   const objectType = domain.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
   const kclCode = generateAssemblyKCL(result, objectType);
+  const simulationIntent = detectSimulationIntent(prompt, domain);
+
+  if (simulationIntent) {
+    result.reasoning.push({ step: result.reasoning.length + 1, action: "Assign Simulation", detail: `Analysis: ${simulationIntent.analysisType}, Load: ${simulationIntent.loads[0]?.magnitude || 0}`, status: "done" });
+  }
 
   return {
     objectType,
@@ -1332,5 +1380,6 @@ export function runReasoningEngine(prompt: string): ReasoningResult {
     bom: result.bom,
     kclCode,
     summary: `Generated ${objectType} with ${result.parts.length} parts. ${result.bom.map(b => `${b.quantity}x ${b.partName}`).join(", ")}.`,
+    simulationIntent,
   };
 }

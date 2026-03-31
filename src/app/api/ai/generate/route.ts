@@ -55,6 +55,7 @@ interface GenerateResponse {
   assemblyParts?: AssemblyPart[];
   bom?: BOMEntry[];
   isAssembly?: boolean;
+  simulationIntent?: any;
 }
 
 // ─── Dimension Parsing ───────────────────────────────────────────────
@@ -703,6 +704,7 @@ export async function POST(request: NextRequest) {
           assemblyParts: reasoningResult.parts,
           bom: reasoningResult.bom,
           isAssembly,
+          simulationIntent: reasoningResult.simulationIntent,
         } as GenerateResponse);
       }
     } catch {
