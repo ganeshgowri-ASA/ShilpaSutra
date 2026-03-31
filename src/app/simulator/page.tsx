@@ -5,6 +5,8 @@ import ConvergenceMonitor from "@/components/ConvergenceMonitor";
 import ResultVisualization from "@/components/ResultVisualization";
 import SimulationComparison, { type SimulationRun } from "@/components/SimulationComparison";
 import { materials as fullMaterialDB, getMaterialCategories } from "@/lib/materials";
+import ReportGenerator from "@/components/cad/ReportGenerator";
+import SimulationResultsPanel from "@/components/cad/SimulationResultsPanel";
 
 const SimulatorViewport = dynamic(() => import("@/components/SimulatorViewport"), {
   ssr: false,
@@ -751,6 +753,17 @@ Element Type,${elementType},`;
                   maxValue={results.maxStress}
                 />
 
+                <SimulationResultsPanel
+                  analysisType={displayMode === "stress" ? "structural" : "cfd"}
+                  results={{
+                    vonMisesStress: { max: results.maxStress, unit: "MPa" },
+                    displacement: { max: results.maxDisplacement, unit: "mm" },
+                    safetyFactor: results.safetyFactor
+                  }}
+                  isRunning={running}
+                  objectType="Simulation Domain"
+                />
+
                 {/* Convergence Monitor */}
                 {results.residualHistory && (
                   <ConvergenceMonitor
@@ -781,16 +794,26 @@ Element Type,${elementType},`;
 
                 {/* Export */}
                 <button onClick={exportCSV}
-                  className="w-full bg-green-600 hover:bg-green-500 py-2 rounded text-xs font-bold text-white">
+                  className="w-full bg-green-600 hover:bg-green-500 py-2 rounded text-xs font-bold text-white mb-2">
                   Export Results CSV
                 </button>
 
-                <div className="flex gap-2">
-                  <a href="/reports" className="flex-1 text-center bg-[#00D4FF] hover:bg-[#00b8d9] text-black text-xs py-2 rounded font-semibold">
-                    View Report
-                  </a>
+                <div className="flex gap-2 mb-2">
+                  <div className="flex-1">
+                    <ReportGenerator
+                      objectType="Simulation Domain"
+                      prompt="Simulator direct run"
+                      bom={[{ partName: "Simulation Domain", quantity: 1, material: material?.name || "Steel", dimensions: "N/A", color: "#00D4FF" }]}
+                      analysisType={displayMode === "stress" ? "structural" : "cfd"}
+                      simulationResults={{
+                        vonMisesStress: { max: results.maxStress, unit: "MPa" },
+                        displacement: { max: results.maxDisplacement, unit: "mm" },
+                        safetyFactor: results.safetyFactor
+                      }}
+                    />
+                  </div>
                   <button onClick={() => { setResults(null); setLeftTab("loads"); }}
-                    className="flex-1 bg-[#21262d] hover:bg-[#30363d] text-xs py-2 rounded text-white">
+                    className="flex-1 bg-[#21262d] hover:bg-[#30363d] text-xs py-2 rounded text-white font-semibold">
                     Modify & Re-run
                   </button>
                 </div>
@@ -893,6 +916,29 @@ Element Type,${elementType},`;
                           </tr>
                         </tbody>
                       </table>
+                    </div>
+                    <div className="mb-2">
+                       <SimulationResultsPanel
+                         analysisType="thermal"
+                         results={{
+                           temperature: { max: thermalResults.maxTemp, unit: "C" },
+                           safetyFactor: thermalResults.maxTemp < 150 ? 5.0 : 0.8
+                         }}
+                         isRunning={thermalRunning}
+                         objectType="Simulation Domain"
+                       />
+                    </div>
+                    <div className="mb-2">
+                      <ReportGenerator
+                        objectType="Thermal Analysis"
+                        prompt="Simulator Direct Run"
+                        bom={[{ partName: "Thermal Body", quantity: 1, material: material?.name || "Generic", dimensions: "N/A", color: "#f97316" }]}
+                        analysisType="thermal"
+                        simulationResults={{
+                           temperature: { max: thermalResults.maxTemp, unit: "C" },
+                           safetyFactor: thermalResults.maxTemp < 150 ? 5.0 : 0.8
+                        }}
+                      />
                     </div>
                     <button onClick={() => { setThermalResults(null); }}
                       className="w-full bg-[#21262d] hover:bg-[#30363d] text-xs py-2 rounded text-white">

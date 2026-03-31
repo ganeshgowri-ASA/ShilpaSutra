@@ -94,6 +94,7 @@ const CoordinateInput = dynamic(() => import("@/components/cad/CoordinateInput")
 const AIToolPanel = dynamic(() => import("@/components/cad/AIToolPanelEnhanced"), { ssr: false });
 const SelectedObjectDimensionsPanel = dynamic(() => import("@/components/cad/SelectedObjectDimensionsPanel"), { ssr: false });
 const PVTestingTemplatePanel = dynamic(() => import("@/components/cad/PVTestingTemplatePanel"), { ssr: false });
+const ViewportControls = dynamic(() => import("@/components/cad/ViewportControls"), { ssr: false });
 
 type AIToolType = "ai_text_to_cad" | "ai_suggest" | "ai_optimize" | "ai_explain" | "ai_fea" | "ai_cfd" | null;
 
@@ -257,6 +258,19 @@ export default function DesignerPage() {
             {/* Navigation Cube (top right) - only when not in sketch mode and no measure */}
             {!measureResult && !isSketchMode && (
               <NavigationCube />
+            )}
+
+            {/* ViewportControls Phase 5 (top center floating) */}
+            {!measureResult && !isSketchMode && (
+              <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 pointer-events-auto">
+                <ViewportControls
+                  showGrid={useCadStore((s) => s.showGrid)}
+                  showAxes={useCadStore((s) => s.showOrigin)}
+                  onToggleGrid={() => useCadStore.getState().setShowGrid(!useCadStore.getState().showGrid)}
+                  onToggleAxes={() => useCadStore.getState().setShowOrigin(!useCadStore.getState().showOrigin)}
+                  onRenderModeChange={(mode) => useCadStore.getState().setViewMode((mode === "xray" ? "wireframe" : mode === "flat" ? "shaded" : mode) as any)}
+                />
+              </div>
             )}
 
             {/* Status overlay - top left (below sketch toolbar area) */}
