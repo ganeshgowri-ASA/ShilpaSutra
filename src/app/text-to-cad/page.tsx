@@ -34,6 +34,9 @@ import ThinkingModeSelector, { type ThinkingMode, resolveThinkingMode } from "@/
 import AttachmentBar, { type Attachment, buildAttachmentContext, getImageBase64 } from "@/components/cad/AttachmentBar";
 import { getClarifyingQuestions, buildEnrichedPrompt, type ClarifyingQuestion } from "@/lib/clarifying-questions";
 import ParametricSliders from "@/components/cad/ParametricSliders";
+import SimulationResultsPanel from "@/components/cad/SimulationResultsPanel";
+import ReportGenerator from "@/components/cad/ReportGenerator";
+import ViewportControls from "@/components/cad/ViewportControls";
 import { type SimulationIntent } from "@/lib/ai-reasoning-engine";
 
 // --- Types ---
@@ -201,13 +204,18 @@ export default function TextToCADPage() {
     }
   };
 
-  const handleParametricUpdate = (dims: Record<string, number>) => {
+  const handleParametricUpdate = (dims: Record<string, number>, material?: string, loadMagnitude?: number) => {
     if (!active) return;
-    // Reconstruct prompt with new dims to regenerate
     const appendedDims = Object.entries(dims).map(([k,v]) => `${k} ${v}mm`).join(", ");
-    const newPrompt = `Regenerate ${active.objectType} but with ${appendedDims}. KEEP other details same as: ${active.prompt}`;
+    const matStr = material ? ` material ${material}` : "";
+    const loadStr = loadMagnitude ? ` with ${loadMagnitude}N load` : "";
+    const newPrompt = `Regenerate ${active.objectType} but with ${appendedDims}${matStr}${loadStr}. KEEP other details same as: ${active.prompt}`;
     doGenerate(newPrompt);
   };
+
+  const [showGrid, setShowGrid] = useState(true);
+  const [showAxes, setShowAxes] = useState(true);
+  const [renderMode, setRenderMode] = useState("shaded");
 
   const handleGenerate = useCallback((overrideText?: string) => {
     const text = (overrideText ?? prompt).trim();
@@ -241,8 +249,18 @@ export default function TextToCADPage() {
       <div className="flex items-center gap-3 px-4 py-2 bg-[#161b22] border-b border-[#21262d] text-sm shrink-0">
         <Brain size={16} className="text-purple-400" />
         <span className="font-bold text-[#00D4FF]">Text to CAD</span>
-        <span className="text-[10px] text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded-full">AI Reasoning Engine</span>
+        <span className="text-[10px] text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded-full">AI + FEA/CFD Engine</span>
         <div className="ml-auto flex items-center gap-2">
+          {active?.status === "complete" && (
+            <ReportGenerator
+              objectType={active.objectType}
+              prompt={active.prompt}
+              parts={active.parts}
+              bom={active.bom}
+              simulationResults={active.simulationResults}
+              analysisType={active.simulationIntent?.analysisType}
+            />
+          )}
           <ThinkingModeSelector value={mode} onChange={setMode} />
           <select value={format} onChange={e => setFormat(e.target.value)}
             className="bg-[#0d1117] border border-[#21262d] rounded px-2 py-1 text-xs text-slate-300">
@@ -329,7 +347,8 @@ export default function TextToCADPage() {
               <ParametricSliders 
                 parts={active.parts} 
                 onUpdate={handleParametricUpdate} 
-                isRunning={active.simulationRunning} 
+                isRunning={active.simulationRunning}
+                analysisType={active.simulationIntent?.analysisType}
               />
             )}
 
@@ -467,8 +486,16 @@ export default function TextToCADPage() {
                   <ambientLight intensity={0.5}/><directionalLight position={[3,4,2]} intensity={1}/><directionalLight position={[-2,3,-1]} intensity={0.3}/>
                   <group>{active.parts.map((p,i)=><PartMesh key={i} part={p}/>)}</group>
                   <OrbitControls autoRotate autoRotateSpeed={1}/>
-                  <gridHelper args={[6,30,"#21262d","#21262d"]}/>
+                  {showGrid && <gridHelper args={[6,30,"#21262d","#21262d"]}/>}
+                  {showAxes && <axesHelper args={[3]}/>}
                 </Canvas>
+                <ViewportControls
+                  showGrid={showGrid}
+                  showAxes={showAxes}
+                  onToggleGrid={() => setShowGrid(!showGrid)}
+                  onToggleAxes={() => setShowAxes(!showAxes)}
+                  onRenderModeChange={setRenderMode}
+                />
                 <div className="absolute bottom-4 left-4 bg-[#161b22]/90 border border-[#21262d] rounded px-3 py-2 text-xs max-w-sm">
                   <div className="text-[#00D4FF] font-semibold truncate">{active.objectType||active.prompt}</div>
                   <div className="text-slate-500 mt-0.5">{active.isAssembly?`${active.parts.length} parts`:"1 part"} · {active.time} · {active.format}</div>
@@ -519,6 +546,16 @@ export default function TextToCADPage() {
             {!active&&!showEquipmentDrawing&&<div className="absolute inset-0 flex items-center justify-center text-slate-600 text-sm">Describe a part or assembly to generate</div>}
             {!active&&showEquipmentDrawing&&<div className="absolute inset-0 flex items-center justify-center text-slate-600 text-sm">3D preview will appear here after generation</div>}
           </div>
+
+          {/* Simulation Results Panel (below viewport) */}
+          {active?.simulationResults && active.simulationIntent && (
+            <SimulationResultsPanel
+              analysisType={active.simulationIntent.analysisType}
+              results={active.simulationResults}
+              isRunning={active.simulationRunning}
+              objectType={active.objectType}
+            />
+          )}
         </div>
 
         {/* RIGHT - Assembly Tree + History */}
