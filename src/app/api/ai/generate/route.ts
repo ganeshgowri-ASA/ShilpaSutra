@@ -678,6 +678,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Prompt or messages array is required" }, { status: 400 });
     }
 
+    const MAX_PROMPT_LENGTH = 8000;
+    if (prompt && prompt.length > MAX_PROMPT_LENGTH) {
+      return NextResponse.json({ error: "Prompt exceeds maximum length" }, { status: 400 });
+    }
+
     const activePrompt = prompt || messages?.[messages.length - 1]?.content || "";
     const currentConversationId = conversationId || randomUUID();
     const modeConfig = thinkingConfig(thinkingMode);
@@ -801,9 +806,9 @@ export async function POST(request: NextRequest) {
       conversationId: currentConversationId,
       fallback: !apiKey,
     } as GenerateResponse);
-  } catch (error) {
+  } catch {
     return NextResponse.json(
-      { error: "Failed to generate", details: String(error) },
+      { error: "Failed to generate" },
       { status: 500 }
     );
   }
