@@ -1,6 +1,6 @@
 // ─── Professional PDF Export (ShilpaSutra) ───────────────────────────────────
 // Multi-view drawing sheet with title block, BOM table, and dimension annotations
-// Uses jsPDF (already in package.json) + html2canvas for canvas capture
+// Uses jsPDF for PDF generation
 
 import type { jsPDF } from "jspdf";
 
