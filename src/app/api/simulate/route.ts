@@ -228,6 +228,8 @@ export async function POST(request: NextRequest) {
 
     const nx = Math.max(10, Math.min(100, Math.round(Math.sqrt(meshElements))));
     const ny = nx;
+    const maxIter = Math.max(1, Math.min(500, Math.round(solverConfig.maxIterations)));
+    const tolerance = Math.max(1e-10, Math.min(1, solverConfig.tolerance));
     const width = geometry?.width || 100;
     const height = geometry?.height || 50;
     const E = parseFloat(material.E) || 205e9;
@@ -239,7 +241,7 @@ export async function POST(request: NextRequest) {
 
     switch (analysisType) {
       case "thermal": {
-        const thermal = solveThermal2D(nx, ny, k, 400, 300, 350, 320, solverConfig.maxIterations, solverConfig.tolerance);
+        const thermal = solveThermal2D(nx, ny, k, 400, 300, 350, 320, maxIter, tolerance);
         const tMin = Math.min(...thermal.field);
         const tMax = Math.max(...thermal.field);
         const tAvg = thermal.field.reduce((s, v) => s + v, 0) / thermal.field.length;
@@ -273,7 +275,7 @@ export async function POST(request: NextRequest) {
         const inletV = cfdConfig?.inletVelocity || 10;
         const rho = parseFloat(material.rho) || 1.225;
         const mu = 1.81e-5;
-        const cfd = solveCFD2D(nx, ny, inletV, rho, mu, solverConfig.maxIterations);
+        const cfd = solveCFD2D(nx, ny, inletV, rho, mu, maxIter);
 
         results = {
           velocity: { max: Math.round(cfd.maxVel * 100) / 100, min: 0, avg: Math.round(cfd.maxVel * 0.67 * 100) / 100, unit: "m/s" },
@@ -327,7 +329,7 @@ export async function POST(request: NextRequest) {
       success: true,
       jobId: crypto.randomUUID(),
       status: "converged",
-      iterations: solverConfig.maxIterations,
+      iterations: maxIter,
       wallTime: `${wallTime}s`,
       meshInfo: { elements: meshElements, nodes: Math.round(meshElements * 0.18) },
       material: material.name,
