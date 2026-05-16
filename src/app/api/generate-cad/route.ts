@@ -737,6 +737,8 @@ function parsePrompt(prompt: string): { type: string; params: Record<string, num
   return { type: "bracket", params: { width: 50, height: 50, thickness: 3, holes: 2, fillet: 2 } };
 }
 
+const MAX_PROMPT_LENGTH = 4000;
+
 export async function POST(request: NextRequest) {
   try {
     const body: GenerateCADRequest = await request.json();
@@ -744,6 +746,10 @@ export async function POST(request: NextRequest) {
 
     if (!prompt || prompt.trim().length === 0) {
       return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
+    }
+
+    if (prompt.length > MAX_PROMPT_LENGTH) {
+      return NextResponse.json({ error: "Prompt exceeds maximum allowed length" }, { status: 400 });
     }
 
     // ── Try Claude API for AI-powered geometry generation ──
@@ -826,9 +832,9 @@ All dimensions in mm. Return ONLY valid JSON, no markdown.`,
         supportedFormats: ["STEP", "STL", "OBJ", "IGES", "3MF", "GLB", "GLTF", "FBX", "DXF", "PLY"],
       },
     });
-  } catch (error) {
+  } catch {
     return NextResponse.json(
-      { error: "Failed to generate CAD model", details: String(error) },
+      { error: "Failed to generate CAD model" },
       { status: 500 }
     );
   }

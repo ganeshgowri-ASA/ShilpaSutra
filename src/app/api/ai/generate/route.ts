@@ -669,6 +669,8 @@ function thinkingConfig(mode: "Normal" | "Extended" | "Deep" | undefined): {
   }
 }
 
+const MAX_PROMPT_LENGTH = 4000;
+
 export async function POST(request: NextRequest) {
   try {
     const body: GenerateRequest = await request.json();
@@ -679,6 +681,10 @@ export async function POST(request: NextRequest) {
     }
 
     const activePrompt = prompt || messages?.[messages.length - 1]?.content || "";
+
+    if (activePrompt.length > MAX_PROMPT_LENGTH) {
+      return NextResponse.json({ error: "Prompt exceeds maximum allowed length" }, { status: 400 });
+    }
     const currentConversationId = conversationId || randomUUID();
     const modeConfig = thinkingConfig(thinkingMode);
 
@@ -801,9 +807,9 @@ export async function POST(request: NextRequest) {
       conversationId: currentConversationId,
       fallback: !apiKey,
     } as GenerateResponse);
-  } catch (error) {
+  } catch {
     return NextResponse.json(
-      { error: "Failed to generate", details: String(error) },
+      { error: "Failed to generate" },
       { status: 500 }
     );
   }
