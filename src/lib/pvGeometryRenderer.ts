@@ -1,8 +1,7 @@
 /**
  * pvGeometryRenderer.ts
  * Converts pvModule3DBuilder SolidPrimitive[] → Three.js Meshes with proper PBR materials.
- * Extends existing cad-operations primitives; does NOT rewrite them.
- * Scene unit: 1 unit = 10 mm.
+ *Scene unit: 1 unit = 10 mm.
  */
 
 import * as THREE from "three";
