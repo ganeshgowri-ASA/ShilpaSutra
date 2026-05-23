@@ -476,3 +476,11 @@ function textAnchorMap(align: TextAlign | undefined): string {
 function escapeXml(str: string): string {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
+
+/** Strip script tags, event-handler attributes, and javascript: URIs from SVG strings. */
+export function sanitizeSvg(svg: string): string {
+  return svg
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/\son\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*)/gi, '')
+    .replace(/(href|src|xlink:href)\s*=\s*["']?\s*javascript:[^"'\s>]*/gi, '$1="about:blank"');
+}

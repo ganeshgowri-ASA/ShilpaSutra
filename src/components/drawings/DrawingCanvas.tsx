@@ -6,7 +6,7 @@
 
 import { useRef, useState, useCallback, useEffect } from "react";
 import type { Drawing, Viewport } from "@/lib/drawingEngine";
-import { renderDrawingToSVG, renderDrawingToCanvas, createA3Viewport } from "@/lib/drawingEngine";
+import { renderDrawingToSVG, renderDrawingToCanvas, createA3Viewport, sanitizeSvg } from "@/lib/drawingEngine";
 
 // ── Props ───────────────────────────────────────────────────────────────────
 
@@ -158,7 +158,7 @@ export default function DrawingCanvas({
         {mode === "svg" ? (
           <div
             className="w-full h-full flex items-center justify-center"
-            dangerouslySetInnerHTML={{ __html: svgString.replace(/^<\?xml[^?]*\?>\s*/, '') }}
+            dangerouslySetInnerHTML={{ __html: sanitizeSvg(svgString.replace(/^<\?xml[^?]*\?>\s*/, '')) }}
           />
         ) : (
           <canvas ref={canvasRef} className="w-full h-full" />

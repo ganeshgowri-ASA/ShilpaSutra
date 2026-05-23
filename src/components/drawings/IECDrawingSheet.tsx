@@ -7,7 +7,7 @@
 
 import type { IECDrawingData, DrawingView, DrawingShape } from "@/lib/iecDrawingData";
 import { iecToDrawing } from "@/lib/iecDrawingAdapter";
-import { renderDrawingToSVG, createA3Viewport } from "@/lib/drawingEngine";
+import { renderDrawingToSVG, createA3Viewport, sanitizeSvg } from "@/lib/drawingEngine";
 
 // ── SVG sheet constants (A3 landscape in SVG units ≈ mm) ─────────────────────
 const W = 841, H = 594;
@@ -171,7 +171,7 @@ export default function IECDrawingSheet({ data, useEngine = false }: IECDrawingS
   if (useEngine) {
     const unifiedDrawing = iecToDrawing(data);
     const svgString = renderDrawingToSVG(unifiedDrawing, createA3Viewport());
-    const cleanSvg = svgString.replace(/^<\?xml[^?]*\?>\s*/, '');
+    const cleanSvg = sanitizeSvg(svgString.replace(/^<\?xml[^?]*\?>\s*/, ''));
     return (
       <div className="w-full h-full" style={{ background: "white" }}
         dangerouslySetInnerHTML={{ __html: cleanSvg }} />
