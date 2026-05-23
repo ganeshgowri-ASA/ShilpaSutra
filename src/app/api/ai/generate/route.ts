@@ -187,6 +187,15 @@ function parseDimensions(prompt: string): ParsedDimensions {
     if (genericMm) dims.width = parseWithUnit(genericMm) ?? undefined;
   }
 
+  // Clamp all parsed dimensions to safe fabrication bounds (0.1 mm … 10 000 mm)
+  const CLAMP_MIN = 0.1, CLAMP_MAX = 10_000;
+  for (const key of Object.keys(dims) as (keyof ParsedDimensions)[]) {
+    const v = dims[key];
+    if (typeof v === "number") {
+      (dims as Record<string, number>)[key] = Math.min(Math.max(v, CLAMP_MIN), CLAMP_MAX);
+    }
+  }
+
   return dims;
 }
 
@@ -677,6 +686,12 @@ export async function POST(request: NextRequest) {
     if ((!prompt || prompt.trim().length === 0) && (!messages || messages.length === 0)) {
       return NextResponse.json({ error: "Prompt or messages array is required" }, { status: 400 });
     }
+    if (prompt && prompt.length > 10_000) {
+      return NextResponse.json({ error: "Prompt exceeds maximum length of 10 000 characters" }, { status: 400 });
+    }
+    if (imageBase64 && imageBase64.length > 5_000_000) {
+      return NextResponse.json({ error: "Image payload exceeds 5 MB limit" }, { status: 400 });
+    }
 
     const activePrompt = prompt || messages?.[messages.length - 1]?.content || "";
     const currentConversationId = conversationId || randomUUID();
@@ -802,8 +817,9 @@ export async function POST(request: NextRequest) {
       fallback: !apiKey,
     } as GenerateResponse);
   } catch (error) {
+    console.error("[ai/generate] unhandled error:", error);
     return NextResponse.json(
-      { error: "Failed to generate", details: String(error) },
+      { error: "Failed to generate" },
       { status: 500 }
     );
   }

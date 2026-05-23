@@ -336,8 +336,9 @@ export async function POST(request: NextRequest) {
       engine: analysisType === "cfd" ? "ShilpaSutra CFD v2.0" : "ShilpaSutra FEA v2.0",
     });
   } catch (error) {
+    console.error("[simulate] unhandled error:", error);
     return NextResponse.json(
-      { error: "Simulation failed", details: String(error) },
+      { error: "Simulation failed" },
       { status: 500 }
     );
   }
