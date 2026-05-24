@@ -745,6 +745,9 @@ export async function POST(request: NextRequest) {
     if (!prompt || prompt.trim().length === 0) {
       return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
     }
+    if (prompt.length > 8_000) {
+      return NextResponse.json({ error: "Prompt exceeds maximum allowed length" }, { status: 400 });
+    }
 
     // ── Try Claude API for AI-powered geometry generation ──
     const anthropicKey = process.env.ANTHROPIC_API_KEY;
@@ -828,7 +831,7 @@ All dimensions in mm. Return ONLY valid JSON, no markdown.`,
     });
   } catch (error) {
     return NextResponse.json(
-      { error: "Failed to generate CAD model", details: String(error) },
+      { error: "Failed to generate CAD model" },
       { status: 500 }
     );
   }

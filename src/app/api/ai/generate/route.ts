@@ -678,7 +678,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Prompt or messages array is required" }, { status: 400 });
     }
 
-    const activePrompt = prompt || messages?.[messages.length - 1]?.content || "";
+    const MAX_PROMPT_CHARS = 8_000;
+    const activePromptRaw = prompt || messages?.[messages.length - 1]?.content || "";
+    if (activePromptRaw.length > MAX_PROMPT_CHARS) {
+      return NextResponse.json({ error: "Prompt exceeds maximum allowed length" }, { status: 400 });
+    }
+
+    // imageBase64 is a data URI; cap at ~10 MB (base64 overhead ~1.37×)
+    const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+    if (imageBase64 && imageBase64.length > MAX_IMAGE_BYTES) {
+      return NextResponse.json({ error: "Image payload too large" }, { status: 413 });
+    }
+    if (imageBase64 && !/^data:image\/(png|jpeg|jpg|webp|gif);base64,/.test(imageBase64)) {
+      return NextResponse.json({ error: "Invalid image format" }, { status: 400 });
+    }
+
+    const activePrompt = activePromptRaw;
     const currentConversationId = conversationId || randomUUID();
     const modeConfig = thinkingConfig(thinkingMode);
 
@@ -803,7 +818,7 @@ export async function POST(request: NextRequest) {
     } as GenerateResponse);
   } catch (error) {
     return NextResponse.json(
-      { error: "Failed to generate", details: String(error) },
+      { error: "Failed to generate" },
       { status: 500 }
     );
   }
