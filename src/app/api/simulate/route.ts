@@ -226,6 +226,18 @@ export async function POST(request: NextRequest) {
     const body: SimulationRequest = await request.json();
     const { analysisType, meshElements, material, solverConfig, cfdConfig, geometry } = body;
 
+    const VALID_ANALYSIS_TYPES = ["structural", "thermal", "cfd", "modal", "fatigue"];
+    if (!VALID_ANALYSIS_TYPES.includes(analysisType)) {
+      return NextResponse.json({ error: "Invalid analysisType" }, { status: 400 });
+    }
+    if (!Number.isFinite(meshElements) || meshElements < 1 || meshElements > 1_000_000) {
+      return NextResponse.json({ error: "meshElements must be between 1 and 1000000" }, { status: 400 });
+    }
+    const maxIter = solverConfig?.maxIterations;
+    if (!Number.isFinite(maxIter) || maxIter < 1 || maxIter > 10_000) {
+      return NextResponse.json({ error: "maxIterations must be between 1 and 10000" }, { status: 400 });
+    }
+
     const nx = Math.max(10, Math.min(100, Math.round(Math.sqrt(meshElements))));
     const ny = nx;
     const width = geometry?.width || 100;
@@ -337,7 +349,7 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     return NextResponse.json(
-      { error: "Simulation failed", details: String(error) },
+      { error: "Simulation failed" },
       { status: 500 }
     );
   }
