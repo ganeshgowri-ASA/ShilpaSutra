@@ -752,7 +752,7 @@ export async function POST(request: NextRequest) {
       try {
         const client = new Anthropic({ apiKey: anthropicKey });
         const claudeResponse = await client.messages.create({
-          model: "claude-sonnet-4-20250514",
+          model: "claude-sonnet-4-6",
           max_tokens: 1500,
           temperature: 0,
           system: `You are a CAD geometry parameter generator. Given a text description of a 3D part, return ONLY a JSON object with these fields:
@@ -827,8 +827,9 @@ All dimensions in mm. Return ONLY valid JSON, no markdown.`,
       },
     });
   } catch (error) {
+    console.error("[generate-cad] POST error:", error);
     return NextResponse.json(
-      { error: "Failed to generate CAD model", details: String(error) },
+      { error: "Failed to generate CAD model" },
       { status: 500 }
     );
   }
