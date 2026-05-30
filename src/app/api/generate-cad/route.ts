@@ -828,7 +828,7 @@ All dimensions in mm. Return ONLY valid JSON, no markdown.`,
     });
   } catch (error) {
     return NextResponse.json(
-      { error: "Failed to generate CAD model", details: String(error) },
+      { error: "Failed to generate CAD model" },
       { status: 500 }
     );
   }
