@@ -226,6 +226,11 @@ export async function POST(request: NextRequest) {
     const body: SimulationRequest = await request.json();
     const { analysisType, meshElements, material, solverConfig, cfdConfig, geometry } = body;
 
+    const ALLOWED_ANALYSES = ["structural", "thermal", "cfd", "modal", "fatigue"] as const;
+    if (!ALLOWED_ANALYSES.includes(analysisType as typeof ALLOWED_ANALYSES[number])) {
+      return NextResponse.json({ error: "Invalid analysisType" }, { status: 400 });
+    }
+
     const nx = Math.max(10, Math.min(100, Math.round(Math.sqrt(meshElements))));
     const ny = nx;
     const width = geometry?.width || 100;
@@ -233,6 +238,8 @@ export async function POST(request: NextRequest) {
     const E = parseFloat(material.E) || 205e9;
     const nu = parseFloat(material.v) || 0.29;
     const k = parseFloat(material.k) || 50;
+    solverConfig.maxIterations = Math.max(1, Math.min(500, Math.round(solverConfig.maxIterations || 100)));
+    solverConfig.tolerance = Math.max(1e-10, Math.min(1, solverConfig.tolerance || 1e-6));
     const startTime = Date.now();
 
     let results: Record<string, unknown>;
@@ -335,9 +342,9 @@ export async function POST(request: NextRequest) {
       results,
       engine: analysisType === "cfd" ? "ShilpaSutra CFD v2.0" : "ShilpaSutra FEA v2.0",
     });
-  } catch (error) {
+  } catch {
     return NextResponse.json(
-      { error: "Simulation failed", details: String(error) },
+      { error: "Simulation failed" },
       { status: 500 }
     );
   }

@@ -826,9 +826,9 @@ All dimensions in mm. Return ONLY valid JSON, no markdown.`,
         supportedFormats: ["STEP", "STL", "OBJ", "IGES", "3MF", "GLB", "GLTF", "FBX", "DXF", "PLY"],
       },
     });
-  } catch (error) {
+  } catch {
     return NextResponse.json(
-      { error: "Failed to generate CAD model", details: String(error) },
+      { error: "Failed to generate CAD model" },
       { status: 500 }
     );
   }
