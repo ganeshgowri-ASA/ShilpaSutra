@@ -541,7 +541,7 @@ export {
   getIECTemplatesByCategory,
 } from './pvIECTestRegistry';
 
-export { PV_IEC_TEMPLATES_PART2 } from './pvIECTestTemplates2';
+export { PV_IEC_TEMPLATES_PART2 } from './pvIECTestTemplates';
 
 export type {
   SolidPrimitive,

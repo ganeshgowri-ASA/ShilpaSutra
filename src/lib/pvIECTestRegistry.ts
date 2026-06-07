@@ -5,7 +5,7 @@
 export type { SolidPrimitive, ParametricField, IECTestTemplate } from './pvIECTestTemplates';
 
 import { PV_IEC_TEMPLATES_PART1 } from './pvIECTestTemplates';
-import { PV_IEC_TEMPLATES_PART2 } from './pvIECTestTemplates2';
+import { PV_IEC_TEMPLATES_PART2 } from './pvIECTestTemplates';
 export { PV_IEC_TEMPLATES_PART1 } from './pvIECTestTemplates';
 import type { IECTestTemplate } from './pvIECTestTemplates';
 
