@@ -16,4 +16,3 @@ export type {
 export { default as ConvergencePlot } from "./ConvergencePlot";
 export type { ResidualEntry } from "./ConvergencePlot";
 
-export { default as VersionHistoryPanel } from "./VersionHistoryPanel";
