@@ -802,8 +802,9 @@ export async function POST(request: NextRequest) {
       fallback: !apiKey,
     } as GenerateResponse);
   } catch (error) {
+    console.error("[/api/ai/generate]", error);
     return NextResponse.json(
-      { error: "Failed to generate", details: String(error) },
+      { error: "Failed to generate" },
       { status: 500 }
     );
   }
