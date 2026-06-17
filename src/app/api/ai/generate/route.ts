@@ -746,7 +746,7 @@ export async function POST(request: NextRequest) {
             "X-Title": "ShilpaSutra CAD",
           },
           body: JSON.stringify({
-            model: imageBase64 ? "anthropic/claude-sonnet-4-5" : "anthropic/claude-sonnet-4",
+            model: "anthropic/claude-sonnet-4-6",
             messages: apiMessages,
             max_tokens: modeConfig.max_tokens,
             temperature: modeConfig.temperature,
