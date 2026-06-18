@@ -220,8 +220,8 @@ export default function SettingsPage() {
                   value={settings.aiModel}
                   onChange={(v) => settings.update({ aiModel: v })}
                   options={[
-                    { value: "claude-sonnet", label: "Claude Sonnet" },
-                    { value: "claude-opus", label: "Claude Opus" },
+                    { value: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
+                    { value: "claude-opus-4-8", label: "Claude Opus 4.8" },
                     { value: "gpt-4o", label: "GPT-4o" },
                     { value: "gemini-pro", label: "Gemini Pro" },
                   ]}

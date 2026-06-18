@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { MODELS } from "@/lib/models";
 
 interface GenerateCADRequest {
   prompt: string;
@@ -752,7 +753,7 @@ export async function POST(request: NextRequest) {
       try {
         const client = new Anthropic({ apiKey: anthropicKey });
         const claudeResponse = await client.messages.create({
-          model: "claude-sonnet-4-20250514",
+          model: MODELS.CLAUDE_SONNET,
           max_tokens: 1500,
           temperature: 0,
           system: `You are a CAD geometry parameter generator. Given a text description of a 3D part, return ONLY a JSON object with these fields:
