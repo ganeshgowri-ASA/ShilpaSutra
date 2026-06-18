@@ -1,6 +1,7 @@
 "use client";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { MODELS } from "@/lib/models";
 
 export interface SettingsState {
   // General
@@ -50,7 +51,7 @@ const defaultSettings = {
   showGrid: true,
   showAxes: true,
   perspectiveMode: "perspective",
-  aiModel: "claude-sonnet",
+  aiModel: MODELS.CLAUDE_SONNET,
   apiKeyAnthropic: "",
   apiKeyOpenAI: "",
   apiKeyGoogle: "",

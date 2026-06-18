@@ -6,6 +6,7 @@ import {
   type BOMEntry,
   type AssemblyPart,
 } from "@/lib/ai-reasoning-engine";
+import { MODELS } from "@/lib/models";
 
 // ─── Type Definitions ────────────────────────────────────────────────
 
@@ -746,7 +747,7 @@ export async function POST(request: NextRequest) {
             "X-Title": "ShilpaSutra CAD",
           },
           body: JSON.stringify({
-            model: imageBase64 ? "anthropic/claude-sonnet-4-5" : "anthropic/claude-sonnet-4",
+            model: imageBase64 ? MODELS.OR_CLAUDE_SONNET_VISION : MODELS.OR_CLAUDE_SONNET,
             messages: apiMessages,
             max_tokens: modeConfig.max_tokens,
             temperature: modeConfig.temperature,
