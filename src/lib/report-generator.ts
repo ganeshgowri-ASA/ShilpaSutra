@@ -350,32 +350,3 @@ export function parseNLReportRequest(prompt: string): Partial<ReportConfig> {
   return { type, title: titleMap[type] };
 }
 
-/* ── Pre-built Compliance Data ── */
-export const IEC_61215_CHECKS: ComplianceCheck[] = [
-  { clause: "10.1", description: "Performance at STC", requirement: "Pmax ≥ rated × 0.98", actual: "Pmax = 99.5% rated", status: "pass" },
-  { clause: "10.2", description: "Performance at NOCT", requirement: "Efficiency ≥ 18%", actual: "η = 19.2%", status: "pass" },
-  { clause: "10.3", description: "Temperature coefficients", requirement: "Pmax TC ≤ -0.5%/°C", actual: "-0.38%/°C", status: "pass" },
-  { clause: "10.4", description: "Low irradiance performance", requirement: "Efficiency ≥ 95% of STC at 200 W/m²", actual: "96.1%", status: "pass" },
-  { clause: "10.9", description: "Hot-spot endurance", requirement: "No cell damage after test", actual: "No damage observed", status: "pass" },
-  { clause: "10.11", description: "UV preconditioning", requirement: "Pmax degradation ≤ 5%", actual: "2.1% degradation", status: "pass" },
-  { clause: "10.13", description: "Damp heat test", requirement: "Pmax degradation ≤ 5%", actual: "3.8% degradation", status: "pass" },
-  { clause: "10.18", description: "Mechanical load test", requirement: "No failure at 2400 Pa", actual: "Passed 2400 Pa", status: "pass" },
-];
-
-export const IS_800_CHECKS: ComplianceCheck[] = [
-  { clause: "6.1", description: "Tension members", requirement: "Td ≤ Ag × fy / γm0", actual: "Utilization: 0.72", status: "pass" },
-  { clause: "7.1", description: "Compression members", requirement: "Pd ≤ Ae × fcd", actual: "Utilization: 0.68", status: "pass" },
-  { clause: "8.1", description: "Flexural members", requirement: "Md ≤ Zpz × fy / γm0", actual: "Utilization: 0.81", status: "pass" },
-  { clause: "9.2", description: "Shear capacity", requirement: "Vd ≤ Av × fyw / (√3 × γm0)", actual: "Utilization: 0.45", status: "pass" },
-  { clause: "10.1", description: "Connection design", requirement: "Bolt shear capacity adequate", actual: "SF = 2.1", status: "pass" },
-  { clause: "5.6", description: "Deflection limits", requirement: "δ ≤ L/300", actual: "δ = L/420", status: "pass" },
-];
-
-export const ISO_2768_CHECKS: ComplianceCheck[] = [
-  { clause: "m-K", description: "Linear dimensions ≤100mm", requirement: "±0.1mm", actual: "Max deviation: 0.07mm", status: "pass" },
-  { clause: "m-K", description: "Linear dimensions 100–300mm", requirement: "±0.2mm", actual: "Max deviation: 0.14mm", status: "pass" },
-  { clause: "m-K", description: "Angular dimensions", requirement: "±0°30′", actual: "Max deviation: 0°22′", status: "pass" },
-  { clause: "m-K", description: "Flatness ≤100mm", requirement: "0.1mm", actual: "0.06mm", status: "pass" },
-  { clause: "m-K", description: "Roundness", requirement: "0.05mm", actual: "0.03mm", status: "pass" },
-  { clause: "m-K", description: "Straightness ≤100mm", requirement: "0.1mm", actual: "0.08mm", status: "pass" },
-];

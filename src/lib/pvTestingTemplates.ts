@@ -526,9 +526,6 @@ export const allPVTemplates: PVTemplate[] = [
   ...adaptIECTemplates(),
 ];
 
-/** All categories derived from allPVTemplates (preserves PV_TEMPLATE_CATEGORIES order) */
-export const ALL_PV_CATEGORIES: PVTemplateCategory[] = PV_TEMPLATE_CATEGORIES;
-
 // ─── W3-4: IEC 61215 / 61730 / 62788 Test Equipment Templates ────────────────
 // Re-exported from pvIECTestRegistry for unified template browser access.
 export {
