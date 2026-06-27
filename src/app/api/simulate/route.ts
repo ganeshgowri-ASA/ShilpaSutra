@@ -226,6 +226,11 @@ export async function POST(request: NextRequest) {
     const body: SimulationRequest = await request.json();
     const { analysisType, meshElements, material, solverConfig, cfdConfig, geometry } = body;
 
+    const ALLOWED_ANALYSIS_TYPES = ["structural", "thermal", "cfd", "modal", "fatigue"];
+    if (!ALLOWED_ANALYSIS_TYPES.includes(analysisType)) {
+      return NextResponse.json({ error: "Invalid analysisType" }, { status: 400 });
+    }
+
     const nx = Math.max(10, Math.min(100, Math.round(Math.sqrt(meshElements))));
     const ny = nx;
     const width = geometry?.width || 100;
@@ -233,13 +238,15 @@ export async function POST(request: NextRequest) {
     const E = parseFloat(material.E) || 205e9;
     const nu = parseFloat(material.v) || 0.29;
     const k = parseFloat(material.k) || 50;
+    const safeMaxIter = Math.max(1, Math.min(500, solverConfig.maxIterations));
+    const safeTolerance = Math.max(1e-10, Math.min(1, solverConfig.tolerance));
     const startTime = Date.now();
 
     let results: Record<string, unknown>;
 
     switch (analysisType) {
       case "thermal": {
-        const thermal = solveThermal2D(nx, ny, k, 400, 300, 350, 320, solverConfig.maxIterations, solverConfig.tolerance);
+        const thermal = solveThermal2D(nx, ny, k, 400, 300, 350, 320, safeMaxIter, safeTolerance);
         const tMin = Math.min(...thermal.field);
         const tMax = Math.max(...thermal.field);
         const tAvg = thermal.field.reduce((s, v) => s + v, 0) / thermal.field.length;
@@ -273,7 +280,7 @@ export async function POST(request: NextRequest) {
         const inletV = cfdConfig?.inletVelocity || 10;
         const rho = parseFloat(material.rho) || 1.225;
         const mu = 1.81e-5;
-        const cfd = solveCFD2D(nx, ny, inletV, rho, mu, solverConfig.maxIterations);
+        const cfd = solveCFD2D(nx, ny, inletV, rho, mu, safeMaxIter);
 
         results = {
           velocity: { max: Math.round(cfd.maxVel * 100) / 100, min: 0, avg: Math.round(cfd.maxVel * 0.67 * 100) / 100, unit: "m/s" },
@@ -336,9 +343,7 @@ export async function POST(request: NextRequest) {
       engine: analysisType === "cfd" ? "ShilpaSutra CFD v2.0" : "ShilpaSutra FEA v2.0",
     });
   } catch (error) {
-    return NextResponse.json(
-      { error: "Simulation failed", details: String(error) },
-      { status: 500 }
-    );
+    console.error("[api/simulate]", error);
+    return NextResponse.json({ error: "Simulation failed" }, { status: 500 });
   }
 }

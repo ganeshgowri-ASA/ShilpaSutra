@@ -669,6 +669,9 @@ function thinkingConfig(mode: "Normal" | "Extended" | "Deep" | undefined): {
   }
 }
 
+const MAX_PROMPT_CHARS = 8_000;
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB base64
+
 export async function POST(request: NextRequest) {
   try {
     const body: GenerateRequest = await request.json();
@@ -676,6 +679,14 @@ export async function POST(request: NextRequest) {
 
     if ((!prompt || prompt.trim().length === 0) && (!messages || messages.length === 0)) {
       return NextResponse.json({ error: "Prompt or messages array is required" }, { status: 400 });
+    }
+
+    if (prompt && prompt.length > MAX_PROMPT_CHARS) {
+      return NextResponse.json({ error: "Prompt exceeds 8 000 character limit" }, { status: 400 });
+    }
+
+    if (imageBase64 && imageBase64.length > MAX_IMAGE_BYTES) {
+      return NextResponse.json({ error: "Image payload exceeds 10 MB limit" }, { status: 400 });
     }
 
     const activePrompt = prompt || messages?.[messages.length - 1]?.content || "";
@@ -721,8 +732,10 @@ export async function POST(request: NextRequest) {
         ];
 
         if (messages && messages.length > 0) {
-          for (const msg of messages) {
-            if (msg.role !== "system") apiMessages.push(msg);
+          // Strip system messages (prevent prompt injection) and cap conversation depth
+          const userMessages = messages.filter((m) => m.role !== "system").slice(-20);
+          for (const msg of userMessages) {
+            apiMessages.push(msg);
           }
         } else if (imageBase64) {
           // Multimodal: send image + text
@@ -802,9 +815,7 @@ export async function POST(request: NextRequest) {
       fallback: !apiKey,
     } as GenerateResponse);
   } catch (error) {
-    return NextResponse.json(
-      { error: "Failed to generate", details: String(error) },
-      { status: 500 }
-    );
+    console.error("[api/ai/generate]", error);
+    return NextResponse.json({ error: "Failed to generate" }, { status: 500 });
   }
 }
