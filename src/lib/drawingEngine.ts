@@ -476,3 +476,13 @@ function textAnchorMap(align: TextAlign | undefined): string {
 function escapeXml(str: string): string {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
+
+/** Strip the XML declaration and remove XSS vectors before dangerouslySetInnerHTML. */
+export function sanitizeSvg(svg: string): string {
+  return svg
+    .replace(/^<\?xml[^?]*\?>\s*/, '')
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/\bon\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*)/gi, '')
+    .replace(/\bxlink:href\s*=\s*"javascript:[^"]*"/gi, '')
+    .replace(/\bhref\s*=\s*"javascript:[^"]*"/gi, '');
+}
