@@ -803,7 +803,7 @@ export async function POST(request: NextRequest) {
     } as GenerateResponse);
   } catch (error) {
     return NextResponse.json(
-      { error: "Failed to generate", details: String(error) },
+      { error: "Failed to generate" },
       { status: 500 }
     );
   }

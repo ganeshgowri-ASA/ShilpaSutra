@@ -337,7 +337,7 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     return NextResponse.json(
-      { error: "Simulation failed", details: String(error) },
+      { error: "Simulation failed" },
       { status: 500 }
     );
   }
