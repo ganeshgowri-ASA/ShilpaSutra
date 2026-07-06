@@ -124,7 +124,7 @@ export interface AnalysisResult {
 }
 
 // Standard section profiles library
-export const STANDARD_SECTIONS: SectionProfile[] = [
+const STANDARD_SECTIONS: SectionProfile[] = [
   { id: 'ISMB150', name: 'ISMB 150', type: 'I', area: 1808, Ixx: 726.4e4, Iyy: 52.6e4, J: 4.8e4, Zxx: 96.9e3, Zyy: 10.5e3, ry: 17.1, rz: 63.4, depth: 150, width: 80, tw: 4.8, tf: 7.6 },
   { id: 'ISMB200', name: 'ISMB 200', type: 'I', area: 3233, Ixx: 2235.4e4, Iyy: 150e4, J: 10.2e4, Zxx: 223.5e3, Zyy: 30e3, ry: 21.5, rz: 83.1, depth: 200, width: 100, tw: 5.7, tf: 10.8 },
   { id: 'ISMB250', name: 'ISMB 250', type: 'I', area: 4755, Ixx: 5131.6e4, Iyy: 334.5e4, J: 18.7e4, Zxx: 410.5e3, Zyy: 53.5e3, ry: 26.5, rz: 103.9, depth: 250, width: 125, tw: 6.9, tf: 12.5 },
@@ -137,7 +137,7 @@ export const STANDARD_SECTIONS: SectionProfile[] = [
   { id: 'C150x75', name: 'C 150x75', type: 'C', area: 2172, Ixx: 779.4e4, Iyy: 103.2e4, J: 7.2e4, Zxx: 103.9e3, Zyy: 28.3e3, ry: 21.8, rz: 59.9, depth: 150, width: 75, tw: 5.4, tf: 9.0 },
 ];
 
-export const STRUCTURAL_MATERIALS: StructuralMaterial[] = [
+const STRUCTURAL_MATERIALS: StructuralMaterial[] = [
   { id: 'Fe250', name: 'Mild Steel Fe 250', E: 200000, G: 76923, fy: 250, fu: 410, density: 7850, poisson: 0.3, alpha: 12e-6 },
   { id: 'Fe350', name: 'Structural Steel Fe 350', E: 200000, G: 76923, fy: 350, fu: 490, density: 7850, poisson: 0.3, alpha: 12e-6 },
   { id: 'Fe410', name: 'High Strength Fe 410', E: 200000, G: 76923, fy: 410, fu: 540, density: 7850, poisson: 0.3, alpha: 12e-6 },
@@ -148,7 +148,7 @@ export const STRUCTURAL_MATERIALS: StructuralMaterial[] = [
 ];
 
 // IS 456/800 Load Combinations
-export const CODE_COMBINATIONS: LoadCombination[] = [
+const CODE_COMBINATIONS: LoadCombination[] = [
   { id: 'IS456-1', name: '1.5(DL+LL)', code: 'IS 456', factors: [{ loadCaseId: 'DL', factor: 1.5 }, { loadCaseId: 'LL', factor: 1.5 }] },
   { id: 'IS456-2', name: '1.2(DL+LL+WL)', code: 'IS 456', factors: [{ loadCaseId: 'DL', factor: 1.2 }, { loadCaseId: 'LL', factor: 1.2 }, { loadCaseId: 'WL', factor: 1.2 }] },
   { id: 'IS456-3', name: '1.5(DL+WL)', code: 'IS 456', factors: [{ loadCaseId: 'DL', factor: 1.5 }, { loadCaseId: 'WL', factor: 1.5 }] },
@@ -231,7 +231,7 @@ function fixedEndForcesUDL(w: number, L: number): number[] {
 }
 
 // Member design check per IS 800:2007
-export function checkMemberIS800(
+function checkMemberIS800(
   section: SectionProfile, material: StructuralMaterial,
   axial: number, momentZ: number, shearY: number, length: number
 ): DesignCheck {
@@ -398,36 +398,4 @@ export function solveFrame2D(
   });
 
   return { memberResults, reactions, nodalDisplacements, designChecks };
-}
-
-// Parse natural language structural commands
-export function parseStructuralCommand(input: string): { type: string; params: Record<string, number | string> } | null {
-  const lower = input.toLowerCase();
-  if (lower.includes('purlin') && lower.includes('check')) {
-    const spanMatch = lower.match(/([\d.]+)\s*m\s*span/);
-    const loadMatch = lower.match(/([\d.]+)\s*kn\/m/);
-    const sectionMatch = input.match(/[CI]\d+x\d+/i);
-    return {
-      type: 'purlinCheck',
-      params: {
-        span: spanMatch ? parseFloat(spanMatch[1]) : 3,
-        load: loadMatch ? parseFloat(loadMatch[1]) : 1,
-        section: sectionMatch ? sectionMatch[0] : 'C150x75',
-      },
-    };
-  }
-  if (lower.includes('pv') && lower.includes('structure')) {
-    const modulesMatch = lower.match(/(\d+)\s*modules/);
-    const tiltMatch = lower.match(/(\d+)\s*degrees?\s*tilt/);
-    const windZoneMatch = lower.match(/wind\s*zone\s*(\d+)/);
-    return {
-      type: 'pvStructure',
-      params: {
-        modules: modulesMatch ? parseInt(modulesMatch[1]) : 24,
-        tilt: tiltMatch ? parseInt(tiltMatch[1]) : 23,
-        windZone: windZoneMatch ? parseInt(windZoneMatch[1]) : 3,
-      },
-    };
-  }
-  return null;
 }
