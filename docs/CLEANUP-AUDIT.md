@@ -2,11 +2,8 @@
 
 Method: static import graph over `src/` (static, dynamic `import()`, `require`, `@/` alias), excluding Next entry files (`page|layout|route|...`) and tests. Cross-checked by repo-wide basename grep.
 
-## Removed in this PR (0 references anywhere)
-- `components/KCLCodeEditor.tsx`, `components/ProjectExplorer.tsx`
-- `components/cad/MeshQualityPanel.tsx`
-- `components/drawings/DrawingCanvas.tsx`
-- `components/3d/PVArrayViewer.tsx`, `components/3d/IECEquipmentViewer.tsx`
+## Status of deletions
+Zero-reference orphan components (KCLCodeEditor, ProjectExplorer, MeshQualityPanel, DrawingCanvas, PVArrayViewer, IECEquipmentViewer, AIChatAssistant, AIToolPanel, Sidebar shim) are already proposed for removal in open draft PRs #313, #314, #316, #318, #320 (overlapping; merge ONE and close the rest). This PR is docs-only.
 
 ## Deferred (tracked in a GitHub issue) — likely planned features, need owner decision
 Engines with no importers: `lib/assembly-engine.ts`, `cad-operations.ts`, `cadCommandHandler.ts`, `cfd-piso.ts`, `cfd-postprocess.ts`, `cfdSolver.worker.ts`, `csg-engine.ts`, `drawing-engine.ts`, `fea-engine.ts`.
