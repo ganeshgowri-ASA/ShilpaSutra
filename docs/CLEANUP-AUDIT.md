@@ -13,5 +13,6 @@ Engines with no importers: `lib/assembly-engine.ts`, `cad-operations.ts`, `cadCo
 Components referenced only by name elsewhere: `AIChatAssistant`, `cad/AIToolPanel`, `drawings/VersionHistoryPanel`, `layout/Sidebar` (re-export shim).
 Barrel files with no importers: `components/{cfd,fea,fem,designer/assembly}/index.ts`.
 
-## Dependencies / assets (no node_modules in audit env, so unverified by depcheck)
-Candidates to verify with `npx depcheck`: `file-saver`, `html2canvas`, `react-icons`, `three-bvh-csg` (only used by the unused csg-engine?), `@radix-ui/*` (no `components/ui` dir exists). No large binary assets in repo (largest tracked file is package-lock.json).
+## Dependencies (grep of `src/` imports; no node_modules in audit env, so not depcheck-verified)
+No static import found in `src/` for: `react-icons`, `framer-motion`, `class-variance-authority`, all `@radix-ui/*`, `html2canvas`, `three-bvh-csg`. Verify (dynamic/string use, planned work) before removing from `package.json`. Used: `file-saver`, `docx`, `jspdf`, `@anthropic-ai/sdk`.
+No large binary assets are tracked (largest file is `package-lock.json`, ~460 KB).
